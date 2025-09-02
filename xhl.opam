@@ -15,7 +15,7 @@ depends: [
   "dune"                   { >= "2.5.0" }
   "coq-mathcomp-ssreflect" { >= "1.11" & < "1.12~" }
   "coq-mathcomp-algebra"
-  "coq-mathcomp-analysis"  { >= "0.3.3" }
+  "coq-mathcomp-analysis"  { >= "1.6" & < "1.7~" }
   "coq-mathcomp-finmap"    { >= "1.5" & < "1.6~" }
 ]
 

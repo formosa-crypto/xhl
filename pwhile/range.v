@@ -1,8 +1,10 @@
 (* -------------------------------------------------------------------- *)
-(* ------- *) Require Import Setoid Morphisms.
-From mathcomp Require Import all_ssreflect all_algebra.
-From mathcomp.analysis Require Import boolp reals realseq realsum distr.
-(* ------- *) Require Import notations inhabited pwhile psemantic passn.
+(* ----------------- *) Require Import Setoid Morphisms.
+From mathcomp.ssreflect Require Import all_ssreflect.
+From mathcomp.algebra   Require Import all_algebra.
+From mathcomp.classical Require Import boolp.
+From mathcomp.analysis  Require Import reals realseq realsum distr.
+(* ----------------- *) Require Import notations inhabited pwhile psemantic passn.
 
 Set   Implicit Arguments.
 Unset Strict Implicit.
@@ -80,9 +82,9 @@ Notation cmd  := (@cmd_ X mem).
 Definition phl (P : assn) (c : cmd) (Q : assn) :=
   forall m, P m -> range Q (ssem_ c m).
 
-Arguments phl P%A c%S Q%A.
+Arguments phl P%_A c%_S Q%_A.
 
-Definition forall_in {T : ihbType} (mu : mem -> Distr T) (P : T -> assn) : assn := 
+Definition forall_in {T : IhbType.type} (mu : mem -> Distr T) (P : T -> assn) : assn := 
   `[< fun m => forall t,  t \in dinsupp (mu m) -> P t m >]%A.
 
 Notation "`[ 'forall' x 'in' mu => Q ]" :=
@@ -121,11 +123,11 @@ Proof. by move=> ??;rewrite ssemE;apply range_dunit. Qed.
 Lemma phl_abort (P Q : assn) : phl P abort Q.
 Proof. by move=> ??;rewrite ssemE;apply range_dnull. Qed.
 
-Lemma phl_assign {T : ihbType} x (e:expr_ X mem T) (Q : assn):
+Lemma phl_assign {T : IhbType.type} x (e:expr_ X mem T) (Q : assn):
    phl [pred m | Q m.[x <- `[{e}]%A m]] (x <<- e) Q.
 Proof. by move=> m /=;rewrite !semE;apply range_dunit. Qed.
 
-Lemma phl_random {T : ihbType} x (d:expr_ X mem (Distr T)) (Q : assn):
+Lemma phl_random {T : IhbType.type} x (d:expr_ X mem (Distr T)) (Q : assn):
    phl `[forall v in `[{d}] | m => Q m.[x <- v]] (x <$- d) Q.
 Proof. 
 move=> m /asboolP /= h; rewrite !semE.
@@ -168,7 +170,7 @@ Qed.
 End Phl.
 
 (* -------------------------------------------------------------------- *)
-Definition eqon (X : pred { t : ihbType & vars t } ) (m : cmem) :=
+Definition eqon (X : pred { t : IhbType.type & vars t } ) (m : cmem) :=
   nosimpl (fun m' : cmem => forall x, x \in X -> m.[tagged x] = m'.[tagged x]).
 
 Definition separated X (P : pred dmem) :=
@@ -178,7 +180,7 @@ Definition separated X (P : pred dmem) :=
     -> mu1 \in P -> mu2 \in P.
 
 (* -------------------------------------------------------------------- *)
-Fixpoint mod (c : cmd) : pred { t : ihbType & vars t } :=
+Fixpoint mod (c : cmd) : pred { t : IhbType.type & vars t } :=
   match c with
   | abort    => pred0
   | skip     => pred0
@@ -191,7 +193,7 @@ Fixpoint mod (c : cmd) : pred { t : ihbType & vars t } :=
   end.
 
 (* -------------------------------------------------------------------- *)
-Definition eaccess {t} (e : expr t) : pred { t : ihbType & vars t } :=
+Definition eaccess {t} (e : expr t) : pred { t : IhbType.type & vars t } :=
   match e with
   | var_ _ x => [pred y | `[<y = Tagged _ x>]]
   | _ => pred0

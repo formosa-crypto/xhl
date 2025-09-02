@@ -1,8 +1,10 @@
 (* -------------------------------------------------------------------- *)
-From mathcomp Require Import all_ssreflect all_algebra finmap.
-From mathcomp.analysis 
-  Require Import boolp classical_sets ereal reals realseq realsum distr xfinmap.
-(* ------- *) Require Import xbigops misc maxflow elift.
+From mathcomp.ssreflect Require Import all_ssreflect.
+From mathcomp.algebra   Require Import all_algebra.
+From mathcomp.finmap    Require Import finmap.
+From mathcomp.classical Require Import boolp classical_sets.
+From mathcomp.analysis  Require Import reals realseq realsum distr xfinmap.
+(* ------- *)           Require Import xbigops misc maxflow elift.
 
 Set   Implicit Arguments.
 Unset Strict Implicit.

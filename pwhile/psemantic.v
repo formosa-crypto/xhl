@@ -1,8 +1,10 @@
 (* -------------------------------------------------------------------- *)
-(* ------- *) Require Import ClassicalFacts Setoid Morphisms.
-From mathcomp Require Import all_ssreflect all_algebra.
-From mathcomp.analysis Require Import boolp ereal reals realseq realsum distr.
-(* ------- *) Require Import inhabited passn pwhile.
+(* ----------------- *) Require Import ClassicalFacts Setoid Morphisms.
+From mathcomp.ssreflect Require Import all_ssreflect.
+From mathcomp.algebra   Require Import all_algebra.
+From mathcomp.classical Require Import boolp.
+From mathcomp.analysis  Require Import ereal reals realseq realsum distr.
+(* ----------------- *) Require Import inhabited passn pwhile.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -18,6 +20,13 @@ Notation ROHS := (X in X <= _)%pattern.
 Notation LOHS := (X in _ <= X)%pattern.
 
 Declare Scope sem_scope.
+
+(* -------------------------------------------------------------------- *)
+Module Ad.
+Definition dlet_lim := @__admitted__dlet_lim.
+Definition dlim_let := @__admitted__dlim_let.
+End Ad.
+Import Ad.
 
 (* -------------------------------------------------------------------- *)
 Axiom funext : forall {T U : Type} (f g : T -> U),
@@ -222,7 +231,7 @@ Lemma ssem_seqE c1 c2 m :
   ssem (c1 ;; c2) m = \dlet_(m' <- ssem c1 m) (ssem c2 m').
 Proof. by rewrite unlock. Qed.
 
-Lemma esem_varE {T : ihbType} (x : vars T) m : 
+Lemma esem_varE {T : IhbType.type} (x : vars T) m : 
    esem (@var_ _ _ T x) m = m.[x].
 Proof. by []. Qed.
 
@@ -662,8 +671,8 @@ Notation ssem   := (@ssem_ _ cmem).
 Notation mdistr := (Distr cmem).
 Notation mnull  := (@dnull R cmem.(mheap)).
 
-Arguments ssem_ X cmem s%S m%M.
-Arguments esem X cmem T e%X m%M.
+Arguments ssem_ X cmem s%_S m%_M.
+Arguments esem X cmem T e%_X m%_M.
 
 Notation "e `_ m" := (@esem _ _ _ e%X m%M) : sem_scope.
 
@@ -732,11 +741,11 @@ Definition esemE := (@esem_appE, @esem_cstE, esem_1E, esem_2E).
 
 Definition ssemE := (esemE, @semE).
 
-Lemma mget_iE {T : ihbType} (m : rmem) (x : vars T) s :
+Lemma mget_iE {T : IhbType.type} (m : rmem) (x : vars T) s :
   m.[irvar s x] = (m#s).[x].
 Proof. by case:s x=> -[]. Qed.
 
-Lemma mset_iE {T : ihbType} (m : rmem) (x : vars T) (v : T) s :
+Lemma mset_iE {T : IhbType.type} (m : rmem) (x : vars T) (v : T) s :
   m.[x#s <- v] = 
   (((m#'1).[x <- v], m.1)#s, (m.2, (m#'2).[x <- v])#s)%M.
 Proof. by case:x m s => xid [m1 m2] []. Qed.

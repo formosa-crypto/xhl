@@ -1,6 +1,8 @@
 (* -------------------------------------------------------------------- *)
-From mathcomp Require Import all_ssreflect all_algebra.
-(* ------- *) Require Import misc.
+From HB                 Require Import structures.
+From mathcomp.ssreflect Require Import all_ssreflect.
+From mathcomp.algebra   Require Import all_algebra.
+(* ----------------- *) Require Import misc.
 
 Set   Implicit Arguments.
 Unset Strict Implicit.
@@ -33,8 +35,8 @@ Proof.
 by move=> a u v; rewrite /lpcost mulmxDl -scalemxAl 2!mxE.
 Qed.
 
-Canonical lpcost_additive := Additive lpcost_is_linear.
-Canonical lpcost_linear := AddLinear lpcost_is_linear.
+HB.instance Definition lpcost_linear :=
+  GRing.isLinear.Build _ _ _ _ lpcost lpcost_is_linear.
 
 (* -------------------------------------------------------------------- *)
 Definition lpset x :=
@@ -133,7 +135,6 @@ Proof.
 exists 1%N, (fun i => 1), (fun u => x); split=> //.
 - by rewrite big_const_ord iterS addr0 scale1r.
 - by rewrite big_const_ord iterS addr0.
-- by rewrite ltW // ltr01.
 Qed.
 
 (* -------------------------------------------------------------------- *)

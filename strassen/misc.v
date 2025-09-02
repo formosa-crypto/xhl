@@ -1,7 +1,9 @@
 (* -------------------------------------------------------------------- *)
-From mathcomp Require Import all_ssreflect all_algebra.
-From mathcomp.analysis
-  Require Import boolp reals discrete realseq realsum distr.
+From HB                 Require Import structures.
+From mathcomp.ssreflect Require Import all_ssreflect.
+From mathcomp.algebra   Require Import all_algebra.
+From mathcomp.classical Require Import boolp.
+From mathcomp.analysis  Require Import reals discrete realseq realsum distr.
 
 Set   Implicit Arguments.
 Unset Strict Implicit.
@@ -52,7 +54,7 @@ Definition fsplit i :=
 Lemma fsplitl (i : 'I_n) : fsplit (lshift p i) = fn i.
 Proof.
 rewrite /fsplit; case: splitP => j.
-+ by move/(@val_inj _ _ [subType of 'I_n]) => ->.
++ by move/(@val_inj _ _ 'I_n) => ->.
 rewrite /lshift /= => iE; have := ltn_ord i.
 by rewrite iE -{2}[n]addn0 ltn_add2l ltn0.
 Qed.
@@ -61,7 +63,7 @@ Lemma fsplitr (i : 'I_p) : fsplit (rshift n i) = fp i.
 Proof.
 rewrite /fsplit; case: splitP => j; rewrite /rshift /= => jE.
 + by have := ltn_ord j; rewrite -jE -{2}[n]addn0 ltn_add2l ltn0.
-+ by move/addnI: jE => /(@val_inj _ _ [subType of 'I_p]) => ->.
++ by move/addnI: jE => /(@val_inj _ _ 'I_p) => ->.
 Qed.
 
 Definition fsplitlr := (@fsplitl, @fsplitr).
@@ -251,7 +253,10 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 Lemma enum_bool_perm : perm_eq (enum {: bool}) [:: true; false].
-Proof. by rewrite enumT Finite.EnumDef.enumDef. Qed.
+Proof.
+apply/uniq_perm => //; first by apply/enum_uniq.
+by move=> b; rewrite mem_enum; case: b.
+Qed.
 
 (* -------------------------------------------------------------------- *)
 Lemma enum_sum_perm {T U : finType} :
@@ -395,7 +400,8 @@ Proof. done. Qed.
 Definition comp1f : right_id idfun comp.
 Proof. done. Qed.
 
-Canonical comp_monoid := Monoid.Law compA compf1 comp1f.
+HB.instance Definition comp_monoid :=
+  Monoid.isLaw.Build (T -> T) idfun comp compA compf1 comp1f.
 End CompMonoid.
 
 (* -------------------------------------------------------------------- *)
@@ -461,7 +467,7 @@ Lemma summable_option {R : realType} {T : choiceType} (S : option T -> R) :
 Proof. split.
 + case/summable_seqP => M ge0_M leM; apply/summable_seqP => /=.
   exists (M + `|S None|); first by rewrite addr_ge0.
-  move=> J uqJ; rewrite (bigID isSome) ler_add //=.
+  move=> J uqJ; rewrite (bigID isSome) lerD //=.
   - apply/(le_trans _ (leM (pmap idfun J) _)); last first.
     * by apply/(pmap_uniq (g := some)) => // -[].
     rewrite -(big_map _ predT (fun x => `|S x|)) pmapS_filter.

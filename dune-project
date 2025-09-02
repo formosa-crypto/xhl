@@ -1,3 +1,3 @@
-(lang dune 2.5)
+(lang dune 3.8)
 (name xhl)
-(using coq 0.2)
+(using coq 0.8)

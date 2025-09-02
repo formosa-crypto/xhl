@@ -1,7 +1,9 @@
 (* -------------------------------------------------------------------- *)
-From mathcomp Require Import all_ssreflect all_algebra.
-From mathcomp.analysis Require Import boolp reals realsum distr.
-(* ------- *) Require Import notations.
+From mathcomp.ssreflect Require Import all_ssreflect.
+From mathcomp.algebra   Require Import all_algebra.
+From mathcomp.classical Require Import boolp.
+From mathcomp.analysis  Require Import reals realsum distr.
+(* ------- *)           Require Import notations.
 
 (* -------------------------------------------------------------------- *)
 CoInductive or_spec (a b : bool) : bool -> bool -> Type :=

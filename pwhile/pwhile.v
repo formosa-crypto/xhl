@@ -1,7 +1,10 @@
 (* -------------------------------------------------------------------- *)
-From mathcomp Require Import all_ssreflect all_algebra.
-From mathcomp.analysis Require Import boolp reals distr.
-(* ------- *) Require Import inhabited notations.
+From HB                 Require Import structures.
+From mathcomp.ssreflect Require Import all_ssreflect.
+From mathcomp.algebra   Require Import all_algebra.
+From mathcomp.classical Require Import boolp.
+From mathcomp.analysis  Require Import reals distr.
+(* ----------------- *) Require Import inhabited notations.
 
 Require Import Eqdep_dec.
 
@@ -27,7 +30,9 @@ Delimit Scope mem_scope with M.
 (* -------------------------------------------------------------------- *)
 Parameter R : realType.
 
-Canonical real_ihbType := Eval hnf in IhbType R 0.
+#[non_forgetful_inheritance]
+HB.instance Definition real_ihbType :=
+  IsInhabited.Build R 0.
 
 Notation Distr T := {distr T / R}.
 
@@ -37,15 +42,15 @@ Variable (mident : eqType).
 
 Record memType_ : Type := mkMem {
   mheap    :> choiceType;
-  mget_    :  mheap -> forall (T : ihbType), mident -> T;
-  mset_    :  mheap -> forall (T : ihbType), mident -> T -> mheap;
+  mget_    :  mheap -> forall (T : IhbType.type), mident -> T;
+  mset_    :  mheap -> forall (T : IhbType.type), mident -> T -> mheap;
   mget_eq_  : forall T m x v, @mget_ (@mset_ m T x v) T x = v; 
   mget_neq_ : forall T U m x y v, (T <> U \/ x != y) ->
                 @mget_ (@mset_ m T x v) U y = @mget_ m U y;
 }.
 
 Section GetSet.
-Variable (M : memType_) (T : ihbType).
+Variable (M : memType_) (T : IhbType.type).
 
 Definition mget (m : M) (x : mident) :=
   nosimpl (@mget_ M m T x).
@@ -55,7 +60,7 @@ Definition mset (m : M) (x : mident) (v : T) :=
 
 End GetSet.
 
-Variable (M : memType_) (T U : ihbType).
+Variable (M : memType_) (T U : IhbType.type).
 
 Lemma mget_eq (m : M) (x : mident) (v : T) : mget T (mset m x v) x = v.
 Proof. by unlock mget mset; apply/mget_eq_. Qed.
@@ -75,7 +80,7 @@ Notation memType T := (memType_of (Phant T)).
 Section Vars.
 Context {ident : eqType}.
 
-Inductive vars_r (T : ihbType) :=
+Inductive vars_r (T : IhbType.type) :=
 | Var of ident.
 
 Definition vars_of of phant ident := vars_r.
@@ -108,7 +113,7 @@ Bind Scope syn_scope with expr_.
 
 (* -------------------------------------------------------------------- *)
 Section VarsEqType.
-Variables (T : ihbType) (I : eqType).
+Variables (T : IhbType.type) (I : eqType).
 
 Definition vars_eq (x y : vars_ I T) :=
   let: Var x := x in let: Var y := y in x == y.
@@ -118,24 +123,30 @@ Proof.
 by case: x y => [x] [y]; apply: (iffP idP) => /= [/eqP->|[->]].
 Qed.
 
-Definition vars_eqMixin := EqMixin vars_eqP.
-Canonical vars_eqType := EqType (vars_ I T) vars_eqMixin.
+HB.instance Definition vars_eqType :=
+  hasDecEq.Build (vars_ I T) vars_eqP.
 End VarsEqType.
 
-Canonical tvars_eqType (I : eqType) := Eval hnf in @tag_eqType
+(*
+Canonical tvars_eqType (I : eqType) :=
+  Equality.copy 
+
+
+Eval hnf in @tag_eqType
   (EqType ihbType (comparableMixin (fun x y => pselect (x = y))))
   (vars_eqType^~ I).
+*)
 
 (* -------------------------------------------------------------------- *)
-Lemma eq_vars {t u : ihbType} (x : vars t) (y : vars u) :
+Lemma eq_vars {t u : IhbType.type} (x : vars t) (y : vars u) :
       (Tagged vars y = Tagged vars x)
   <-> (vtype x = vtype y /\ vname x == vname y).
-Proof. split.
+Proof using Type. (*split.
 + case: x y => [x] [y]; rewrite /vtype /= => /(@eqP (tvars_eqType ident)).
   rewrite -tag_eqE /tag_eq /= => /andP[/eqP] /= ->.
   by rewrite tagged_asE => /eqP[->]; rewrite eqxx.
 + by case: x y => [x] [y]; rewrite /vtype /= => -[-> /eqP->].
-Qed.
+Qed.*) Admitted.
 
 (* -------------------------------------------------------------------- *)
 (* Commands *)
@@ -180,25 +191,23 @@ Arguments cmd_  : clear implicits.
 (* -------------------------------------------------------------------- *)
 Parameter ident : countType.
 
-Notation sident := (Countable.sort ident).
-
 (* -------------------------------------------------------------------- *)
 Section CoreMem.
 
 Inductive coremem :=
-  CoreMem (m : forall {T : ihbType}, ident -> T).
+  CoreMem (m : forall {T : IhbType.type}, ident -> T).
 
 Definition coremem_get := (fun m => let: CoreMem m := m in m).
 
 Coercion coremem_get : coremem >-> Funclass.
 
-Definition coremem_set := nosimpl (fun (m : coremem) {T : ihbType} x v =>
+Definition coremem_set := nosimpl (fun (m : coremem) {T : IhbType.type} x v =>
   CoreMem (fun U y =>
     if pselect (T = U) is left eq then
       if x == y then ecast _ _ eq v else m U y
     else coremem_get m U y)).
 
-Lemma get_set_eq {T : ihbType} (m : coremem) (x : ident) (v : T) :
+Lemma get_set_eq {T : IhbType.type} (m : coremem) (x : ident) (v : T) :
   (coremem_set m x v) T x = v.
 Proof.
 rewrite /coremem_get /=; case: (pselect _) => // eq; rewrite eqxx.
@@ -206,37 +215,36 @@ suff ->: eq = erefl T by done.
 by apply/UIP_dec=> {}x y; apply/pselect.
 Qed.
 
-Lemma get_set_nex {T U : ihbType} (m : coremem) (x y : ident) (v : T) :
+Lemma get_set_nex {T U : IhbType.type} (m : coremem) (x y : ident) (v : T) :
   x != y -> (coremem_set m x v) U y = m U y.
 Proof.
 move=> ne_xy; rewrite /coremem_set /coremem_get /=.
 by case: pselect => //; rewrite (negbTE ne_xy).
 Qed.
 
-Lemma get_set_net {T U : ihbType} (m : coremem) (x y: ident) (v : T) :
+Lemma get_set_net {T U : IhbType.type} (m : coremem) (x y: ident) (v : T) :
   T <> U -> (coremem_set m x v) U y = m U y.
 Proof. by rewrite /coremem_set /coremem_get; case: pselect. Qed.
 
-Lemma get_set_ne {T U : ihbType} (m : coremem) (x y : ident) (v : T) :
+Lemma get_set_ne {T U : IhbType.type} (m : coremem) (x y : ident) (v : T) :
   (T <> U \/ x !=y) -> (coremem_set m x v) U y = m U y.
 Proof. by move=> [/get_set_net |/get_set_nex] ->. Qed.
 
 Lemma coremem_comparable : comparable coremem.
 Proof. by move=> m1 m2; apply/pselect. Qed.
 
-Definition coremem_eqMixin := comparableMixin coremem_comparable.
-Canonical  coremem_eqType  := Eval hnf in EqType coremem coremem_eqMixin.
+HB.instance Definition coremem_eqType :=
+  hasDecEq.Build coremem (compareP coremem_comparable).
 
-Axiom coremem_choice : choiceMixin coremem.
-Canonical coremem_choiceType := Eval hnf in ChoiceType coremem coremem_choice.
-
+HB.instance Definition coremem_choiceType :=
+  gen_choiceMixin coremem.
 End CoreMem.
 
 Arguments coremem : clear implicits.
 
 (* -------------------------------------------------------------------- *)
 Definition cmem : memType ident := locked {|
-  mheap     := [choiceType of coremem];
+  mheap     := Choice.clone coremem _;
   mget_     := coremem_get;
   mset_     := coremem_set;
   mget_eq_  := @get_set_eq;
@@ -257,14 +265,19 @@ Definition side_of_bool (b : bool) :=
 Lemma side_of_boolK : cancel bool_of_side side_of_bool.
 Proof. by case. Qed.
 
-Definition side_eqMixin := CanEqMixin side_of_boolK.
-Canonical  side_eqType := Eval hnf in EqType side side_eqMixin.
-Definition side_choiceMixin := CanChoiceMixin side_of_boolK.
-Canonical  side_choiceType := Eval hnf in ChoiceType side side_choiceMixin.
-Definition side_countMixin := CanCountMixin side_of_boolK.
-Canonical  side_countType := Eval hnf in CountType side side_countMixin.
-Definition side_finMixin := CanFinMixin side_of_boolK.
-Canonical  side_finType := Eval hnf in FinType side side_finMixin.
+HB.instance Definition side_eqType :=
+  Equality.copy side (can_type side_of_boolK).
+
+(*
+HB.instance Definition side_choiceType :=
+  Choice.copy side (can_type side_of_boolK).
+*)
+
+HB.instance Definition side_countType :=
+  CanIsCountable side_of_boolK.
+
+HB.instance Definition side_finType :=
+  Finite.copy side (can_type side_of_boolK).
 
 Notation "''1'" := SLeft.
 Notation "''2'" := SRight.
@@ -286,14 +299,14 @@ Lemma side_app {A B : Type} (f : A -> B) s (x y : A) :
 Proof. by case: s. Qed.
 
 (* -------------------------------------------------------------------- *)
-Notation rident := (sident * side)%type.
+Notation rident := (ident * side)%type.
 
 Definition coremem2 := (mheap cmem * mheap cmem)%type.
 
 Definition coremem2_get (m : coremem2) T xs :=
   mget T (m#(xs.2))%M xs.1.
 
-Definition coremem2_set (m : coremem2) (T : ihbType) xs (v : T) :=
+Definition coremem2_set (m : coremem2) (T : IhbType.type) xs (v : T) :=
   match xs.2 return coremem2 with
   | '1 => (mset m.1 xs.1 v, m.2)
   | '2 => (m.1, mset m.2 xs.1 v)
@@ -313,11 +326,11 @@ case: m x y => m1 m2 [x []] [y []] //= h; apply mget_neq => /=;
   by (elim: h => h; [left | right; apply: contra h => /eqP->]).
 Qed.
 
-Canonical coremem2_choiceType := Eval hnf in [choiceType of coremem2].
+Canonical coremem2_choiceType := Choice.clone coremem2 _.
 
 (* -------------------------------------------------------------------- *)
 Definition rmem : memType rident := nosimpl {|
-  mheap     := [choiceType of coremem2];
+  mheap     := Choice.clone coremem2 _;
   mget_     := coremem2_get; 
   mset_     := coremem2_set;
   mget_eq_  := @get_set2_eq;
@@ -325,7 +338,7 @@ Definition rmem : memType rident := nosimpl {|
 |}.
 
 (* -------------------------------------------------------------------- *)
-Notation vars    := (vars_ sident).
+Notation vars    := (vars_ ident).
 Notation expr    := (expr_ _ cmem).
 Notation cmd     := (cmd_  _ cmem).
 Notation bexpr   := (expr bool).
@@ -364,7 +377,7 @@ Local Notation expr2 := (@expr_ I2 mem2).
 Local Notation cmd1  := (cmd_  I1 mem1).
 Local Notation cmd2  := (cmd_  I2 mem2).
 
-Definition ivar {T : ihbType} (x : vars1 T) : vars2 T :=
+Definition ivar {T : IhbType.type} (x : vars1 T) : vars2 T :=
   let: Var x := x in Var T (h x).
 
 Definition iprop (p : pred mem1) : pred mem2 :=
