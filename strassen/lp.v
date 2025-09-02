@@ -1,13 +1,14 @@
 (* -------------------------------------------------------------------- *)
+From HB Require Import structures.
 From mathcomp Require Import all_ssreflect all_algebra.
 (* ------- *) Require Import misc.
 
-Set   Implicit Arguments.
+Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 Unset SsrOldRewriteGoalsOrder.
 
-Import GRing.Theory Num.Theory Order.Theory.
+Import GRing GRing.Theory Num.Theory Order.Theory.
 
 Local Open Scope ring_scope.
 
@@ -26,14 +27,16 @@ Context (A : 'M[F]_(n,p)) (b : 'rV[F]_p) (C : 'cV[F]_n).
 Implicit Types (x : 'rV[F]_n).
 
 (* -------------------------------------------------------------------- *)
-Definition lpcost x := ((x *m C) 0 0).
+Definition lpcost x : F := ((x *m C) 0 0).
 
 Lemma lpcost_is_linear : scalar lpcost.
 Proof.
 by move=> a u v; rewrite /lpcost mulmxDl -scalemxAl 2!mxE.
 Qed.
 
-Canonical lpcost_additive := Additive lpcost_is_linear.
+(* HB.instance Definition _ := GRing.isScalable.Build F _ _ _ *:%R lpcost lpcost_is_linear. *)
+
+Canonical lpcost_additive := isAdditive.Build lpcost_is_linear.
 Canonical lpcost_linear := AddLinear lpcost_is_linear.
 
 (* -------------------------------------------------------------------- *)
@@ -133,7 +136,7 @@ Proof.
 exists 1%N, (fun i => 1), (fun u => x); split=> //.
 - by rewrite big_const_ord iterS addr0 scale1r.
 - by rewrite big_const_ord iterS addr0.
-- by rewrite ltW // ltr01.
+(* - by rewrite ltW // ltr01. *)
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -414,7 +417,7 @@ by case/andP: in01_l=> *; rewrite !ltW.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma lpmax_on_extrems x :
+Lemma lpmax_on_extrems  x :
   lpbounded -> lpset x ->
     exists2 e, lpextrem e & lpcost x <= lpcost e.
 Proof.
@@ -563,7 +566,7 @@ have {}min: forall j, lpextrem j -> lpcost j <= lpcost m.
 + move=> j /lpextremsP -/(_ bd) lje; have /= := min (SeqSub lje).
   by rewrite ler_oppr opprK; apply.
 have /lpcvxcbP [k c M -> sc1 ge0_c exM] := lp_cvx_hull bd lpy.
-rewrite linear_sum /=; apply/(@le_trans _ _ (\sum_i (c i * lpcost m))).
+rewrite linear_sum.  /=; apply/(@le_trans _ _ (\sum_i (c i * lpcost m))).
 + apply/ler_sum=> i _; rewrite linearZ /= ler_wpmul2l //.
   by apply/min/exM.
 + by rewrite -mulr_suml sc1 mul1r.

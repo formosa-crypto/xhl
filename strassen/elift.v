@@ -1,10 +1,12 @@
 (* -------------------------------------------------------------------- *)
 From mathcomp Require Import all_ssreflect all_algebra finmap.
-From mathcomp.analysis
-  Require Import boolp reals realsum distr xfinmap classical_sets.
-(* ------- *) Require Import xbigops misc.
+From mathcomp.classical Require Import boolp classical_sets.
+From mathcomp.reals Require Import reals.
+From mathcomp.experimental_reals Require Import realsum distr xfinmap.
 
-Set   Implicit Arguments.
+Require Import xbigops misc.
+
+Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 Unset SsrOldRewriteGoalsOrder.
