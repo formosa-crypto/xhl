@@ -3,13 +3,18 @@ From HB                 Require Import structures.
 From mathcomp.ssreflect Require Import all_ssreflect.
 From mathcomp.algebra   Require Import all_algebra.
 (* ----------------- *) Require Import misc.
+(* ======= *)
+(* From HB Require Import structures. *)
+(* From mathcomp Require Import all_ssreflect all_algebra. *)
+(* (* ------- *) Require Import misc. *)
+(* >>>>>>> a315bce (WIP) *)
 
-Set   Implicit Arguments.
+Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 Unset SsrOldRewriteGoalsOrder.
 
-Import GRing.Theory Num.Theory Order.Theory.
+Import GRing GRing.Theory Num.Theory Order.Theory.
 
 Local Open Scope ring_scope.
 
@@ -28,7 +33,7 @@ Context (A : 'M[F]_(n,p)) (b : 'rV[F]_p) (C : 'cV[F]_n).
 Implicit Types (x : 'rV[F]_n).
 
 (* -------------------------------------------------------------------- *)
-Definition lpcost x := ((x *m C) 0 0).
+Definition lpcost x : F := ((x *m C) 0 0).
 
 Lemma lpcost_is_linear : scalar lpcost.
 Proof.
@@ -272,8 +277,8 @@ have lp_xDkμ: forall k, 0 <= k -> lpset (x + k *: μ).
   by rewrite bdμ scaler0 addr0.
 have: 0 <= M / μ@i; first rewrite divr_ge0 //.
 + by apply/ltW/(le_lt_trans (lpset_ge0 solx i))/ltM.
-move/lp_xDkμ => {lp_xDkμ} /ltM/(_ i); rewrite !mxE.
-by rewrite -mulrA mulVf // mulr1 gtr_addr ltNge (lpset_ge0 solx).
+  move/lp_xDkμ => {lp_xDkμ} /ltM/(_ i); rewrite !mxE.
+by rewrite -mulrA mulVf // mulr1 gtrDr ltNge (lpset_ge0 solx).
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -296,7 +301,7 @@ move=> k gt0_μk bdk; split; rewrite ?mxE.
   by move/eqP; rewrite gt_eqF.
 + apply/lpsetP; split => [j|]; rewrite ?mxE.
   * rewrite subr_ge0; case: (ltrP 0 (μ @ j)).
-    - by move=> gt0_μj; rewrite -ler_pdivl_mulr // bdk.
+    - by move=> gt0_μj; rewrite -ler_pdivlMr // bdk.
     move=> le0_μj; apply/(@le_trans _ _ 0)/(lpset_ge0 lpx) => //.
     by rewrite mulr_ge0_le0 // divr_ge0 ?(lpset_ge0 lpx) ?ltW.
   * rewrite mulmxBl (lpset_sol lpx) // -scalemxAl mulmx_sum_row.
@@ -335,8 +340,8 @@ rewrite !scalerN !opprK => ge0_t2 lpx2 /eqP nz_xi2 z_x2.
 have {z_x2} st2: i2 \notin lpbasei (y t2).
 + by apply/lpbaseiPn; rewrite /y (eqP z_x2).
 pose k := t2 / (t1 + t2); have in01_k: 0 < k < 1.
-+ rewrite divr_gt0 1?addr_gt0 //= ltr_pdivr_mulr ?addr_gt0 //.
-  by rewrite mul1r ltr_addr.
++ rewrite divr_gt0 1?addr_gt0 //= ltr_pdivrMr ?addr_gt0 //.
+  by rewrite mul1r ltrDr.
 have xE: x = k *: (x - t1 *: μ) + (1 - k) *: (x + t2 *: μ).
 + rewrite !(scalerBr, scalerDr) addrACA -scalerDl.
   rewrite [k + _]addrCA subrr addr0 scale1r -!scaleNr.
@@ -415,7 +420,7 @@ by case/andP: in01_l=> *; rewrite !ltW.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma lpmax_on_extrems x :
+Lemma lpmax_on_extrems  x :
   lpbounded -> lpset x ->
     exists2 e, lpextrem e & lpcost x <= lpcost e.
 Proof.
@@ -430,9 +435,9 @@ rewrite -[X in _ < X]mul1r -sm1 mulr_suml; have: exists i, 0 < c i.
   rewrite big1 1?eq_sym ?oner_eq0 // => i _; apply/eqP.
   by rewrite eq_le ge0_c andbT leNgt -(rwP negP).
 case=> i gt0_ci; rewrite [X in X < _](bigD1 i) //=.
-rewrite [X in _ < X](bigD1 i) //=; apply/ltr_le_add.
-+ by rewrite ltr_pmul2l // ltNge -(rwP negP).
-+ apply/ler_sum=> j ne_ji; rewrite ler_wpmul2l //.
+rewrite [X in _ < X](bigD1 i) //=; apply/ltr_leD.
++ by rewrite ltr_pM2l // ltNge -(rwP negP).
++ apply/ler_sum=> j ne_ji; rewrite ler_wpM2l //.
   by apply/ltW; rewrite ltNge -(rwP negP).
 Qed.
 
@@ -553,7 +558,8 @@ move=> bd [x lpx]; pose I := seq_sub lpextrems; have x0: I.
 + case E: lpextrems => [|y s]; last first.
   * have pr: y \in lpextrems by rewrite E mem_head.
     by apply: (SeqSub pr).
-  absurd False => //; case: (lp_cvx_hull bd lpx) => -[|k] [c] [M] [_].
+    (*This is not nice *)
+  absurd Logic.False  => // ; case: (lp_cvx_hull bd lpx) => -[|k] [c] [M] [_].
   * by rewrite big_ord0 (rwP eqP) eq_sym oner_eq0.
   by move=> _ _ /(_ 0) /(@lpextremsP _ bd); rewrite E.
 have h := ex_intro xpredT x0 (erefl true).
@@ -562,10 +568,10 @@ exists (val m); rewrite {}/m; case: arg_minrP => -[/= m lme] _ min.
 move/lpextremsP: lme => /(_ bd) [lpm _]; split=> // y lpy.
 have {}min: forall j, lpextrem j -> lpcost j <= lpcost m.
 + move=> j /lpextremsP -/(_ bd) lje; have /= := min (SeqSub lje).
-  by rewrite ler_oppr opprK; apply.
+  by rewrite lerNr opprK; apply.
 have /lpcvxcbP [k c M -> sc1 ge0_c exM] := lp_cvx_hull bd lpy.
-rewrite linear_sum /=; apply/(@le_trans _ _ (\sum_i (c i * lpcost m))).
-+ apply/ler_sum=> i _; rewrite linearZ /= ler_wpmul2l //.
+rewrite linear_sum =>  /=; apply/(@le_trans _ _ (\sum_i (c i * lpcost m))).
++ apply/ler_sum=> i _; rewrite linearZ /= ler_wpM2l //.
   by apply/min/exM.
 + by rewrite -mulr_suml sc1 mul1r.
 Qed.
@@ -610,8 +616,8 @@ Scheme Equality for lprel.
 Lemma lprel_eqP : Equality.axiom lprel_beq.
 Proof. by case=> [] [] /=; constructor. Qed.
 
-Definition lprel_eqMixin := EqMixin lprel_eqP.
-Canonical lprel_eqType := Eval hnf in EqType lprel lprel_eqMixin.
+
+HB.instance Definition lprel_eqType := hasDecEq.Build lprel lprel_eqP.
 
 Definition rel_of_lprel (r : lprel) :=
   match r return rel F with
@@ -849,11 +855,11 @@ rewrite big_split_ord /=; congr +%R; last first.
 + rewrite (bigD1 i) //= big1 ?addr0; last first.
   * by rewrite !simpmx !eqxx mulr1.
   by move=> j ne_ji; rewrite !simpmx andbT (negbTE ne_ji) !mulr0.
-rewrite big_split_ord -big_split /=; apply/eq_bigr=> j _.
+rewrite big_split_ord; setoid_rewrite <- big_split => /=; apply/eq_bigr=> j _.
 rewrite !simpmx !summxE !(bigD1 (P := xpredT) j) //= !big1 ?addr0.
-+ by move=> m ne_mj; rewrite !mxE [j==_]eq_sym (negbTE ne_mj) mulr0.
-+ by move=> m ne_mj; rewrite !mxE [j==_]eq_sym (negbTE ne_mj) mulr0.
-by rewrite !simpmx !eqxx !mulr1 mulrN -mulrBl mulrC.
+ + by move=> m ne_mj; rewrite !mxE [j==_]eq_sym (negbTE ne_mj) mulr0.
+ + by move=> m ne_mj; rewrite !mxE [j==_]eq_sym (negbTE ne_mj) mulr0.
+ by rewrite !simpmx !eqxx !mulr1 mulrN -mulrBl mulrC.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -879,7 +885,7 @@ rewrite nmpbP => /lpsetP[ge0_x solx]; apply/lppbP; split; last first.
   move/rowP: (solx) => /(_ (rshift _ (lshift _ (lshift _ i)))).
   move/rowP: (solx) => /(_ (rshift _ (lshift _ (rshift _ i)))).
   rewrite !norm_bndE !(mxE,splitlr) ler_norml => h1 h2.
-  rewrite ler_oppl opprB -{1}h1 -{1}h2 !ler_add2l.
+  rewrite lerNl opprB -{1}h1 -{1}h2 !lerD2l.
   rewrite (le_trans _ (ge0_x _)) ?oppr_le0 //=.
   by rewrite (le_trans _ (ge0_x _)) ?oppr_le0.
 move=> i; rewrite mem_lpeqE /mem_lpeq.
@@ -889,8 +895,8 @@ set f := BIG_F; have eqf j: f j = (lp2pb @^ x) j * a @^ j.
 + by rewrite {}/f mulrC !simpmx.
 rewrite {f eqf}(eq_bigr _ (fun i _ => eqf i)) => /esym/eqP.
 rewrite -subr_eq => /eqP <-; case: {E} r => //=.
-+ by rewrite mulr1 ler_subl_addr ler_addl ge0_x.
-+ by rewrite mulrN1 opprK ler_addl ge0_x.
++ by rewrite mulr1 lerBlDr lerDl ge0_x.
++ by rewrite mulrN1 opprK lerDl ge0_x.
 + by rewrite mulr0 subr0.
 Qed.
 
@@ -902,7 +908,7 @@ rewrite !simpmx big_split_ord /= [X in _ + X]big1 ?addr0.
 + by elim/splitW=> i _; rewrite !simpmx mulr0.
 rewrite big_split_ord /= [X in _ + X]big1 ?addr0.
 + by move=> i _; rewrite !simpmx mulr0.
-rewrite big_split_ord -big_split /=; set f := BIG_F.
+rewrite big_split_ord; setoid_rewrite <-big_split => /=; set f := BIG_F.
 have eqf i: f i = (lp2pb x) @ i * (lppb_cost pb) (delta_mx 0 i).
 + by rewrite {}/f !simpmx mulrN -mulrBl.
 rewrite {eqf f}(eq_bigr _ (fun i _ => eqf i)).
@@ -939,16 +945,16 @@ Lemma sol_pb2lp x : x \in pb -> lpset A b (pb2lp x).
 Proof.
 case/lppbP => solx bdx; apply/lpsetP; split.
 + elim/(@zW k) => i; rewrite !simpmx.
-  * by rewrite le_maxr lexx orbT.
-  * by rewrite oppr_ge0 le_minl lexx orbT.
+  * by rewrite le_max lexx orbT.
+  * by rewrite oppr_ge0 ge_min lexx orbT.
   * move/(_ i): solx; rewrite mem_lpeqE /mem_lpeq /ε.
     case: (E i) => [a r e]; case: r => /=; rewrite ?Monoid.simpm.
     + by rewrite subr_ge0.
     + by rewrite mulN1r oppr_ge0 subr_le0.
     + by rewrite ler01.
-  * by rewrite subr_ge0 le_maxl !(le_trans _ (bdx i)) ?ler_norm.
-  * rewrite -ler_subl_addr sub0r oppr_min oppr0.
-    rewrite le_maxl !(le_trans _ (bdx i)) ?normr_ge0 //.
+  * by rewrite subr_ge0 ge_max !(le_trans _ (bdx i)) ?ler_norm.
+  * rewrite -lerBlDr sub0r oppr_min oppr0.
+    rewrite ge_max !(le_trans _ (bdx i)) ?normr_ge0 //.
     by rewrite -normrN ler_norm.
 apply/rowP; elim/splitW => i.
 + rewrite norm_eqE [X in X+_](_ : _ = (x *m E i) 0 0).
@@ -976,7 +982,7 @@ rewrite !simpmx big_split_ord /= [X in _ + X]big1 ?addr0.
 + by elim/splitW=> i _; rewrite !simpmx mulr0.
 rewrite big_split_ord /= [X in _ + X]big1 ?addr0.
 + by move=> i _; rewrite !simpmx mulr0.
-rewrite big_split_ord -big_split /= {1}[x]row_sum_delta.
+  rewrite big_split_ord; setoid_rewrite <- big_split => /=;  rewrite {1}[x]row_sum_delta.
 rewrite linear_sum; apply/eq_bigr=> /= i _.
 rewrite !simpmx linearZ /= !(mulNr, mulrN) opprK.
 by rewrite -mulrDl addr_max_min addr0.
@@ -998,47 +1004,49 @@ Let simpmx := (mxE, splitlr).
 (* -------------------------------------------------------------------- *)
 Lemma norm_pb_bnd : lpbounded A b.
 Proof.
-pose T i := `|lpeq_const (E i)| + \sum_(j < n) `|E i @^ j| * `|pb.(lppb_bnd)|.
-pose N := \sum_(i < k) (1 + T i); have ge0_T i : 0 <= T i.
-+ rewrite addr_ge0 ?normr_ge0 //; apply/sumr_ge0=> /= j _.
-  by rewrite mulr_ge0 ?normr_ge0.
-pose M := `|pb.(lppb_bnd)| + N; have ge0_N: 0 <= N.
-+ by apply/sumr_ge0=> /= i _; rewrite addr_ge0.
-exists (1 + M) => x /lpsetP[ge0_x solx] => i.
-rewrite (@le_lt_trans _ _ M) ?ltr_addr ?ltr01 // /M.
-elim/splitW: i => i; move/rowP: solx => solx; last first.
-+ move/(_ (rshift _ (lshift _ i))): solx.
-  rewrite norm_bndE !simpmx => <-.
-  rewrite ger0_norm ?addr_ge0 ?ge0_x //.
-  by rewrite -addrA addrCA ler_addl addr_ge0 ?ge0_x.
-elim/splitW: i => i.
-+ move/(_ (rshift _ (lshift _ i))): solx.
-  rewrite norm_bndE !simpmx=> <-.
-  rewrite ger0_norm ?addr_ge0 ?ge0_x //.
-  by rewrite -addrA ler_addl addr_ge0 ?ge0_x.
-rewrite -[X in X <= _]add0r ler_add ?normr_ge0 //.
-rewrite /N (bigD1 i) //= -[X in X <= _]addr0 ler_add //; last first.
-+ by apply/sumr_ge0 => j _; rewrite addr_ge0.
-case EE: (E i) => [a r e] /=; case: (r =P ==%:T%T) => /eqP eqr.
-+ move/(_ (rshift _ (rshift _ i))): solx; rewrite norm_vbndE.
-  by rewrite !simpmx EE eqr /= mulr1 => ->; rewrite ler_addl.
-rewrite ler_paddl // /T; move/(_ (lshift _ i)): (solx).
-rewrite norm_eqE !simpmx EE /=; set s := lprel_sign _.
-rewrite (rwP eqP) addrC eq_sym -subr_eq => /eqP.
-move/(congr1 Num.norm); rewrite normrM (_ : `|s| = 1) /s.
-+ by case: {+}r eqr => //=; rewrite (normr1, normrN1).
-rewrite mulr1 => eq; apply/(le_trans (ler_norm _)).
-rewrite -{}eq (le_trans (ler_norm_sub _ _)) //.
-rewrite ler_add2l (le_trans (ler_norm_sum _ _ _)) //.
-apply/ler_sum=> j _; rewrite normrM ler_wpmul2l //.
-rewrite ler_normr; apply/orP; left.
-move/(_ (rshift _ (lshift _ (lshift _ j)))): (solx).
-move/(_ (rshift _ (lshift _ (rshift _ j)))): (solx).
-rewrite !norm_bndE !(mxE,splitlr) ler_norml => h1 h2.
-rewrite ler_oppl opprB -{1}h1 -{1}h2 !ler_add2l.
-rewrite (le_trans _ (ge0_x _)) ?oppr_le0 //=.
-by rewrite (le_trans _ (ge0_x _)) ?oppr_le0.
+  pose T i := `|lpeq_const (E i)| + \sum_(j < n) `|E i @^ j| * `|pb.(lppb_bnd)|.
+  pose N := \sum_(i < k) (1 + T i); have ge0_T i : 0 <= T i.
+  - rewrite addr_ge0 ?normr_ge0 //; apply/sumr_ge0=> /= j _.
+    by rewrite mulr_ge0 ?normr_ge0.
+  pose M := `|pb.(lppb_bnd)| + N; have ge0_N: 0 <= N.
+  - by apply/sumr_ge0=> /= i _; rewrite addr_ge0.
+  exists (1 + M) => x /lpsetP[ge0_x solx] => i.
+  rewrite (@le_lt_trans _ _ M) ?ltr_addr ?ltr01 //= /M; last first.
+  - by apply ltr_pwDl.
+  elim/splitW: i => i; move/rowP: solx => solx; last first.
+  - move/(_ (rshift _ (lshift _ i))): solx.
+    rewrite norm_bndE !simpmx => <-.
+    rewrite ger0_norm ?addr_ge0 ?ge0_x //.
+    by rewrite -addrA addrCA lerDl addr_ge0 ?ge0_x.
+  elim/splitW: i => i.
+  - move/(_ (rshift _ (lshift _ i))): solx.
+    rewrite norm_bndE !simpmx=> <-.
+    rewrite ger0_norm ?addr_ge0 ?ge0_x //.
+    by rewrite -addrA lerDl addr_ge0 ?ge0_x.
+  rewrite -[X in X <= _]add0r lerD ?normr_ge0 //.
+  rewrite /N (bigD1 i) //= -[X in X <= _]addr0 lerD //; last first.
+  - by apply/sumr_ge0 => j _; rewrite addr_ge0.
+  case EE: (E i) => [a r e] /=; case: (r =P ==%:T%T) => /eqP eqr.
+  -  move/(_ (rshift _ (rshift _ i))): solx; rewrite norm_vbndE.
+     by rewrite !simpmx EE eqr /= mulr1 => ->; rewrite lerDl.
+  rewrite ler_wpDl // /T; move/(_ (lshift _ i)): (solx).
+  rewrite norm_eqE !simpmx EE /=; set s := lprel_sign _.
+  rewrite (rwP eqP) addrC eq_sym -subr_eq => /eqP.
+  move/(congr1 Num.norm); rewrite normrM (_ : `|s| = 1) /s.
+  - by case: {+}r eqr => //=; rewrite (normr1, normrN1).
+  rewrite mulr1 => eq; apply/(le_trans (ler_norm _)).
+  rewrite -{}eq (le_trans (ler_normB _ _)) //.
+  rewrite lerD2l (le_trans (ler_norm_sum _ _ _)) //.
+  apply/ler_sum=> j _; rewrite normrM ler_wpM2l //.
+  rewrite ler_normr; apply/orP; left.
+  move/(_ (rshift _ (lshift _ (lshift _ j)))): (solx).
+  move/(_ (rshift _ (lshift _ (rshift _ j)))): (solx).
+  rewrite !norm_bndE !(mxE,splitlr) ler_norml => h1 h2.
+  rewrite lerNl opprB -{1}h1 -{1}h2 !lerD2l.
+  rewrite (le_trans _ (ge0_x _)) ?oppr_le0 //=.
+  by rewrite (le_trans _ (ge0_x _)) ?oppr_le0.
 Qed.
+
 End LpPbTxBnd.
 
 (* ==================================================================== *)

@@ -2,7 +2,8 @@
 From HB                 Require Import structures.
 From mathcomp.ssreflect Require Import all_ssreflect.
 From mathcomp.algebra   Require Import all_algebra.
-From mathcomp.analysis  Require Import reals.
+From mathcomp.reals     Require Import reals.
+From mathcomp.classical Require Import boolp.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -19,9 +20,12 @@ HB.mixin Record IsInhabited T of Choice T := {
   witness : T
 }.
 
-HB.structure Definition IhbType := { A of IsInhabited A }.
+HB.structure Definition IhbType := { T of IsInhabited T & Choice T}.
 
 Arguments witness : clear implicits.
+
+HB.instance Definition _ :=
+(@comparableMixin IhbType.type (fun x y => pselect (x = y))).
 
 (* -------------------------------------------------------------------- *)
 HB.instance Definition unit_ihbType :=
@@ -40,5 +44,5 @@ HB.instance Definition int_ihbType :=
   IsInhabited.Build int 0.
 
 (* -------------------------------------------------------------------- *)
-HB.instance Definition seq_ihbType (T : IhbType.type) := 
+HB.instance Definition seq_ihbType (T : IhbType.type) :=
    IsInhabited.Build (seq.seq T) [::].

@@ -3,10 +3,11 @@ From HB                 Require Import structures.
 From mathcomp.ssreflect Require Import all_ssreflect.
 From mathcomp.algebra   Require Import all_algebra.
 From mathcomp.classical Require Import boolp.
-From mathcomp.analysis  Require Import reals distr.
+From mathcomp.reals     Require Import reals.
+From mathcomp.experimental_reals Require Import distr.
 (* ----------------- *) Require Import inhabited notations.
 
-Require Import Eqdep_dec.
+From Stdlib Require Import Eqdep_dec.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -44,7 +45,7 @@ Record memType_ : Type := mkMem {
   mheap    :> choiceType;
   mget_    :  mheap -> forall (T : IhbType.type), mident -> T;
   mset_    :  mheap -> forall (T : IhbType.type), mident -> T -> mheap;
-  mget_eq_  : forall T m x v, @mget_ (@mset_ m T x v) T x = v; 
+  mget_eq_  : forall T m x v, @mget_ (@mset_ m T x v) T x = v;
   mget_neq_ : forall T U m x y v, (T <> U \/ x != y) ->
                 @mget_ (@mset_ m T x v) U y = @mget_ m U y;
 }.
@@ -113,40 +114,34 @@ Bind Scope syn_scope with expr_.
 
 (* -------------------------------------------------------------------- *)
 Section VarsEqType.
-Variables (T : IhbType.type) (I : eqType).
+  Variables (T : IhbType.type) (I : eqType).
 
-Definition vars_eq (x y : vars_ I T) :=
-  let: Var x := x in let: Var y := y in x == y.
+  Definition vars_eq (x y : vars_ I T) :=
+    let: Var x := x in let: Var y := y in x == y.
 
-Lemma vars_eqP (x y : vars_ I T) : reflect (x = y) (vars_eq x y).
-Proof.
-by case: x y => [x] [y]; apply: (iffP idP) => /= [/eqP->|[->]].
-Qed.
+  Lemma vars_eqP (x y : vars_ I T) : reflect (x = y) (vars_eq x y).
+  Proof.
+    by case: x y => [x] [y]; apply: (iffP idP) => /= [/eqP->|[->]].
+  Qed.
 
-HB.instance Definition vars_eqType :=
-  hasDecEq.Build (vars_ I T) vars_eqP.
+  HB.instance Definition vars_eqType :=
+    hasDecEq.Build (vars_ I T) vars_eqP.
 End VarsEqType.
 
-(*
-Canonical tvars_eqType (I : eqType) :=
-  Equality.copy 
-
-
-Eval hnf in @tag_eqType
-  (EqType ihbType (comparableMixin (fun x y => pselect (x = y))))
-  (vars_eqType^~ I).
-*)
-
 (* -------------------------------------------------------------------- *)
+
 Lemma eq_vars {t u : IhbType.type} (x : vars t) (y : vars u) :
       (Tagged vars y = Tagged vars x)
   <-> (vtype x = vtype y /\ vname x == vname y).
-Proof using Type. (*split.
-+ case: x y => [x] [y]; rewrite /vtype /= => /(@eqP (tvars_eqType ident)).
-  rewrite -tag_eqE /tag_eq /= => /andP[/eqP] /= ->.
-  by rewrite tagged_asE => /eqP[->]; rewrite eqxx.
-+ by case: x y => [x] [y]; rewrite /vtype /= => -[-> /eqP->].
-Qed.*) Admitted.
+Proof.
+  split.
+  - case: x y => [x] [y]; rewrite /vtype /=.
+    unfold Tagged => H.
+    have ? := (existT_inj1 H);subst.
+    have := (existT_inj2 H).
+    by case => ->.
+  - by case: x y => [x] [y]; rewrite /vtype /= => -[-> /eqP->].
+Qed.
 
 (* -------------------------------------------------------------------- *)
 (* Commands *)
@@ -321,7 +316,7 @@ Proof. by case: m x => m1 m2 [x []] /=; apply mget_eq. Qed.
 
 Lemma get_set2_ne {T U} m x y v :
   (T <> U \/ x != y) -> (@coremem2_set m T x v) U y = m U y.
-Proof. 
+Proof.
 case: m x y => m1 m2 [x []] [y []] //= h; apply mget_neq => /=;
   by (elim: h => h; [left | right; apply: contra h => /eqP->]).
 Qed.
@@ -331,7 +326,7 @@ Canonical coremem2_choiceType := Choice.clone coremem2 _.
 (* -------------------------------------------------------------------- *)
 Definition rmem : memType rident := nosimpl {|
   mheap     := Choice.clone coremem2 _;
-  mget_     := coremem2_get; 
+  mget_     := coremem2_get;
   mset_     := coremem2_set;
   mget_eq_  := @get_set2_eq;
   mget_neq_ := @get_set2_ne;
@@ -367,7 +362,7 @@ Notation "` x"      := (@var_ _ _ _ x%V)          : xsyn_scope.
 
 (* -------------------------------------------------------------------- *)
 Section SynInject.
-Context {I1 I2 : eqType} {mem1 : memType I1} {mem2:memType I2} 
+Context {I1 I2 : eqType} {mem1 : memType I1} {mem2:memType I2}
         (h : I1 -> I2) (mh : mem2 -> mem1).
 
 Local Notation vars1 := (vars_ I1).
@@ -428,7 +423,7 @@ Reserved Notation "x # s" (at level 2, format "x # s").
 
 Notation "x # s" := (ivar (pair^~ s) x) : vsyn_scope.
 Notation "e # s" := (irexpr s e) : xsyn_scope.
-Notation "c # s" := (ircmd s c) : syn_scope. 
+Notation "c # s" := (ircmd s c) : syn_scope.
 Notation rmem1 m := (m.1 : mem).
 Notation rmem2 m := (m.2 : mem).
 Notation rprp    := (@prp_ _ rmem).

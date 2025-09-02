@@ -5,7 +5,8 @@
      HB
      elpi
      elpi_elpi
-     mathcomp)
+     mathcomp
+     Stdlib )
   (flags -w -parsing
          -w -projection-no-head-constant
          -w -redundant-canonical-projection

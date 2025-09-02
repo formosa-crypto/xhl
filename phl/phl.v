@@ -3,8 +3,10 @@
 From mathcomp.ssreflect Require Import all_ssreflect.
 From mathcomp.algebra   Require Import all_algebra.
 From mathcomp.classical Require Import boolp.
-From mathcomp.analysis  Require Import ereal reals realseq realsum distr.
+From mathcomp.reals     Require Import reals constructive_ereal.
+From mathcomp.experimental_reals  Require Import realseq realsum distr.
 From xhl.pwhile Require Import notations inhabited pwhile psemantic passn range.
+From xhl.strassen Require Import misc.
 
 Set   Implicit Arguments.
 Unset Strict Implicit.
@@ -119,6 +121,42 @@ Lemma phl_le1 P c Q : phl P c Q '<= 1.
 Proof. by move=> m _ /=; apply/le1_pr. Qed.
 
 (* -------------------------------------------------------------------- *)
+(* ----------------  This would go in distr.v  ------------------------ *)
+Lemma has_esp_pr P Q c1 c2 m: \E?_[ssem c1 m] (fun x : cmem => \P_[ssem c2 x] Q).
+Proof.
+  apply bounded_has_exp.
+  exists 1. move => ?; rewrite ger0_norm.
+  + exact: ge0_pr.
+  by exact: le1_pr.
+Qed.
+
+Lemma espcE {T: choiceType} mu (f : T -> R)  A :
+   espc mu f A = esp (drestr A mu) f / \P_[mu] A .
+Proof.
+  rewrite /espc.
+  erewrite eq_sum; last first.
+  * move => x;rewrite mulrA mulrC; reflexivity.
+  rewrite sumZ mulrC.
+  congr (_ * _).
+  rewrite /esp.
+  apply eq_sum => x.
+  congr (_ * _).
+  rewrite pr_pred1 -pr_drestr /pr.
+  apply eq_psum => r.
+  rewrite !drestrE.
+  by case (pred1 x r); case (A r); rewrite !Monoid.simpm.
+Qed.
+
+Lemma mass_drestr {T: choiceType} (mu : {distr T / R}) A  : \P_[drestr A mu] predT = \P_[mu] A.
+Proof.
+ rewrite pr_drestr /pr.
+ apply eq_psum => x.
+ congr (_ *_).
+ by rewrite /in_mem /= andbC andTb.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+
 Lemma phl_seq_eq R P Q c1 c2 dR dNR dRQ dNRQ d :
      d = dR * dRQ + dNR * dNRQ
   -> phl P     c1 R     '= dR
@@ -132,10 +170,10 @@ move=> -> PR PNR RQ NRQ m Pm /=; rewrite ssemE pr_dlet.
 apply/eqP; rewrite (exp_split R); first by apply: has_esp_pr.
 have [/= /eqP-> /eqP->] := (PR _ Pm, PNR _ Pm); congr (_ + _).
 - case: (dR =P 0) => [->|/eqP nz_dR]; first by rewrite !mul0r.
-  congr (_ * _); rewrite espcE; rewrite -(@eq_exp _ _ _ (fun=> dRQ)).
-  - move=> m'; rewrite dinsupp_restr => /andP[_ Rm'].
-    by apply/esym/eqP; apply: (RQ m' Rm').
-  by rewrite exp_cst mass_drestr mulrAC divff ?mul1r // (eqP (PR m Pm)).
+  congr (_ * _). rewrite espcE. rewrite -(@eq_exp _ _ _ (fun=> dRQ)).
+  - move=> m'; rewrite dinsupp_restr => /andP [_ Rm'].
+    by apply/esym/eqP ; apply: (RQ m' Rm').
+    by rewrite exp_cst mass_drestr  mulrAC divff ?mul1r // (eqP (PR m Pm)).
 - case: (dNR =P 0) => [->|/eqP nz_dNR]; first by rewrite !mul0r.
   congr (_ * _); rewrite espcE; rewrite -(@eq_exp _ _ _ (fun=> dNRQ)).
   - move=> m'; rewrite dinsupp_restr => /andP[_ Rm'].
@@ -144,12 +182,12 @@ have [/= /eqP-> /eqP->] := (PR _ Pm, PNR _ Pm); congr (_ + _).
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma phl_assgn {T : ihbType} Q x (e : expr T) :
+Lemma phl_assgn {T : IhbType.type} Q x (e : expr T) :
   phl (fun m => Q m.[x <- `[{e}] m]) (x <<- e) Q '= 1.
 Proof. by move=> m Qm /=; rewrite !ssemE pr_dunit Qm. Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma phl_rnd {T : ihbType} Q x (e : dexpr T) d :
+Lemma phl_rnd {T : IhbType.type} Q x (e : dexpr T) d :
   let P m :=
     \P_[\dlet_(v <- `[{e}] m) (dunit m.[x <- v])] Q == d
   in phl P (x <$- e) Q '= d.

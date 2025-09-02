@@ -2,7 +2,8 @@
 From mathcomp.ssreflect Require Import all_ssreflect.
 From mathcomp.algebra   Require Import all_algebra.
 From mathcomp.classical Require Import boolp.
-From mathcomp.analysis  Require Import reals realsum distr.
+From mathcomp.reals     Require Import reals.
+From mathcomp.experimental_reals Require Import realsum distr.
 (* ------- *)           Require Import notations.
 
 (* -------------------------------------------------------------------- *)
@@ -20,7 +21,7 @@ Proof. rewrite orbC;apply orlP. Qed.
 Declare Scope assn.
 Delimit Scope assn with A.
 
-Definition predImpl {T} (P Q:pred T) := 
+Definition predImpl {T} (P Q:pred T) :=
    [pred x | P x ==> Q x].
 
 Notation "P /\ Q"   := (predI P%A Q%A) : assn.
@@ -34,5 +35,3 @@ Notation "`[< P >]" := (predP P) : assn.
 
 Definition pswap {A B : Type} (P : pred (A * B)) :=
   [pred m | P (m.2, m.1)].
-
-

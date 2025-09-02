@@ -3,7 +3,8 @@
 From mathcomp.ssreflect Require Import all_ssreflect.
 From mathcomp.algebra   Require Import all_algebra.
 From mathcomp.classical Require Import boolp.
-From mathcomp.analysis  Require Import ereal reals realseq realsum distr.
+From mathcomp.reals     Require Import reals constructive_ereal.
+From mathcomp.experimental_reals  Require Import realseq realsum distr.
 (* ----------------- *) Require Import inhabited passn pwhile.
 
 Set Implicit Arguments.
