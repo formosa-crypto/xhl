@@ -1,6 +1,6 @@
 (* -------------------------------------------------------------------- *)
-From mathcomp Require Import ssreflect eqtype ssrbool ssrnat ssrfun.
-From mathcomp Require Import seq bigop ssralg.
+From mathcomp.ssreflect Require Import all_ssreflect.
+From mathcomp.algebra   Require Import all_algebra.
 
 Set   Implicit Arguments.
 Unset Strict Implicit.

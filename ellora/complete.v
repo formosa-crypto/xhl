@@ -1,11 +1,11 @@
 (* -------------------------------------------------------------------- *)
-(* ------- *) Require Import Setoid Morphisms.
-From mathcomp Require Import all_ssreflect all_algebra.
-From mathcomp.analysis
-  Require Import boolp reals realseq realsum distr.
-From xhl.pwhile
-  Require Import notations inhabited pwhile psemantic passn range.
-(* ------- *) Require Import range ellora sound.
+(* ------- *)            Require Import Setoid Morphisms.
+From mathcomp            Require Import all_ssreflect all_algebra.
+From mathcomp.classical  Require Import boolp.
+From mathcomp.reals      Require Import reals.
+From mathcomp.experimental_reals Require Import  realseq realsum distr.
+From xhl.pwhile Require Import notations inhabited pwhile psemantic passn range.
+(* --------- *) Require Import range ellora sound.
 
 Set   Implicit Arguments.
 Unset Strict Implicit.
@@ -56,14 +56,14 @@ by apply/ESkip.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma cpl_assign {t : ihbType} (x : vars t) e : iscomplete (x <<- e).
+Lemma cpl_assign {t : IhbType.type} (x : vars t) e : iscomplete (x <<- e).
 Proof.
 move=> mu; set Q := POST; apply/(EConseq _ _ (EAssign Q x e)) => //.
 by move=> nu /asboolP ->; apply/asboolP.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma cpl_sample {t : ihbType} (x : vars t) d : iscomplete (x <$- d).
+Lemma cpl_sample {t : IhbType.type} (x : vars t) d : iscomplete (x <$- d).
 Proof.
 move=> mu; set Q := POST; apply/(EConseq _ _ (ESample Q x d)) => //.
 by move=> nu /asboolP ->; apply/asboolP.

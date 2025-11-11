@@ -1,8 +1,11 @@
 (* -------------------------------------------------------------------- *)
-(* ------- *) Require Import Setoid Morphisms.
-From mathcomp Require Import all_ssreflect all_algebra.
-From mathcomp.analysis Require Import boolp ereal reals realseq realsum distr.
+(* ------- *)           Require Import Setoid Morphisms.
+From mathcomp           Require Import all_ssreflect all_algebra.
+From mathcomp.classical Require Import boolp.
+From mathcomp.reals     Require Import reals constructive_ereal.
+From mathcomp.experimental_reals  Require Import realseq realsum distr.
 From xhl.pwhile Require Import notations inhabited pwhile psemantic passn range.
+From xhl.hl Require Import hl.
 
 Set   Implicit Arguments.
 Unset Strict Implicit.

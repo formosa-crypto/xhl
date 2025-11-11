@@ -1,6 +1,12 @@
 (coq.theory
   (name xhl)
   (package xhl)
+  (theories
+     HB
+     elpi
+     elpi_elpi
+     mathcomp
+     Stdlib )
   (flags -w -parsing
          -w -projection-no-head-constant
          -w -redundant-canonical-projection

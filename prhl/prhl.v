@@ -1,7 +1,9 @@
 (* -------------------------------------------------------------------- *)
-(* ------- *) Require Import Setoid Morphisms.
-From mathcomp Require Import all_ssreflect all_algebra.
-From mathcomp.analysis Require Import boolp reals realseq realsum distr.
+From Stdlib             Require Import Setoid Morphisms.
+From mathcomp           Require Import all_ssreflect all_algebra.
+From mathcomp.reals     Require Import reals.
+From mathcomp.classical Require Import boolp.
+From mathcomp.experimental_reals  Require Import realseq realsum distr.
 From xhl.pwhile Require Import notations inhabited pwhile psemantic passn range.
 
 Set   Implicit Arguments.
@@ -188,7 +190,7 @@ by rewrite !ssemE -!dmargin_dunit; apply/iscoupling_prod.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma prhl_assignL {t : ihbType} (x : vars t) (e : expr t) Q :
+Lemma prhl_assignL {t : IhbType.type} (x : vars t) (e : expr t) Q :
   prhl [pred m : rmem | Q m.[~1 x <- `[{ e }] m.1]] (x <<- e) skip Q.
 Proof.
 move=> m /= Qmxe; exists (dunit (m.[~1 x <- `[{ e }] m.1])); last first.
@@ -199,7 +201,7 @@ rewrite !ssemE; apply/(iscoupling_eq _ _ (iscoupling_prod _)).
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma prhl_rndL {t : ihbType} P (x : vars t) (d : dexpr t) Q :
+Lemma prhl_rndL {t : IhbType.type} P (x : vars t) (d : dexpr t) Q :
      P =1 [pred m : rmem
        |  dweight (`[{ d }] m.1) == 1
        & `[< range [pred v | Q m.[~1 x <- v]] (`[{ d }] m.1) >]]

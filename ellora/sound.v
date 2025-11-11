@@ -1,11 +1,12 @@
 (* -------------------------------------------------------------------- *)
 (* ------- *) Require Import Setoid Morphisms.
-From mathcomp Require Import all_ssreflect all_algebra.
-From mathcomp.analysis
-  Require Import boolp reals realseq realsum distr.
-From xhl.pwhile
-  Require Import notations inhabited pwhile psemantic passn range.
-(* ------- *) Require Import range ellora.
+From mathcomp           Require Import all_ssreflect all_algebra.
+From mathcomp.classical Require Import boolp.
+From mathcomp.reals     Require Import reals.
+From mathcomp.experimental_reals Require Import realseq realsum distr.
+From xhl.pwhile Require Import notations inhabited pwhile psemantic passn range.
+From xhl.hl Require Import hl.
+(* ------- *)   Require Import range ellora.
 
 Set   Implicit Arguments.
 Unset Strict Implicit.
@@ -66,10 +67,10 @@ Inductive sellora : dassn -> dassn -> cmd -> Prop :=
 | EOr P1 P2 c Q :
     sellora P1 Q c -> sellora P2 Q c -> sellora (P1 \/ P2)%A Q c
 
-| EAssign {t : ihbType} P (x : vars t) (e : expr t) :
+| EAssign {t : IhbType.type} P (x : vars t) (e : expr t) :
     sellora (P.[fun mu => dssem (x <<- e) mu])%A P (x <<- e)
   
-| ESample {t : ihbType} P (x : vars t) (d : dexpr t) :
+| ESample {t : IhbType.type} P (x : vars t) (d : dexpr t) :
     sellora (P.[fun mu => dssem (x <$- d) mu])%A P (x <$- d)
 
 | ECond P P' Q Q' e c1 c2 :

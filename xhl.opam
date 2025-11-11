@@ -11,12 +11,12 @@ dev-repo:     "git+https://github.com/strub/xhl"
 license:      "CECILL-B"
 
 depends: [
-  "coq"                    { >= "8.10" & < "8.13~" }
-  "dune"                   { >= "2.5.0" }
-  "coq-mathcomp-ssreflect" { >= "1.11" & < "1.12~" }
-  "coq-mathcomp-algebra"
-  "coq-mathcomp-analysis"  { >= "0.3.3" }
-  "coq-mathcomp-finmap"    { >= "1.5" & < "1.6~" }
+  "coq"                    { >= "9.0"   }
+  "dune"
+  "coq-mathcomp-algebra"   { >= "2.4" }
+  "coq-mathcomp-classical" { >= "1.13" }
+  "coq-mathcomp-experimental-reals" { >= "1.13" }
+  "coq-mathcomp-ssreflect" { >= "2.4" }
 ]
 
 build: [ "dune" "build" "-p" name "-j" jobs ]

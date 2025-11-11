@@ -1,4 +1,5 @@
 (* -------------------------------------------------------------------- *)
+From HB       Require Import structures.
 From mathcomp Require Import all_ssreflect all_algebra.
 (* ------- *) Require Import xbigops misc lp.
 
@@ -19,35 +20,19 @@ Context {T : Type}.
 
 Inductive vertex := Vertex of (bool + T).
 
-Coercion vertex_val (v : vertex) : bool + T :=
+Definition vertex_val (v : vertex) : bool + T :=
   let: Vertex v := v in v.
 
-Canonical vertex_subType := [newType for vertex_val].
+HB.instance Definition _ := [isNew for vertex_val].
+
 End Vertex.
 
 Arguments vertex T : clear implicits.
 
-Definition vertex_eqMixin (T : eqType) :=
-  [eqMixin of vertex T by <:].
-Canonical vertex_eqType (T : eqType) :=
-  Eval hnf in EqType (vertex T) (vertex_eqMixin T).
-
-Definition vertex_choiceMixin (T : choiceType) :=
-  [choiceMixin of vertex T by <:].
-Canonical vertex_choiceType (T : choiceType) :=
-  Eval hnf in ChoiceType (vertex T) (vertex_choiceMixin T).
-
-Definition vertex_countMixin (T : countType) :=
-  [countMixin of vertex T by <:].
-Canonical vertex_countType (T : countType) :=
-  Eval hnf in CountType (vertex T) (vertex_countMixin T).
-Canonical vertex_subCountType (T : countType) :=
-  Eval hnf in [subCountType of vertex T].
-
-Definition vertex_finMixin (T : finType) :=
-  [finMixin of vertex T by <:].
-Canonical vertex_finType (T : finType) :=
-  Eval hnf in FinType (vertex T) (vertex_finMixin T).
+HB.instance Definition _ (T : eqType) := [Equality of vertex T by <:].
+HB.instance Definition _ (T : choiceType) := [Choice of vertex T by <:].
+HB.instance Definition _ (T : countType) := [Countable of vertex T by <:].
+HB.instance Definition _ (T : finType) := [Finite of vertex T  by <:].
 
 (* -------------------------------------------------------------------- *)
 Notation "↓ x" := (Vertex (inr x)) (at level 2).
@@ -95,16 +80,13 @@ Proof. by apply/forallP. Qed.
 Record network : predArgType := Network
   { capacity :> {ffun edge T -> R}; _ : isnetwork capacity; }.
 
-Canonical network_subType := Eval hnf in [subType for capacity].
+HB.instance Definition _ := [isSub of network for capacity].
 
-Definition network_eqMixin := Eval hnf in [eqMixin of network by <:].
-Canonical  network_eqType  := Eval hnf in EqType network network_eqMixin.
+HB.instance Definition _ := [Equality of network by <:].
 
-Definition network_of of phant T := network.
-Identity Coercion type_network_of : network_of >-> network.
 End Network.
 
-Notation "{ 'network' T }" := (network_of (Phant T)).
+Notation "{ 'network' T }" := (@network T).
 
 Lemma network_ge0 {T : finType} (g : {network T}) e : 0 <= g e.
 Proof. by case: g => /= g /networkP /(_ e). Qed.
@@ -154,7 +136,8 @@ End IsFlowTh.
 Record flow (g : {network T}) : predArgType := Flow
   { fun_of_flow :> edge T -> R; _ : fun_of_flow \is a g.-flow }.
 
-Canonical flow_subType g := Eval hnf in [subType for @fun_of_flow g].
+HB.instance Definition _ g := [isSub of flow g for @fun_of_flow g].
+
 End Flow.
 
 (* -------------------------------------------------------------------- *)
@@ -246,7 +229,7 @@ Context (f : flow g) (fp : flow (residual f)).
 
 Lemma isflow_addflow : (f \+ fp) \is a g.-flow.
 Proof. apply/isflowP => [e|u v|u] /=.
-+ by have := flow_lecp fp e; rewrite residualE ler_subr_addl.
++ by have := flow_lecp fp e; rewrite residualE lerBrDl.
 + by rewrite opprD [f _]flow_antisym [fp _]flow_antisym.
 + by rewrite big_split /= !flow_kirchnoff addr0.
 Qed.
@@ -276,13 +259,10 @@ Inductive apath := APath (s : seq T) of uniq s && spath s.
 Definition apath_proj (p : apath) :=
   let: APath p _ := p in p.
 
-Canonical apth_subType := Eval hnf in [subType for apath_proj].
-Definition apath_eqMixin := Eval hnf in [eqMixin of apath by <:].
-Canonical apath_eqType := Eval hnf in EqType apath apath_eqMixin.
-Definition apath_choiceMixin := Eval hnf in [choiceMixin of apath by <:].
-Canonical apath_choiceType := Eval hnf in ChoiceType apath apath_choiceMixin.
-Definition apath_countMixin := Eval hnf in [countMixin of apath by <:].
-Canonical apath_countType := Eval hnf in CountType apath apath_countMixin.
+HB.instance Definition _ := [isSub for apath_proj].
+HB.instance Definition _ := [Equality of apath by <:].
+HB.instance Definition _ := [Choice of apath by <:].
+HB.instance Definition _ := [Countable of apath by <:].
 
 Definition aenum : seq apath :=
   pmap insub (flatten
@@ -315,8 +295,7 @@ pose t := map val (enum {: (size s).-tuple T}); exists t.
 by apply/mapP=> /=; exists (in_tuple s) => //; rewrite mem_enum.
 Qed.
 
-Definition apath_finMixin := FinMixin aenum_finAxiom.
-Canonical apath_finType := Eval hnf in FinType apath apath_finMixin.
+HB.instance Definition _ := @isFinite.Build _ aenum aenum_finAxiom.
 
 Coercion path_of_apath (p : apath) :=
   let: APath p _ := p in ⊤ :: (rcons [seq ↓u | u <- p] ⊥).
@@ -677,7 +656,7 @@ Definition flow_of_vector (x : 'rV[R]_ne) :=
   fun e : edge T => x 0 (enum_rank e).
 
 (* -------------------------------------------------------------------- *)
-Definition flow_cost (x : 'rV[R]_ne) :=
+Definition flow_cost (x : 'rV[R]_ne): R^o :=
   fmass (flow_of_vector x).
 
 Lemma flow_cost_is_linear : scalar flow_cost.
@@ -687,10 +666,14 @@ by apply/eq_bigr=> x _; rewrite /flow_of_vector !mxE.
 Qed.
 
 (* -------------------------------------------------------------------- *)
+
+HB.instance Definition _ :=
+  GRing.isLinear.Build _ _ _ _ flow_cost flow_cost_is_linear.
+
 Definition flow_pb :=
   {| lppb_eqs  := flow_eqs;
      lppb_bnd  := \sum_e g e;
-     lppb_cost := Linear flow_cost_is_linear |}.
+     lppb_cost := flow_cost |}.
 
 (* -------------------------------------------------------------------- *)
 Lemma flow_pbP (x : 'rV[R]_ne) (f : edge T -> R) :
@@ -718,7 +701,7 @@ apply/idP/idP => [/lppbP[h _]|].
   * move=> e; rewrite -[e]enum_valK -eq_fx /flow_pb /=.
     case: (enum_val e) => {e} u v; rewrite ler_norml.
     rewrite {1}(bigD1 (v, u)) //= (bigD1 (P := predT) (u, v)) //=.
-    rewrite ler_oppl -(isflow_antisym hf) !ler_paddr //; solve
+    rewrite lerNl -(isflow_antisym hf) !ler_wpDr //; solve
       [ by rewrite sumr_ge0 // => i _; rewrite network_ge0
       | by apply/(isflow_lecp hf)].
   (do! elim/splitW) => i; rewrite !tnth_catlr tnth_map mem_lpeqE /=.
@@ -767,7 +750,7 @@ case/orP=> [/eqP->//|]; elim/vertexW: v vNP => // [|v] vNP h.
     by move=> ha; exists (APath ha).
   case=> ap _; pose fa := addflow (flow_of_apath ap).
   have ltf: `|Flow solx| < `|fa|.
-  * by rewrite fmassD /= ltr_addl flow_of_apath_neq0.
+  * by rewrite fmassD /= ltrDl flow_of_apath_neq0.
   pose z : 'rV[R]_#|{: edge T}| := \row_i fa (enum_val i).
   have /(maxx z): z \in flow_pb.
   * rewrite flow_pb_of_vector; set fb := (X in X \is a _).
@@ -822,4 +805,4 @@ End MaxFlowMinCut.
 End MaxFlow.
 
 (* -------------------------------------------------------------------- *)
-Notation "{ 'network' T }" := (network_of (Phant T)).
+Notation "{ 'network' T }" := (@network T).
