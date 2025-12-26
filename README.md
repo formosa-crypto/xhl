@@ -1,0 +1,1 @@
+Currently requires math-comp/analysis from https://github.com/lyonel2017/analysis/tree/feature-esum-psum
