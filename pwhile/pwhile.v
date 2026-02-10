@@ -155,7 +155,8 @@ Inductive cmd_ : Type :=
 | random {t} of vars t & dexpr t
 | cond       of bexpr & cmd_ & cmd_
 | while      of bexpr & cmd_
-| seqc       of cmd_ & cmd_.
+| seqc       of cmd_ & cmd_
+| call       of nat.
 
 Bind Scope syn_scope with cmd_.
 End Syntax.
@@ -411,6 +412,8 @@ Fixpoint icmd (c : cmd1) : cmd2 :=
 
   | seqc c1 c2 =>
       seqc (icmd c1) (icmd c2)
+
+  | call n => call n
   end.
 End SynInject.
 

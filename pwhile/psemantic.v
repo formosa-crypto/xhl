@@ -142,7 +142,7 @@ Notation "m .[ x <- v ]" := (@mset _ _ (vtype x%V) m (vname x%V) v) : mem_scope.
 
 (* -------------------------------------------------------------------- *)
 Section Semantics.
-Context {X : eqType} {cmem: memType X}.
+  Context {X : eqType} {cmem: memType X} {ps : nat -> (@cmd_  X cmem)}.
 
 Notation vars    := (@vars_ X).
 Notation expr    := (@expr_ X cmem).
@@ -163,7 +163,7 @@ Fixpoint esem {T : Type} (e : expr T) (m : cmem) : T :=
   end.
 
 (* -------------------------------------------------------------------- *)
-Fixpoint ssem_aux (s : cmd) (m : cmem) : mdistr :=
+Fixpoint ssem_aux (l: (nat* cmem) -> mdistr) (s : cmd) (m : cmem) : mdistr :=
   match s with
   | abort => mnull
   | skip  => dunit m
@@ -176,18 +176,26 @@ Fixpoint ssem_aux (s : cmd) (m : cmem) : mdistr :=
 
   | If e then c1 else c2 =>
       match esem e m with
-      | true  => ssem_aux c1 m
-      | false => ssem_aux c2 m
+      | true  => ssem_aux l c1 m
+      | false => ssem_aux l c2 m
       end
 
   | While e Do c =>
-      dlim (fun n => ubn (ssem_aux c) (esem e) n m)
+      dlim (fun n => ubn (ssem_aux l c) (esem e) n m)
 
   | seqc c1 c2 =>
-     \dlet_(m' <- ssem_aux c1 m) (ssem_aux c2 m')
+      \dlet_(m' <- ssem_aux l c1 m) (ssem_aux l c2 m')
+
+  | call n => l (n, m)
   end.
 
-Definition ssem_r s m := ssem_aux s m.
+Fixpoint ubnf (ps: nat -> cmd) n :=
+  fun (a:nat*cmem) =>
+    if n is n.+1 return Distr cmem then
+      ssem_aux (ubnf ps n) (ps (fst a)) (snd a)
+    else dnull.
+
+Definition ssem_r s m := ssem_aux (fun l => dlim (fun n => ubnf ps n l)) s m.
 
 (* -------------------------------------------------------------------- *)
 Fact ssem_key : unit. Proof. by []. Qed.
@@ -260,9 +268,15 @@ Lemma ssem_while_ubn e c m :
   ssem (While e Do c) m = dlim (fun n => ubn (ssem c) (esem e) n m).
 Proof. by rewrite unlock. Qed.
 
+Lemma ssem_callE f m :
+  ssem (call f) m = dlim (fun n => ubnf ps n (f,m)).
+Proof.
+  by rewrite unlock.
+Qed.
+
 Definition semE :=
   (ssem_abortE, ssem_skipE, @ssem_assnE, @ssem_rndE,
-   ssem_ifE   , ssem_seqE , ssem_whileE).
+   ssem_ifE   , ssem_seqE , ssem_whileE, ssem_callE).
 
 Definition bsemE := locked (
   funext ssem_abortE,
@@ -271,7 +285,8 @@ Definition bsemE := locked (
   fun T (x : vars T) (e : expr _) => funext (ssem_rndE x e),
   fun e c1 c2 => funext (ssem_ifE e c1 c2),
   fun c1 c2 => funext (ssem_seqE c1 c2),
-  fun e c => funext (ssem_whileE e c)).
+  fun e c => funext (ssem_whileE e c),
+  fun f => funext (ssem_callE f)).
 
 Lemma sem_seqA c1 c2 c3 :
   ssem ((c1 ;; c2) ;; c3) = ssem (c1 ;; (c2 ;; c3)).
@@ -468,12 +483,11 @@ End Semantics.
 
 (* -------------------------------------------------------------------- *)
 Section EqCmd.
-Context {I : eqType} {M : memType I}.
-
+Context {I : eqType} {M : memType I} {ps : nat -> (@cmd_  I M)}.
 Local Notation cmd := (cmd_ I M).
 
-Definition eqcmd (c1 c2 : cmd) := 
-  forall m, ssem_ c1 m = ssem_ c2 m.
+Definition eqcmd (c1 c2 : cmd) :=
+  forall m, @ssem_ _ _ ps c1 m = @ssem_ _ _ ps c2 m.
 
 Global Instance eqcmd_R : Equivalence eqcmd.
 Proof. 
@@ -548,7 +562,7 @@ Definition mk_seq (c1 c2 : cmd) :=
  
 Fixpoint normc (c : cmd) :=
   match c with
-  | abort | skip | assign _ _ _ | random _ _ _ => c
+  | abort | skip | assign _ _ _ | random _ _ _ | call _ => c
   | cond e c1 c2 => cond e (normc c1) (normc c2)
   | while e c    => while e (normc c)
   | seqc c1 c2   => mk_seq (normc c1) (normc c2)
@@ -597,11 +611,15 @@ by rewrite dlet_unit !semE bm.
 Qed.
 End EqCmd.
 
-Notation "c1 '=C' c2" := (eqcmd c1 c2) (at level 70, no associativity).
+Arguments eqcmd {_} {_} _.
+
+Arguments ssem_ {_} {_} _.
+
+Notation "c1 '=C' c2 ';' ps" := (eqcmd ps c1 c2) (at level 70, no associativity).
 
 (* -------------------------------------------------------------------- *)
-Lemma unrolln_while n (e : expr bool) c :
-  (While e Do c) =C (iterc n (IfT e then c) ;; While e Do c).
+Lemma unrolln_while n (e : expr bool) c ps :
+  (While e Do c) =C (iterc n (IfT e then c) ;; While e Do c) ; ps.
 Proof.
 rewrite ssem_iterop_iter; elim: n => [|n ih] /=.
   by rewrite seq_skip_l.
@@ -609,18 +627,18 @@ by rewrite -seqA -ih => m; rewrite unroll_while.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma if_same (e : expr bool) c : If e then c else c =C c.
+Lemma if_same (e : expr bool) c ps : If e then c else c =C c ; ps.
 Proof. by move=> m; rewrite !semE; case: (esem _ _). Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma if_seq (e : expr bool) c c1 c2 :
-  (If e then c1 else c2 ;; c) =C If e then (c1 ;; c) else (c2 ;; c).
+Lemma if_seq (e : expr bool) c c1 c2 ps :
+  (If e then c1 else c2 ;; c) =C If e then (c1 ;; c) else (c2 ;; c) ; ps.
 Proof. by move=> m; rewrite !semE; case: ifPn. Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma le_while (e : expr bool) c1 c2 m :
-     (forall m, esem e m -> ssem_ c1 m <=1 ssem_ c2 m)
-  -> ssem_ (While e Do c1) m <=1 ssem_ (While e Do c2) m.
+Lemma le_while (e : expr bool) c1 c2 m ps :
+     (forall m, esem e m -> ssem_ ps c1 m <=1 ssem_ ps c2 m)
+  -> ssem_ ps (While e Do c1) m <=1 ssem_ ps (While e Do c2) m.
 Proof.
 move=> lec m'; rewrite !semE; apply/le_dlim/dcvg_whilen => n.
 elim: n m => //= n ihn m {}m'; rewrite !semE.
@@ -628,10 +646,10 @@ by case: ifP => // hem; apply/le_dlet => {} m' //; apply: lec.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma xsplit_while (e e1 e2 : expr bool) c:
+Lemma xsplit_while (e e1 e2 : expr bool) c ps:
      (forall m, esem e2 m -> esem e m)
   -> (forall m, esem e m -> ~~ esem e1 m -> esem e2 m)
-  -> (While e Do c) =C (While e Do (If e1 then c else While e2 Do c)).
+  -> (While e Do c) =C (While e Do (If e1 then c else While e2 Do c)); ps.
 Proof.
 move=> h1 h2 m; apply/distr_eqP => m'.
 rewrite (rwP eqP) eq_le -(rwP andP); split; last first.
@@ -674,40 +692,40 @@ Notation ssem   := (@ssem_ _ cmem).
 Notation mdistr := (Distr cmem).
 Notation mnull  := (@dnull R cmem.(mheap)).
 
-Arguments ssem_ X cmem s%_S m%_M.
+Arguments ssem_ X cmem ps s%_S m%_M.
 Arguments esem X cmem T e%_X m%_M.
 
 Notation "e `_ m" := (@esem _ _ _ e%X m%M) : sem_scope.
 
 (* -------------------------------------------------------------------- *)
-Definition dssem c mu := (\dlet_(m <- mu) ssem c m).
+Definition dssem ps c mu := (\dlet_(m <- mu) ssem ps c m).
 
-Instance dsem_m : Proper (@eqcmd _ _ ==> eq ==> eq) dssem.
+Instance dsem_m ps : Proper (@eqcmd _ _ ps ==> eq ==> eq) (dssem ps).
 Proof. by move=> c1 c2 eqc /= mu _ <-; apply/eq_in_dlet. Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma dssem_abortE mu : dssem abort mu = mnull.
+Lemma dssem_abortE ps mu : dssem ps abort mu = mnull.
 Proof.
 by apply/distr_eqP=> m; rewrite /dssem bsemE dletC dnullE mulr0.
 Qed.
 
-Lemma dssem_skipE mu : dssem skip mu = mu.
+Lemma dssem_skipE ps mu : dssem ps skip mu = mu.
 Proof.
 by apply/distr_eqP=> m; rewrite /dssem bsemE dlet_dunit_id.
 Qed.
 
-Lemma dssem_seqE c1 c2 mu :
-  dssem (c1 ;; c2) mu = dssem c2 (dssem c1 mu).
+Lemma dssem_seqE ps c1 c2 mu :
+  dssem ps (c1 ;; c2) mu = dssem ps c2 (dssem ps c1 mu).
 Proof.
 by apply/distr_eqP=> m; rewrite /dssem bsemE dlet_dlet.
 Qed.
 
 (* -------------------------------------------------------------------- *)
 Definition lossless (P : assn) c :=
-  forall m, m \in P -> dweight (ssem c m) = 1.
+  forall ps m, m \in P -> dweight (ssem ps c m) = 1.
 
 Definition dlossless (P : dassn) c :=
-  forall mu, mu \in P -> dweight (dssem c mu) = 1.
+  forall ps mu, mu \in P -> dweight (dssem ps c mu) = 1.
 
 (* -------------------------------------------------------------------- *)
 Reserved Notation "m .[ x @ s <- v ]"
@@ -753,34 +771,37 @@ Lemma mset_iE {T : IhbType.type} (m : rmem) (x : vars T) (v : T) s :
   (((m#'1).[x <- v], m.1)#s, (m.2, (m#'2).[x <- v])#s)%M.
 Proof. by case:x m s => xid [m1 m2] []. Qed.
 
-Lemma ssem_iE s c (m : rmem): rsem (ircmd s c) m = 
-  \dlet_(m' <- ssem c m#s) dunit ((m', m.1)#s, (m.2, m')#s)%M.
-Proof.
-elim: c m => [||T v e|T v e|e c1 Hc1 c2 Hc2|e c Hc|c1 Hc1 c2 Hc2] [m1 m2].
-+ by rewrite !ssemE dlet_null.
-+ by rewrite !ssemE dlet_unit; case:s.
-+ by rewrite !ssemE esem_iE dlet_unit mset_iE;case:s.
-+ rewrite !ssemE esem_iE dlet_dlet; apply eq_in_dlet => // t _.
-  by rewrite dlet_unit mset_iE;case: s.
-+ by rewrite !ssemE esem_iE;case:ifP.
-+ rewrite !ssemE dlet_lim; last by apply/homo_whilen.
-  apply eq_dlim=> n; elim: n (m1,m2)=> [ | n Hn] m /=.
-  + by rewrite !ssemE dlet_null.
-  rewrite !ssemE esem_iE;case:ifP => _.
-  + rewrite Hc !dlet_dlet;apply eq_in_dlet=>// m' _.
-    by rewrite dlet_unit Hn;case s.
-  by rewrite dlet_unit;case: m s {Hc Hn}=> ?? [].
-rewrite !ssemE Hc1 !dlet_dlet;apply eq_in_dlet=>// m _.
-by rewrite !dlet_unit Hc2;apply eq_in_dlet =>[? _|];case s.
-Qed.
+Definition rps s (ps : nat -> cmd) := fun n => ircmd s (ps n).
 
-Lemma ssem_1E (m : rmem) c :
-  rsem (c#'1) m = \dlet_(m1 <- ssem c m.1) (dunit (m1, m.2)).
-Proof. by apply ssem_iE. Qed.
+(* Lemma ssem_iE ps s c (m : rmem): rsem (rps s ps) (ircmd s c) m = *)
+(*   \dlet_(m' <- ssem ps c m#s) dunit ((m', m.1)#s, (m.2, m')#s)%M. *)
+(* Proof. *)
+(* elim: c m => [||T v e|T v e|e c1 Hc1 c2 Hc2|e c Hc|c1 Hc1 c2 Hc2| n ] [m1 m2]. *)
+(* + by rewrite !ssemE dlet_null. *)
+(* + by rewrite !ssemE dlet_unit; case:s. *)
+(* + by rewrite !ssemE esem_iE dlet_unit mset_iE;case:s. *)
+(* + rewrite !ssemE esem_iE dlet_dlet; apply eq_in_dlet => // t _. *)
+(*   by rewrite dlet_unit mset_iE;case: s. *)
+(* + by rewrite !ssemE esem_iE;case:ifP. *)
+(* + rewrite !ssemE dlet_lim; last by apply/homo_whilen. *)
+(*   apply eq_dlim=> n; elim: n (m1,m2)=> [ | n Hn] m /=. *)
+(*   + by rewrite !ssemE dlet_null. *)
+(*   rewrite !ssemE esem_iE;case:ifP => _. *)
+(*   + rewrite Hc !dlet_dlet;apply eq_in_dlet=>// m' _. *)
+(*     by rewrite dlet_unit Hn;case s. *)
+(*   by rewrite dlet_unit;case: m s {Hc Hn}=> ?? []. *)
+(* + rewrite !ssemE Hc1 !dlet_dlet;apply eq_in_dlet=>// m _. *)
+(*   by rewrite !dlet_unit Hc2;apply eq_in_dlet =>[? _|];case s. *)
+(* rewrite !ssemE dlet_lim. *)
+(* Qed. *)
 
-Lemma ssem_2E (m : rmem) c :
-  rsem (c#'2) m = \dlet_(m2 <- ssem c m.2) (dunit (m.1, m2)).
-Proof. by apply ssem_iE. Qed.
+(* Lemma ssem_1E (m : rmem) c : *)
+(*   rsem (c#'1) m = \dlet_(m1 <- ssem c m.1) (dunit (m1, m.2)). *)
+(* Proof. by apply ssem_iE. Qed. *)
+
+(* Lemma ssem_2E (m : rmem) c : *)
+(*   rsem (c#'2) m = \dlet_(m2 <- ssem c m.2) (dunit (m.1, m2)). *)
+(* Proof. by apply ssem_iE. Qed. *)
 
 (* -------------------------------------------------------------------- *)
 Notation "`[{ e }]" := (@esem _ _ _ e%X) (at level 2, format "`[{ e }]").
