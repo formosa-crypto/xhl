@@ -1,7 +1,6 @@
 (* -------------------------------------------------------------------- *)
 (* ----------------- *) Require Import Setoid Morphisms.
-From mathcomp.ssreflect Require Import all_ssreflect.
-From mathcomp.algebra   Require Import all_algebra.
+From mathcomp Require Import all_boot all_order all_algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals.
 From mathcomp.experimental_reals  Require Import realseq realsum distr.
@@ -12,7 +11,7 @@ Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 Unset SsrOldRewriteGoalsOrder.
 
-Import GRing.Theory Num.Theory.
+Import GRing.Theory Num.Theory Order.Theory.
 
 Local Open Scope ring_scope.
 Local Open Scope syn_scope.
@@ -20,8 +19,8 @@ Local Open Scope sem_scope.
 Local Open Scope mem_scope.
 
 (* -------------------------------------------------------------------- *)
-Definition range {A : choiceType} (P : pred A) (mu : Distr A) := 
-  forall m, m \in dinsupp mu -> P m.  
+Definition range {A : choiceType} (P : pred A) (mu : Distr A) :=
+  forall m, m \in dinsupp mu -> P m.
 
 Section Range.
 Context {A B : choiceType}.
@@ -31,6 +30,15 @@ Proof. by move=> x /dinsuppP; rewrite dnullE. Qed.
 
 Lemma range_dunit (P: pred A) m : P m -> range P (dunit m).
 Proof. by move=> Pm m' /in_dunit ->. Qed.
+
+Lemma range_le (P : pred A) (mu nu : Distr A) :
+  mu <=1 nu -> range P nu -> range P mu.
+Proof.
+move=> le HP x; rewrite !in_dinsupp => xn0; apply: HP.
+have h0 : (0 < mu x)%R by rewrite lt0r xn0 ge0_mu.
+have h1 : (0 < nu x)%R by apply: lt_le_trans h0 (le x).
+by move: h1; rewrite lt0r => /andP[].
+Qed.
 
 Lemma range_dlet (PA : pred A) (PB : pred B) mu f :
     range PA mu -> (forall m, PA m -> range PB (f m))
@@ -50,7 +58,7 @@ Qed.
 Lemma range_dlim P (mu : nat -> Distr A):
   (forall n, range P (mu n)) -> range P (dlim mu).
 Proof. by move=> h m /dinsupp_dlim[k] /h. Qed.
- 
+
 Lemma range_weaken (P1 P2 : pred A) mu:
   (forall x, P1 x -> P2 x) ->
   range P1 mu -> range P2 mu.
@@ -65,10 +73,10 @@ Qed.
 
 Lemma pr_range (mu : Distr A) (E : pred A) :
   \P_[mu] (~ E)%A = 0 <-> range E mu.
-Proof. 
-  split.
-  + by move=> /pr_eq0 h x; apply/contraLR => /h /dinsuppPn. 
-  rewrite /range -(pr_pred0 mu)=> Hin;apply eq_in_pr=> x /Hin.
-  by rewrite /mem /= /in_mem /= => ->.   (* TODO: simplify this *)
+Proof.
+split.
++ by move=> /pr_eq0 h x; apply/contraLR => /h /dinsuppPn.
+rewrite /range -(pr_pred0 mu)=> Hin;apply eq_in_pr=> x /Hin.
+by rewrite /mem /= /in_mem /= => ->.   (* TODO: simplify this *)
 Qed.
 End Range.

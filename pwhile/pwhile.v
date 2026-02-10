@@ -93,7 +93,10 @@ Notation vars_ ident := (vars_of (Phant ident)).
 
 (* -------------------------------------------------------------------- *)
 Section Syntax.
-Context {ident : eqType} {mem : memType ident}.
+  Context
+    {ident : eqType}
+    {mem : memType ident}
+    {fname : eqType}.
 
 Local Notation vars := (vars_ ident).
 
@@ -155,7 +158,8 @@ Inductive cmd_ : Type :=
 | random {t} of vars t & dexpr t
 | cond       of bexpr & cmd_ & cmd_
 | while      of bexpr & cmd_
-| seqc       of cmd_ & cmd_.
+| seqc       of cmd_ & cmd_
+| call       of fname.
 
 Bind Scope syn_scope with cmd_.
 End Syntax.
@@ -341,7 +345,7 @@ Arguments rmem : simpl never.
 (* -------------------------------------------------------------------- *)
 Notation vars    := (vars_ ident).
 Notation expr    := (expr_ _ cmem).
-Notation cmd     := (cmd_  _ cmem).
+Notation cmd     := (cmd_  _ cmem ident).
 Notation bexpr   := (expr bool).
 Notation dexpr T := (expr (Distr T)).
 Notation prp     := (@prp_ _ cmem).
@@ -368,15 +372,15 @@ Notation "` x"      := (@var_ _ _ _ x%V)          : xsyn_scope.
 
 (* -------------------------------------------------------------------- *)
 Section SynInject.
-Context {I1 I2 : eqType} {mem1 : memType I1} {mem2:memType I2}
+Context {I1 I2 fname: eqType} {mem1 : memType I1} {mem2:memType I2}
         (h : I1 -> I2) (mh : mem2 -> mem1).
 
 Local Notation vars1 := (vars_ I1).
 Local Notation vars2 := (vars_ I2).
 Local Notation expr1 := (@expr_ I1 mem1).
 Local Notation expr2 := (@expr_ I2 mem2).
-Local Notation cmd1  := (cmd_  I1 mem1).
-Local Notation cmd2  := (cmd_  I2 mem2).
+Local Notation cmd1  := (cmd_  I1 mem1 fname).
+Local Notation cmd2  := (cmd_  I2 mem2 fname).
 
 Definition ivar {T : IhbType.type} (x : vars1 T) : vars2 T :=
   let: Var x := x in Var T (h x).
@@ -411,19 +415,21 @@ Fixpoint icmd (c : cmd1) : cmd2 :=
 
   | seqc c1 c2 =>
       seqc (icmd c1) (icmd c2)
+
+  | call n => call n
   end.
 End SynInject.
 
 (* -------------------------------------------------------------------- *)
 Notation rvars := (vars_ rident).
 Notation rexpr := (expr_ _ rmem).
-Notation rcmd  := (cmd_  _ rmem).
+Notation rcmd  := (cmd_  _ rmem ident).
 
 Implicit Types (s : side).
 
 Notation   irvar  s := (@ivar  _ _ (fun x => (x, s))) (only parsing).
 Definition irexpr s := (@iexpr _ _ cmem rmem (fun x : ident => (x, s)) (fun m=> (m#s)%M)).
-Definition ircmd  s := (@icmd  _ _ cmem rmem (fun x : ident => (x, s)) (fun m=> (m#s)%M)).
+Definition ircmd  s := (@icmd  _ _ ident cmem rmem (fun x : ident => (x, s)) (fun m=> (m#s)%M)).
 
 Reserved Notation "x # s" (at level 2, format "x # s").
 
