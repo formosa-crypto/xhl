@@ -19,81 +19,100 @@ Local Open Scope sem_scope.
 Local Open Scope mem_scope.
 
 (* -------------------------------------------------------------------- *)
-Section Couplings.
-  Context {A B : choiceType} (μ1 : Distr A) (μ2 : Distr B)
-    (f1: A -> Distr A) (f2: B -> Distr B).
+Section PreCouplings.
+Context {A B : choiceType} (v1 : Distr A) (v2 : Distr B)
+  (f1: A -> Distr A) (f2: B -> Distr B).
 
-  Definition iscoupling (ν : Distr (A * B)) :=
-    \dlet_(m' <- dfst ν) (f1 m') = μ1 /\
-      \dlet_(m' <- dsnd ν) (f2 m')= μ2.
-End Couplings.
+Definition isprecoupling (ν : Distr (A * B)) :=
+  \dlet_(m' <- dfst ν) (f1 m') = v1
+  /\ \dlet_(m' <- dsnd ν) (f2 m') = v2.
 
-(* -------------------------------------------------------------------- *)
-(* Section CouplingsTheory. *)
-(* Context {A B C D : choiceType}. *)
+End PreCouplings.
 
-(* Lemma iscoupling_eq (μ1 μ2 μ1' μ2' : Distr _) (ν : Distr (A * B)) : *)
-(*   μ1 =1 μ1' -> μ2 =1 μ2' -> iscoupling μ1 μ2 ν -> iscoupling μ1' μ2' ν. *)
-(* Proof. by do 2! move=> /distr_eqP->. Qed. *)
+Section PreCouplingsTheory.
 
-(* Lemma iscoupling_prod (μ : Distr (A * B)) : *)
-(*   iscoupling (dfst μ) (dsnd μ) μ. *)
-(* Proof. by []. Qed. *)
+Context {A B C D : choiceType}.
 
-(* Lemma iscoupling_dnull : @iscoupling A B dnull dnull dnull. *)
-(* Proof. by split; rewrite dmarginE dlet_null. Qed. *)
+Lemma isprecoupling_dlet
+  (u1 u2 : Distr _) (f1 f2 : _ -> Distr _) (u: Distr (A * B))
+  (v1 v2 : _ -> Distr _) (g1 g2 : _ -> Distr _) (v: _ -> Distr (C * D)) :
+  isprecoupling u1 u2 f1 f2 u
+  -> (forall x, x \in dinsupp u ->
+    isprecoupling (\dlet_(y <- f1 x.1) (v1 y)) (\dlet_(y <- f2 x.2) (v2 y)) g1 g2 (v x))
+    -> isprecoupling
+      (\dlet_(x <- u1) (v1 x))
+      (\dlet_(x <- u2) (v2 x))
+      g1 g2
+      (\dlet_(x <- u) (v x)).
+Proof.
+move=> [eq1 eq2] hC.
+subst u1 u2.
+split.
++ rewrite dlet_dmargin !dlet_dlet.
+  apply /eq_in_dlet => // y /hC [].
+  by rewrite dlet_dmargin dlet_unit.
+rewrite dlet_dmargin !dlet_dlet.
+apply /eq_in_dlet => // y /hC [].
+by rewrite !dlet_dmargin dlet_unit.
+Qed.
 
-(* Lemma iscoupling_dunit a b : *)
-(*   @iscoupling A B (dunit a) (dunit b) (dunit (a, b)). *)
-(* Proof. by split; rewrite dmarginE dlet_unit. Qed. *)
-
-(* Lemma iscoupling_swap (μ1 μ2 : Distr A) (ν : Distr (A * A)) : *)
-(*   iscoupling μ1 μ2 ν -> iscoupling μ2 μ1 (dswap ν). *)
-(* Proof. *)
-(* case=> <- <-; split; apply/distr_eqP => m; *)
-(*   by rewrite (dfst_dswap, dsnd_dswap). *)
-(* Qed. *)
-
-(* Lemma iscoupling_dlet *)
-(*   (μ1 μ2 : Distr _) (ν : Distr (A * B)) *)
-(*   (θ1 θ2 : _ -> Distr _) (ν' : _ -> Distr (C * D)) : *)
-
-(*      iscoupling μ1 μ2 ν *)
-(*   -> (forall x, x \in dinsupp ν -> *)
-(*         iscoupling (θ1 x.1) (θ2 x.2) (ν' x)) *)
-(*   -> iscoupling *)
-(*        (\dlet_(x <- μ1) (θ1 x)) *)
-(*        (\dlet_(x <- μ2) (θ2 x)) *)
-(*        (\dlet_(x <- ν ) (ν' x)). *)
-(* Proof. *)
-(* move=> [eq1 eq2] hC; split; rewrite !dmargin_dlet; subst μ1 μ2. *)
-(* + by rewrite dlet_dmargin; apply/eq_in_dlet => // x /hC [<- _]. *)
-(* + by rewrite dlet_dmargin; apply/eq_in_dlet => // x /hC [_ <-]. *)
-(* Qed. *)
-
-(* Lemma iscoupling_dlim *)
-(*   (μ1 μ2 : nat -> Distr _) (ν : nat -> Distr (A * B)) : *)
-
-(*      (forall n, iscoupling (μ1 n) (μ2 n) (ν n)) *)
-(*   -> (forall n m, (n <= m)%N -> ν n <=1 ν m) *)
-(*   -> iscoupling (dlim μ1) (dlim μ2) (dlim ν). *)
-(* Proof. *)
-(* move=> hC mono; rewrite /iscoupling !dmarginE !dlet_lim //. *)
-(* by split; apply/eq_dlim => n; case: (hC n). *)
-(* Qed. *)
-(* End CouplingsTheory. *)
+End PreCouplingsTheory.
 
 (* -------------------------------------------------------------------- *)
-Implicit Types P Q S I : rassn.
-Implicit Types c r s      : cmd.
+Implicit Types P Q R I : rassn.
+Implicit Types c r s t : cmd.
 
 (* -------------------------------------------------------------------- *)
-Definition prhl P c1 c2 r1 r2 s1 s2 Q :=
+Definition dprhl P r1 r2 c1 c2 s1 s2 Q :=
   forall m : rmem, P m ->
                    exists2 ν,
-  iscoupling
-    (ssem_aux (seqc r1 c1) m.1)
-    (ssem_aux (seqc r2 c2) m.2)
-    (ssem_aux s1)
-    (ssem_aux s2) ν
+  isprecoupling
+    (ssem (r1 ;; c1) m.1) (ssem (r2 ;; c2) m.2)
+    (ssem s1) (ssem s2)
+    ν
   & range Q ν.
+
+Lemma dprhlw P r1 r2 c1 c2 s1 s2 Q m :
+  dprhl P r1 r2 c1 c2 s1 s2 Q -> P m ->
+    { ν | isprecoupling (ssem (r1 ;; c1) m.1) (ssem (r2 ;; c2) m.2) (ssem s1) (ssem s2) ν & range Q ν }.
+Proof.
+move=> h Pm.
+have: exists ν, 
+  isprecoupling (ssem (r1 ;; c1) m.1) (ssem (r2 ;; c2) m.2) (ssem s1) (ssem s2) ν
+  /\ range Q ν.
++ by case: (h _ Pm) => ν h1 h2; exists ν; split.
+by case/cid=> ν [h1 h2]; exists ν.
+Qed.
+
+Lemma dprhl_skip P r1 r2 Q:
+  (forall m : rmem, P m -> Q m)
+  -> dprhl P r1 r2 skip skip r1 r2 Q.
+Proof.
+move=> H1 m H2.
+exists (dunit m).
++ by split; rewrite dmargin_dunit dlet_unit seq_skip_r.
+by apply/range_dunit/H1/H2.
+Qed.
+
+Lemma dprhl_seq P r1 r2 c1 c2 R t1 t2 c1' c2' s1 s2 Q:
+  dprhl P r1 r2 c1 c2 t1 t2 R
+  -> dprhl R t1 t2 c1' c2' s1 s2 Q
+  -> dprhl P r1 r2 (c1 ;; c1') (c2 ;; c2') s1 s2 Q.
+Proof.
+move=> h1 h2 m Pm.
+case: (h1 _ Pm) => ν hC hR.
+pose f m :=
+  if @idP (m \in dinsupp ν) is ReflectT Rm then
+    tag (dprhlw h2 (hR _ Rm))
+  else dnull.
+exists (\dlet_(m <- ν) f m); last first.
++ apply/(range_dlet hR) => m' Rm'; rewrite /f.
+  case: {-} _ /idP; first by move=> p; case: dprhlw.
+  by move=> _ x /dinsuppP; rewrite dnullE.
+rewrite 2!seqA ssem_seqE [ssem (r2 ;; c2 ;; c2') _]ssem_seqE. 
+apply: isprecoupling_dlet.
++ exact hC.
+move=> m' hm'; rewrite /f; case: {-}_ / idP => //.
+move=> p; case: dprhlw.
+by rewrite !ssemE.
+Qed.
