@@ -1,6 +1,6 @@
 (* -------------------------------------------------------------------- *)
 (* ------- *)           Require Import Setoid Morphisms.
-From mathcomp           Require Import all_ssreflect all_algebra.
+From mathcomp           Require Import all_boot all_order all_algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals constructive_ereal.
 From mathcomp.experimental_reals  Require Import realseq realsum distr.
@@ -158,7 +158,9 @@ move=> {m'} m _ m'; rewrite ssemE; case: ifP=> _.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Definition dassn_map P (F : dmem -> dmem) mu := nosimpl (F mu \in P).
+Definition dassn_map P (F : dmem -> dmem) mu := (F mu \in P).
+
+Arguments dassn_map : simpl never.
 
 Notation "P .[ F ]" := (dassn_map P F) : assn.
 
@@ -166,7 +168,7 @@ Notation "P .[ F ]" := (dassn_map P F) : assn.
 Definition ellora P Q c :=
   forall mu, mu \in P -> dssem c mu \in Q.
 
-Arguments ellora P%A Q%A c.
+Arguments ellora P%_A Q%_A c.
 
 (* -------------------------------------------------------------------- *)
 Lemma ellora_skip P : ellora P P skip.

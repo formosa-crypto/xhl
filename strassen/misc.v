@@ -1,6 +1,6 @@
 (* -------------------------------------------------------------------- *)
 From HB                 Require Import structures.
-From mathcomp.ssreflect Require Import all_ssreflect.
+From mathcomp           Require Import all_boot all_order.
 From mathcomp.algebra   Require Import all_algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals.
@@ -166,7 +166,9 @@ Section Extrema.
              by move=> k; rewrite in_cons => /orP[/eqP->|/ih].
   Qed.
 
-  Definition arg_minr := nosimpl (xchoose arg_min_proof).
+  Definition arg_minr := (xchoose arg_min_proof).
+
+  Arguments arg_minr : simpl never.
 
   CoInductive extremum_spec : I -> Type :=
     ExtremumSpec i of P i & (forall j, P j -> (F i <= F j)%R)
@@ -359,7 +361,7 @@ End Ord.
 
 (* -------------------------------------------------------------------- *)
 Section Matrix.
-  Context (R : ringType) (m n : nat).
+  Context (R : pzRingType) (m n : nat).
 
   Lemma mulmx_sum_rowE (u : 'rV[R]_m) (A : 'M[R]_(m, n)) i :
     (u *m A) 0 i = \sum_j u 0 j * A j i.

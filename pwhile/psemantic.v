@@ -1,6 +1,6 @@
 (* -------------------------------------------------------------------- *)
-(* ----------------- *) Require Import ClassicalFacts Setoid Morphisms.
-From mathcomp.ssreflect Require Import all_ssreflect.
+From Stdlib             Require Import ClassicalFacts Setoid Morphisms.
+From mathcomp           Require Import all_boot all_order.
 From mathcomp.algebra   Require Import all_algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals constructive_ereal.
@@ -134,7 +134,7 @@ Fixpoint ubn {A : choiceType} (f : A -> Distr A) (t : pred A) n := fun a =>
 
 (* -------------------------------------------------------------------- *)
 Reserved Notation "m .[ x <- v ]"
-  (at level 2, x, v at level 200, format "m .[ x  <-  v ]").
+  (at level 1, x, v at level 200, format "m .[ x  <-  v ]").
 
 (* -------------------------------------------------------------------- *)
 Notation "m .[ x ]"      := (@mget _ _ (vtype x%V) m (vname x%V)) : mem_scope.
@@ -154,7 +154,7 @@ Notation mdistr := (Distr cmem.(mheap)).
 Notation mnull  := (@dnull R cmem.(mheap)).
 
 (* -------------------------------------------------------------------- *)
-Fixpoint esem {T : Type} (e : expr T) (m : cmem) : T := 
+Fixpoint esem {T : Type} (e : expr T) (m : cmem) : T :=
   match e in expr_ _ _ T return T with
   | var_ T x => m.[x]
   | cst_ T c => c
@@ -346,6 +346,8 @@ Qed.
 (* -------------------------------------------------------------------- *)
 Definition iterc n (c : cmd) :=
   nosimpl (iterop n seqc c skip).
+
+Arguments iterc : simpl never.
 
 Lemma iterc0 c : iterc 0 c = skip.
 Proof. by []. Qed.
@@ -709,13 +711,13 @@ Definition dlossless (P : dassn) c :=
 
 (* -------------------------------------------------------------------- *)
 Reserved Notation "m .[ x @ s <- v ]"
-  (at level 2, x, s, v at level 200, format "m .[ x @ s  <-  v ]").
+  (at level 1, x, s, v at level 200, format "m .[ x @ s  <-  v ]").
 
 Reserved Notation "m .[~1 x <- v ]"
-  (at level 2, x, v at level 200, format "m .[~1  x  <-  v ]").
+  (at level 1, x, v at level 200, format "m .[~1  x  <-  v ]").
 
 Reserved Notation "m .[~2 x <- v ]"
-  (at level 2, x, v at level 200, format "m .[~2  x  <-  v ]").
+  (at level 1, x, v at level 200, format "m .[~2  x  <-  v ]").
 
 Notation rsem    := (@ssem_ _ rmem).
 Notation rmdistr := (Distr rmem.(mheap)).

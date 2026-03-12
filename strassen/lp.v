@@ -1,13 +1,8 @@
 (* -------------------------------------------------------------------- *)
 From HB                 Require Import structures.
-From mathcomp.ssreflect Require Import all_ssreflect.
+From mathcomp           Require Import all_boot all_order.
 From mathcomp.algebra   Require Import all_algebra.
 (* ----------------- *) Require Import misc.
-(* ======= *)
-(* From HB Require Import structures. *)
-(* From mathcomp Require Import all_ssreflect all_algebra. *)
-(* (* ------- *) Require Import misc. *)
-(* >>>>>>> a315bce (WIP) *)
 
 Set Implicit Arguments.
 Unset Strict Implicit.

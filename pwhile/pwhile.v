@@ -1,6 +1,6 @@
 (* -------------------------------------------------------------------- *)
 From HB                 Require Import structures.
-From mathcomp.ssreflect Require Import all_ssreflect.
+From mathcomp           Require Import all_boot all_order.
 From mathcomp.algebra   Require Import all_algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals.
@@ -53,11 +53,13 @@ Record memType_ : Type := mkMem {
 Section GetSet.
 Variable (M : memType_) (T : IhbType.type).
 
-Definition mget (m : M) (x : mident) :=
-  nosimpl (@mget_ M m T x).
+Definition mget (m : M) (x : mident) := @mget_ M m T x.
 
-Definition mset (m : M) (x : mident) (v : T) :=
-  nosimpl (@mset_ M m T x v).
+Arguments mget : simpl never.
+
+Definition mset (m : M) (x : mident) (v : T) := @mset_ M m T x v.
+
+Arguments mset : simpl never.
 
 End GetSet.
 
@@ -196,11 +198,13 @@ Definition coremem_get := (fun m => let: CoreMem m := m in m).
 
 Coercion coremem_get : coremem >-> Funclass.
 
-Definition coremem_set := nosimpl (fun (m : coremem) {T : IhbType.type} x v =>
+Definition coremem_set := fun (m : coremem) {T : IhbType.type} x v =>
   CoreMem (fun U y =>
     if pselect (T = U) is left eq then
       if x == y then ecast _ _ eq v else m U y
-    else coremem_get m U y)).
+    else coremem_get m U y).
+
+Arguments coremem_set : simpl never.
 
 Lemma get_set_eq {T : IhbType.type} (m : coremem) (x : ident) (v : T) :
   (coremem_set m x v) T x = v.
@@ -324,13 +328,15 @@ Qed.
 Canonical coremem2_choiceType := Choice.clone coremem2 _.
 
 (* -------------------------------------------------------------------- *)
-Definition rmem : memType rident := nosimpl {|
+Definition rmem : memType rident := {|
   mheap     := Choice.clone coremem2 _;
   mget_     := coremem2_get;
   mset_     := coremem2_set;
   mget_eq_  := @get_set2_eq;
   mget_neq_ := @get_set2_ne;
 |}.
+
+Arguments rmem : simpl never.
 
 (* -------------------------------------------------------------------- *)
 Notation vars    := (vars_ ident).

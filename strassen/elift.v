@@ -1,5 +1,5 @@
 (* -------------------------------------------------------------------- *)
-From mathcomp Require Import all_ssreflect all_algebra finmap.
+From mathcomp Require Import all_boot all_order all_algebra finmap.
 From mathcomp.classical Require Import boolp classical_sets.
 From mathcomp.reals Require Import reals.
 From mathcomp.experimental_reals Require Import realsum distr xfinmap.
@@ -97,7 +97,7 @@ Lemma ler_edist ε ε' (μ1 μ2 : distr A) :
   0 <= ε' <= ε -> edist ε μ1 μ2 <= edist ε' μ1 μ2.
 Proof.
 case/andP=> ge0_e' le_e; rewrite /edist !ltNge.
-rewrite ge0_e' (le_trans ge0_e' le_e) /=; apply/le_sup; first last.
+rewrite ge0_e' (le_trans ge0_e' le_e) /=; apply/sup_le; first last.
 - by apply/has_sup_edistp.
 - by exists 0; rewrite -in_setE; apply/z_in_edistp.
 move=> x [S xE]; rewrite xE; apply/downP.
@@ -115,7 +115,7 @@ move=> ge0_e; rewrite edistE //; apply: (iffP idP).
   move=> sle S; rewrite -lerBlDl (le_trans _ sle) //.
   apply/sup_upper_bound; first by apply/has_sup_edistp.
   by exists S.
-move=> led; rewrite sup_le_ub //.
+move=> led; rewrite ge_sup //.
   by case: (has_sup_edistp ε μ1 μ2).
 by apply/ubP=> x [S ->]; rewrite lerBlDr addrC.
 Qed.
@@ -155,14 +155,14 @@ move=> ge0_e ge0_d; apply: (iffP idP) => [led|].
     by move=> i _; rewrite !pr_pred1.    
   exists (fun x => Num.max 0 (di x)); first (move=> [:a]; split).
   + by abstract: a; apply/summable_seqP; exists δ.
-  + rewrite /psum; case: ifP=> _ //; apply/sup_le_ub.
+  + rewrite /psum; case: ifP=> _ //; apply/ge_sup.
       by exists 0; exists fset0; rewrite big_fset0.
     apply/ubP=> _ [S ->]; pose F x := `|Num.max 0 (di x)|.
     rewrite (big_fset_seq F) /=; apply/h.
     by case: S => S /= /canonical_uniq.
   split=> x; first by rewrite le_max lexx.
   by rewrite -lerBlDl le_max /di !pr_pred1 lexx orbT.
-case=> di [sm_di led] [ge0_di lemu]; rewrite edistE 1?sup_le_ub //.
+case=> di [sm_di led] [ge0_di lemu]; rewrite edistE 1?ge_sup //.
 * by exists 0; exists pred0; rewrite !pr_pred0 mulr0 subr0.
 apply/ubP=> _ [S ->]; rewrite /pr.
 set v1 := psum _; set v2 := psum _; apply/(le_trans _ led).
