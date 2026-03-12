@@ -1,6 +1,6 @@
 (* -------------------------------------------------------------------- *)
 From Stdlib             Require Import Setoid Morphisms.
-From mathcomp           Require Import all_ssreflect all_algebra.
+From mathcomp           Require Import all_boot all_order all_algebra.
 From mathcomp.reals     Require Import reals.
 From mathcomp.classical Require Import boolp.
 From mathcomp.experimental_reals  Require Import realseq realsum distr.

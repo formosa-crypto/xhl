@@ -1,5 +1,5 @@
 (* -------------------------------------------------------------------- *)
-From mathcomp.ssreflect Require Import all_ssreflect.
+From mathcomp           Require Import all_boot.
 From mathcomp.algebra   Require Import all_algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals.

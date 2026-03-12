@@ -1,6 +1,6 @@
 (* -------------------------------------------------------------------- *)
 (* ----------------- *) Require Import Setoid Morphisms.
-From mathcomp.ssreflect Require Import all_ssreflect.
+From mathcomp           Require Import all_boot all_order.
 From mathcomp.algebra   Require Import all_algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals constructive_ereal.
@@ -51,7 +51,7 @@ Bind Scope bd_scope with bd.
 Definition phl P c Q r d :=
   forall m : cmem, P m -> r (\P_[ssem c m] Q) d.
 
-Arguments phl _%assn _%syn_scope _%assn _%bd_scope _%ring_scope.
+Arguments phl _%_assn _%_syn_scope _%_assn _%_bd_scope _%_ring_scope.
 
 (* -------------------------------------------------------------------- *)
 Lemma phl_skip P c : phl P skip P '= 1.

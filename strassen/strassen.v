@@ -1,5 +1,5 @@
 (* -------------------------------------------------------------------- *)
-From mathcomp.ssreflect Require Import all_ssreflect.
+From mathcomp Require Import all_boot all_order.
 From mathcomp.algebra   Require Import all_algebra.
 From mathcomp.finmap    Require Import finmap.
 From mathcomp.classical Require Import boolp classical_sets.
@@ -525,7 +525,7 @@ rewrite /i2; case/boolP: {+}sR => hR; last first.
 rewrite /i1; case/boolP: {+}sL => hL.
 + case/boolP: [forall b, C ⇒ b] => [/forallP /=|]; last first.
   * rewrite negb_forall => /existsP [b CNb]; rewrite (bigD1 b) //=.
-    by rewrite -6!addrA ler_wpDr // !addr_ge0 // mulr_ge0 1?ge0.
+    by rewrite -5!addrA ler_wpDr // !addr_ge0 // !mulr_ge0 1?ge0 //.
   move=> CB; rewrite -![in X in _ <= X]addrA ler_wpDl //.
   rewrite /ω [X in X <= _]addrC lerD2l 2?ler_wpDl //.
   by rewrite ler_wpDr //; apply/le_in_pr=> b _ _; apply/CB.
@@ -538,7 +538,7 @@ case/boolP: [exists ab : A * B, C ⇐ (ab.1) && ~~ C ⇒ (ab.2) && (S ab)].
   * by have := hi1; rewrite /i1 -if_neg hL.
   * by rewrite mulr_ge0 ?ge0.
 rewrite negb_exists => /forallP /= hS; rewrite ler_wpDr //.
-rewrite /s1 hR !Monoid.simpm -4!addrA lerDl addrC.
+rewrite /s1 hR !Monoid.simpm -3!addrA lerDl addrC.
 rewrite subr_ge0 !addrA addrAC; set s := _ + s3.
 apply/(@le_trans _ _ (Ω (-ε) * \P_[μ1] [pred a | C ⇐ a] + s2)).
 + rewrite /s2 -mulrDr ler_pM2l ?gt0_Ω // -pr_or_indep.
@@ -559,7 +559,9 @@ Lemma mincut_ω : { C : cut | cweight C NF = ω }.
 Proof. by exists predT; rewrite cweight_cutR. Qed.
 
 (* -------------------------------------------------------------------- *)
-Definition StrassenC := nosimpl (proj1_sig mincut_ω).
+Definition StrassenC := (proj1_sig mincut_ω).
+
+Arguments StrassenC : simpl never.
 
 (* -------------------------------------------------------------------- *)
 Lemma weight_StrassenC : cweight StrassenC NF = ω.
@@ -647,8 +649,11 @@ apply/isdistr_finP=> /=; split => [ab|].
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Definition SμL := nosimpl (mkdistr isdistr_SμL).
-Definition SμR := nosimpl (mkdistr isdistr_SμR).
+Definition SμL := (mkdistr isdistr_SμL).
+Definition SμR := (mkdistr isdistr_SμR).
+
+Arguments SμL : simpl never.
+Arguments SμR : simpl never.
 
 (* -------------------------------------------------------------------- *)
 Lemma FinWeakStrassen : elift ε δ μ1 μ2 S.

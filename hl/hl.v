@@ -1,6 +1,6 @@
 (* -------------------------------------------------------------------- *)
 (* ----------------- *) Require Import Setoid Morphisms.
-From mathcomp.ssreflect Require Import all_ssreflect.
+From mathcomp           Require Import all_boot all_order.
 From mathcomp.algebra   Require Import all_algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals.
@@ -118,7 +118,9 @@ End Hl.
 
 (* -------------------------------------------------------------------- *)
 Definition eqon (X : pred { t : IhbType.type & vars t } ) (m : cmem) :=
-  nosimpl (fun m' : cmem => forall x, x \in X -> m.[tagged x] = m'.[tagged x]).
+  (fun m' : cmem => forall x, x \in X -> m.[tagged x] = m'.[tagged x]).
+
+Arguments eqon : simpl never.
 
 Definition separated X (P : pred dmem) :=
   forall (mu1 mu2 : dmem),

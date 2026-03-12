@@ -1,6 +1,6 @@
 (* -------------------------------------------------------------------- *)
-From mathcomp.ssreflect Require Import all_ssreflect.
-From mathcomp.algebra   Require Import all_algebra.
+From mathcomp Require Import all_boot.
+From mathcomp.algebra Require Import all_algebra.
 
 Set   Implicit Arguments.
 Unset Strict Implicit.
@@ -43,7 +43,7 @@ End PartitionBigSeq.
 
 (* -------------------------------------------------------------------- *)
 Section PartitionBigSeqMul.
-Context {R : ringType} (T U : eqType).
+Context {R : nzRingType} (T U : eqType).
 Context (p : T -> U) (r : seq.seq T) (F : T -> R) (G : U -> R).
 
 Lemma partition_big_seq_mulr_suml : uniq r ->
