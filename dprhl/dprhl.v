@@ -1,8 +1,9 @@
 (* -------------------------------------------------------------------- *)
+
 From Stdlib             Require Import Setoid Morphisms.
 From mathcomp           Require Import all_ssreflect all_algebra.
 From mathcomp.reals     Require Import reals.
-From mathcomp.classical Require Import boolp.
+From mathcomp.classical Require Import boolp classical_sets.
 From mathcomp.experimental_reals  Require Import realseq realsum distr.
 From xhl.pwhile Require Import notations inhabited pwhile psemantic passn range.
 
@@ -13,6 +14,7 @@ Unset SsrOldRewriteGoalsOrder.
 
 Import GRing.Theory Num.Theory Order.Theory.
 
+Local Open Scope classical_set_scope.
 Local Open Scope ring_scope.
 Local Open Scope syn_scope.
 Local Open Scope sem_scope.
@@ -30,6 +32,196 @@ Definition isprecoupling (ν : Distr (A * B)) :=
 End PreCouplings.
 
 Section PreCouplingsTheory.
+
+Section Variables.
+
+Fixpoint fv {T : Type} (e : expr T) : set ident :=
+  match e with
+  | var_ T x => set1 (vname x)
+  | cst_ _ _ => set0
+  | prp_ _ => set0
+  | app_ _ _ l r => fv l `|` fv r
+  end.
+
+Fixpoint read (c : cmd) : set ident :=
+  match c with
+  | abort => set0
+  | skip => set0
+  | assign _ _ e => fv e
+  | random _ _ d => fv d
+  | cond b _ _ => fv b
+  | while b _ => fv b
+  | seqc c1 c2 => read c1 `|` read c2
+  end.
+
+Fixpoint write (c : cmd) : set ident :=
+  match c with
+  | abort => set0
+  | skip => set0
+  | assign _ x _ => set1 (vname x)
+  | random _ x _ => set1 (vname x)
+  | cond _ c1 c2 => write c1 `|` write c2
+  | while _ c => write c
+  | seqc c1 c2 => write c1 `|` write c2
+  end.
+
+Definition disjoint_vars (A B : set ident) :=
+  [disjoint A & B]
+  /\ (forall (T : IhbType.type) (x : vars T), vname x \in A
+      -> forall (P : pred cmem) m v, P m = P m.[x <- v]).
+
+Lemma disjoint_exp {T : IhbType.type} (e : expr T) (x : vars T):
+  disjoint_vars [set vname x] (fv e)
+  -> forall m u, `[{e}] m = `[{e}] m.[x <- u].
+Proof.
+elim e.
++ move=> T1 y /= dv m u.
+  rewrite mget_neq; last by [].
+  right.
+  move: dv=> [/(elimT disj_set2P) + _].
+  rewrite disjoints_subset.
+  move=> /(_ (vname x)) /=.
+  move=> /(_ (Logic.eq_refl _)).
+  admit.
++ by [].
++ move=> p [_ /(_ T x) /=].
+  rewrite in_setE /=.
+  by move=> /(_ (Logic.eq_refl _) p).
+move=> T1 T2 e1 H1 e2 H2 /=.
+move=> [/(elimT disj_set2P) /disjoints_subset Hsubs Hpred] m u.
+rewrite -H2.
++ split; last exact Hpred.
+  apply /(introT disj_set2P).
+  rewrite disjoints_subset.
+  move=> w /Hsubs.
+  rewrite setCU.
+  by case.
++ rewrite -H1.
+  split; last exact Hpred.
+  apply /(introT disj_set2P).
+  rewrite disjoints_subset.
+  move=> w /Hsubs.
+  rewrite setCU.
+  by case.
+by [].
+Admitted.
+
+Lemma disjoint_cmd {T : IhbType.type} (c : cmd) (e : expr T):
+  disjoint_vars (write c) (fv e)
+  -> forall (m m': cmem), m' \in dinsupp (ssem c m)
+  -> `[{e}] m = `[{e}] m'.
+Proof.
+elim c.
++ move=> _ m m'.
+  rewrite ssem_abortE.
+  move=> /dinsuppP.
+  by rewrite dnullE.
++ move=> _ m m'.
+  rewrite ssem_skipE.
+  by move=> /in_dunit ->.
++ move=> t.
+  have <-: T = t.
+  + admit.
+  move=> y e1 /=.
+  move=> H m m'.
+  rewrite ssem_assnE.
+  move=> /in_dunit ->.
+  exact /disjoint_exp/H.
++ move=> t. 
+  have <-: T = t.
+  + admit.
+  move=> y e1.
+  move=> H m m'.
+  rewrite ssem_rndE.
+  move=> /dinsupp_dlet [u] _.
+  rewrite dunit1E.
+  move=> H2.
+  have ->: m' = m.[y <- u].
+  + admit.
+  exact /disjoint_exp/H.
++ move=> e1 c0 Hl c1 Hr.
+  move=> [/(elimT disj_set2P) /disjoints_subset /= + Hpred] m m'.
+  rewrite subUset.
+  move=> [Hsubl Hsubr].
+  rewrite ssem_ifE.
+  case (`[{e1}] m).
+  + apply Hl.
+    split.
+    + apply /(introT disj_set2P).
+      rewrite disjoints_subset.
+      by move=> w /Hsubl.
+    move=> T0 x A.
+    apply Hpred.
+    by rewrite in_setU A.
+  + apply Hr.
+    split.
+    + apply /(introT disj_set2P).
+      rewrite disjoints_subset.
+      by move=> w /Hsubr.
+    move=> T0 x A.
+    apply Hpred.
+    rewrite in_setU.
+    by rewrite A orbT.
++ move=> e1 c0 IH.
+  move=> [/= Hdisj Hpred] m m'.
+  rewrite ssem_whileE.
+  move=> /dinsupp_dlim [k].
+  case k.
+  + move=> /=.
+    rewrite ssem_abortE.
+    move=> /dinsuppP.
+    by rewrite dnullE.
+  move=> n.
+  rewrite whilen_iterc.
+  rewrite ssem_seqE.
+  move=> /dinsupp_dlet [m1].
+  rewrite ssem_ifE ssem_abortE ssem_skipE -in_dinsupp.
+  case (`[{e1}] m1).
+  + move=> _ /dinsuppP.
+    by rewrite dnullE.
+  move=> + /in_dunit ->.
+  move: m1.
+  elim n.
+  + move=> m1.
+    rewrite iterc0 ssem_skipE.
+    by move=> /in_dunit ->.
+  move=> n0 IH2 m1.
+  rewrite itercSr ssem_seqE.
+  move=> /dinsupp_dlet [m2] /IH2 H2.
+  rewrite ssem_ifE -in_dinsupp ssem_skipE.
+  case (`[{e1}] m2); last first.
+  + by move=> /in_dunit ->.
+  rewrite {}H2.
+  apply IH.
+  by split; last exact Hpred.
+move=> c0 Hl c1 Hr.
+move=> [/(elimT disj_set2P) /disjoints_subset /= + Hpred] m m'.
+rewrite subUset.
+move=> [Hsubl Hsubr].
+rewrite ssem_seqE.
+move=> /dinsupp_dlet [m1] /Hl m1v.
+rewrite -in_dinsupp=> H.
+have Hdisjl: disjoint_vars (write c0) (fv e).
++ split.
+  + apply /(introT disj_set2P).
+    rewrite disjoints_subset.
+    by move=> w /Hsubl.
+  move=> T0 x A.
+  apply Hpred.
+  by rewrite in_setU A.
+have Hdisjr: disjoint_vars (write c1) (fv e).
++ split.
+  + apply /(introT disj_set2P).
+    rewrite disjoints_subset.
+    by move=> w /Hsubr.
+  move=> T0 x A.
+  apply Hpred.
+  by rewrite in_setU A orbT.
+move: (Hr Hdisjr m1 m' H)=> <-.
+exact (m1v Hdisjl).
+Admitted.
+
+End Variables.
 
 Context {A B C D : choiceType}.
 
