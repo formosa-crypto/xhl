@@ -36,23 +36,22 @@ Local Open Scope mem_scope.
 (* Section Estate. *)
 
 (*   Variant estate {T}: Type -> Type := *)
-(*     | Abort :  estate T *)
+(*     | Abort : nat -> T ->  estate T *)
 (*     | Ok : T -> estate T. *)
 
 (*   Definition bind A T (f : A ->  estate T) (g : estate A):= *)
 (*     match g with *)
 (*     | Ok x    => f x *)
-(*     | Abort => Abort *)
+(*     | Abort n s => Abort n s *)
 (*   end. *)
 
 (* End Estate. *)
 
+Variant Rnd : Type -> Type :=
+  | GetRnd : forall t : IhbType.type, {distr t / R} -> Rnd t.
 
-  Variant Rnd : Type -> Type :=
-    | GetRnd : forall t : IhbType.type, {distr t / R} -> Rnd t.
-
-  Variant Call : Type -> Type :=
-    | CallE (f:nat) (m: cmem): Call cmem.
+Variant Call : Type -> Type :=
+  | CallE (f:ident) (m: cmem): Call cmem.
 
 Section ParSem.
   (* Notation ecmem := (@Ecmem cmem). *)
@@ -93,14 +92,14 @@ Section ParSem.
     | pwhile.call f => fun m => bind (trigger (CallE f m)) (fun m => Ret m)
   end.
 
-  Definition handle_Call (ps: nat -> cmd) :
+  Definition handle_Call (ps: ident -> cmd) :
     Call ~> itree (Call +' E) :=
     fun T (rc : Call T) =>
       match rc with
       | CallE f m => com_sem (ps f) m
       end.
 
-  Definition interp_call (ps: nat -> cmd)
+  Definition interp_call (ps: ident -> cmd)
     T (t: itree (Call +' E) T) : itree E T :=
     interp_mrec (handle_Call ps) t.
 
@@ -130,7 +129,7 @@ End PropSem.
 
 Section FullSem.
 
-  Definition interp_full (c:cmd) (ps: nat -> cmd) : cmem -> {distr cmem / R} :=
+  Definition interp_full (c:cmd) (ps: ident -> cmd) : cmem -> {distr cmem / R} :=
     fun s => dinterp (interp_call ps (com_sem c s)).
 
 End FullSem.
