@@ -1,9 +1,9 @@
 (* -------------------------------------------------------------------- *)
 
 From Stdlib             Require Import Setoid Morphisms.
-From mathcomp           Require Import all_ssreflect all_algebra.
+From mathcomp           Require Import all_boot all_order all_algebra.
 From mathcomp.reals     Require Import reals.
-From mathcomp.classical Require Import boolp classical_sets.
+From mathcomp.classical Require Import contra boolp classical_sets.
 From mathcomp.experimental_reals  Require Import realseq realsum distr.
 From xhl.pwhile Require Import notations inhabited pwhile psemantic passn range.
 
@@ -70,24 +70,24 @@ Definition disjoint_vars (A B : set ident) :=
   /\ (forall (T : IhbType.type) (x : vars T), vname x \in A
       -> forall (P : pred cmem) m v, P m = P m.[x <- v]).
 
-Lemma disjoint_exp {T : IhbType.type} (e : expr T) (x : vars T):
+Lemma disjoint_exp {T1 T2 : IhbType.type} (e : expr T1) (x : vars T2):
   disjoint_vars [set vname x] (fv e)
   -> forall m u, `[{e}] m = `[{e}] m.[x <- u].
 Proof.
 elim e.
-+ move=> T1 y /= dv m u.
++ move=> T3 y /= dv m u.
   rewrite mget_neq; last by [].
   right.
   move: dv=> [/(elimT disj_set2P) + _].
   rewrite disjoints_subset.
   move=> /(_ (vname x)) /=.
   move=> /(_ (Logic.eq_refl _)).
-  admit.
+  by rewrite contra.Internals.eqType_neqP.
 + by [].
-+ move=> p [_ /(_ T x) /=].
++ move=> p [_ /(_ T2 x) /=].
   rewrite in_setE /=.
   by move=> /(_ (Logic.eq_refl _) p).
-move=> T1 T2 e1 H1 e2 H2 /=.
+move=> T3 T4 e1 H1 e2 H2 /=.
 move=> [/(elimT disj_set2P) /disjoints_subset Hsubs Hpred] m u.
 rewrite -H2.
 + split; last exact Hpred.
@@ -104,7 +104,7 @@ rewrite -H2.
   rewrite setCU.
   by case.
 by [].
-Admitted.
+Qed.
 
 Lemma disjoint_cmd {T : IhbType.type} (c : cmd) (e : expr T):
   disjoint_vars (write c) (fv e)
@@ -120,24 +120,17 @@ elim c.
   rewrite ssem_skipE.
   by move=> /in_dunit ->.
 + move=> t.
-  have <-: T = t.
-  + admit.
   move=> y e1 /=.
   move=> H m m'.
   rewrite ssem_assnE.
   move=> /in_dunit ->.
   exact /disjoint_exp/H.
 + move=> t. 
-  have <-: T = t.
-  + admit.
   move=> y e1.
   move=> H m m'.
   rewrite ssem_rndE.
   move=> /dinsupp_dlet [u] _.
-  rewrite dunit1E.
-  move=> H2.
-  have ->: m' = m.[y <- u].
-  + admit.
+  move=> /in_dunit ->.
   exact /disjoint_exp/H.
 + move=> e1 c0 Hl c1 Hr.
   move=> [/(elimT disj_set2P) /disjoints_subset /= + Hpred] m m'.
@@ -219,7 +212,7 @@ have Hdisjr: disjoint_vars (write c1) (fv e).
   by rewrite in_setU A orbT.
 move: (Hr Hdisjr m1 m' H)=> <-.
 exact (m1v Hdisjl).
-Admitted.
+Qed.
 
 End Variables.
 
@@ -347,6 +340,13 @@ split.
   rewrite ssem_seqE Heq.
   rewrite -/(mselect '1 _) mselect_mset /=.
   under eq_in_dlet => [? _|] do [rewrite ssem_assnE|].
+  rewrite -{1}(dlet_dunit_id (ssem r1 _)).
+  apply eq_in_dlet; last done.
+  move=> /=.
+  move=> m2  /(disjoint_cmd).
+  move=> /(_ T e).
+  admit.
+admit. 
 Admitted.
 
 Lemma dprhl_if P e1 e2 c1 c'1 c2 c'2 Q r1 r2 s1 s2:
