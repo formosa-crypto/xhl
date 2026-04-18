@@ -5,7 +5,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        coq_version: ['9.1.1']=
+        coq_version: ['9.1.1']
         ocaml_version: ['default']
       fail-fast: false
     steps:

@@ -13,19 +13,21 @@ license:      "CECILL-B"
 depends: [
   "rocq-core"                    { (>= "9.0" & < "9.2~") }
   "dune"
-  "coq-mathcomp-algebra"   { >= "2.4" }
-  "coq-mathcomp-classical" { >= "1.13" }
-  "coq-mathcomp-experimental-reals" { >= "1.13" }
-  "coq-mathcomp-ssreflect" { >= "2.4" }
+  "rocq-mathcomp-algebra"   { >= "2.4" }
+  "rocq-mathcomp-classical" { = "dev" }
+  "rocq-mathcomp-analysis" { = "dev" }
+  "rocq-mathcomp-reals" { = "dev" }
+  "rocq-mathcomp-experimental-reals" { = "dev" }
+  "rocq-mathcomp-ssreflect" { >= "2.4" }
 ]
 
 pin-depends: [
-  [ "coq-mathcomp-classical.dev"          "git+https://github.com/lyonel2017/analysis.git#feature-esum-psum" ]
-  [ "coq-mathcomp-reals.dev"              "git+https://github.com/lyonel2017/analysis.git#feature-esum-psum" ]
-  [ "coq-mathcomp-reals-stdlib.dev"       "git+https://github.com/lyonel2017/analysis.git#feature-esum-psum" ]
-  [ "coq-mathcomp-analysis.dev"           "git+https://github.com/lyonel2017/analysis.git#feature-esum-psum" ]
-  [ "coq-mathcomp-analysis-stdlib.dev"    "git+https://github.com/lyonel2017/analysis.git#feature-esum-psum" ]
-  [ "coq-mathcomp-experimental-reals.dev" "git+https://github.com/lyonel2017/analysis.git#feature-esum-psum" ]
+  [ "rocq-mathcomp-classical.dev"          "git+https://github.com/lyonel2017/analysis.git#feature-esum-psum" ]
+  [ "rocq-mathcomp-reals.dev"              "git+https://github.com/lyonel2017/analysis.git#feature-esum-psum" ]
+  [ "rocq-mathcomp-reals-stdlib.dev"       "git+https://github.com/lyonel2017/analysis.git#feature-esum-psum" ]
+  [ "rocq-mathcomp-analysis.dev"           "git+https://github.com/lyonel2017/analysis.git#feature-esum-psum" ]
+  [ "rocq-mathcomp-analysis-stdlib.dev"    "git+https://github.com/lyonel2017/analysis.git#feature-esum-psum" ]
+  [ "rocq-mathcomp-experimental-reals.dev" "git+https://github.com/lyonel2017/analysis.git#feature-esum-psum" ]
 ]
 
 build: [ "dune" "build" "-p" name "-j" jobs ]
