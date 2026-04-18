@@ -90,13 +90,13 @@ Qed.
 
 Lemma hl_if (Pr Po : assn) (e:expr_ X mem bool) (c1 c2:cmd):
   hl (Pr /\ `[{e}])   c1 Po ->
-  hl (Pr /\ `[{~~e}]) c2 Po -> 
+  hl (Pr /\ `[{~~e}]) c2 Po ->
   hl Pr (If e then c1 else c2)%S Po.
 Proof.
 by move=> H1 H2 m Hm; rewrite ssemE; case: ifPn => He;
   [apply H1 | apply H2] => /=; rewrite Hm.
 Qed.
-  
+
 Lemma hl_while (I : assn) (e:expr_ X mem bool) (c:cmd):
   hl (I /\ `[{e}]) c I ->
   hl I (While e Do c) (I /\ `[{~~e}]).
