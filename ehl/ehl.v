@@ -22,8 +22,6 @@ Local Open Scope ereal_dual_scope.
 
 (* -------------------------------------------------------------------- *)
 
-(* f and g are cmem -> R, but should be cmem -> R+oo*)
-
 Definition ehl f c g :=
   forall m : cmem, (espe (ssem c m) g <= f m)%E.
 
