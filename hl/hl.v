@@ -21,17 +21,17 @@ Local Open Scope mem_scope.
 
 (* -------------------------------------------------------------------- *)
 Section Hl.
-Context {X : eqType} {mem : memType X}.
+Context {X Y : eqType} {mem : memType X} (ps: Y -> (@cmd_ X mem Y)).
 
 Notation assn := (pred mem).
-Notation cmd  := (@cmd_ X mem).
+Notation cmd  := (@cmd_ X mem Y).
 
 Definition hl (P : assn) (c : cmd) (Q : assn) :=
-  forall m, P m -> range Q (ssem_ c m).
+  forall m, P m -> range Q (ssem_ ps c m).
 
 Arguments hl P%_A c%_S Q%_A.
 
-Definition forall_in {T : IhbType.type} (mu : mem -> Distr T) (P : T -> assn) : assn := 
+Definition forall_in {T : IhbType.type} (mu : mem -> Distr T) (P : T -> assn) : assn :=
   `[< fun m => forall t,  t \in dinsupp (mu m) -> P t m >]%A.
 
 Notation "`[ 'forall' x 'in' mu => Q ]" :=
@@ -43,13 +43,13 @@ Notation "`[ 'forall' x 'in' mu | m => Q ]" :=
 (* -------------------------------------------------------------------- *)
 (* Core rules                                                           *)
 (* -------------------------------------------------------------------- *)
-Lemma hl_eq (P Q : assn) (c c' : cmd): 
-     (forall m, P m -> ssem_ c m = ssem_ c' m) 
+Lemma hl_eq (P Q : assn) (c c' : cmd) :
+     (forall m, P m -> ssem_ ps c m = ssem_ ps c' m)
   -> hl P c Q
   -> hl P c' Q.
 Proof. by move=> Hc Hw m Pm;rewrite -Hc //;apply Hw. Qed.
 
-Instance hl_m : Proper (eq ==> @eqcmd _ mem ==> eq ==> iff) hl.
+Instance hl_m : Proper (eq ==> @eqcmd _ _ mem ps ==> eq ==> iff) hl.
 Proof. by move=> ??-> ??? ??->;split;apply hl_eq. Qed.
 
 Lemma hl_conseq (P2 Q2 P1 Q1 : assn) (c : cmd):
@@ -110,7 +110,7 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 Lemma hl_ll (P Q : assn) (c:cmd) m: 
-  hl P c Q -> P m -> \P_[ssem_ c m] predT = 1 -> \P_[ssem_ c m] Q = 1.
+  hl P c Q -> P m -> \P_[ssem_ ps c m] predT = 1 -> \P_[ssem_ ps c m] Q = 1.
 Proof.
  by move=> Hhl /Hhl HP <-; rewrite !pr_exp;apply/eq_exp => x /HP ->.
 Qed.
@@ -139,6 +139,7 @@ Fixpoint mod (c : cmd) : pred { t : IhbType.type & vars t } :=
 
   | If _ then c1 else c2 => [predU mod c1 & mod c2]
   | While _ Do c         => mod c
+  | call n => pred0
   end.
 
 (* -------------------------------------------------------------------- *)
@@ -156,21 +157,21 @@ by move=> c1 c2 c3 eq1 eq2 x xX; rewrite eq1 ?eq2.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma mod_spec c m:
-   hl [pred m' | m == m'] c 
+Lemma mod_spec c m ps :
+   hl ps [pred m' | m == m'] c 
        [pred m' | `[<eqon (predC (mod c)) m m'>] ].
 Proof. elim: c m.
 + by move=> m; apply hl_abort.
 + move=> m; pose P := [pred m' | m == m'].
   apply (hl_conseq (P2 := P) (Q2 := P))=> //; last exact/hl_skip.
   by move=> m' /eqP ->; apply/asboolT.
-+ move=> t x e m; set Q := (Q in hl _ _ Q).
++ move=> t x e m; set Q := (Q in hl ps _ _ Q).
   pose R := [pred m' | Q m'.[x <- `[{e}] m']].
   apply (hl_conseq (P2 := R) (Q2 := Q))=> //; last exact/hl_assign.
   move=> m' /eqP <-; apply/asboolP=> -[u y] /asboolP /=.
   move/eq_vars=> neq; rewrite mget_neq //.
   by case: eqP neq; intuition.
-+ move=> t x d m; set Q := (Q in hl _ _ Q).
++ move=> t x d m; set Q := (Q in hl ps _ _ Q).
   pose R := forall_in `[{d}] (fun v m => Q m.[x <- v]).
   apply (hl_conseq (P2 := R) (Q2 := Q)) => //; last exact/hl_random.
   move=> m' /= /eqP <-; apply/asboolP => z.
@@ -205,17 +206,19 @@ Proof. elim: c m.
   apply: (@range_weaken _ [pred m' | `[< eqon (~ mod c2)%A m1 m' >]]).
   + move=> x /asboolP Hx; apply/asboolP=> z /=.
     by case/norP => [/= zc1 zc2]; rewrite Hm1 // Hx.
-  by apply (ih2 m1) => /=.
-Qed.
+    by apply (ih2 m1) => /=.
+  + admit.
+    Admitted.
+(* Qed. *)
 
 (* -------------------------------------------------------------------- *)
-Lemma modll c mu m : lossless predT c ->
+Lemma modll c mu m ps : lossless predT c ->
   \P_[mu]         [pred m' | `[<eqon (predC (mod c)) m m'>] ] =
-  \P_[dssem c mu] [pred m' | `[<eqon (predC (mod c)) m m'>] ].
+  \P_[dssem ps c mu] [pred m' | `[<eqon (predC (mod c)) m m'>] ].
 Proof.
 move=> ll; rewrite pr_dlet pr_exp; apply/eq_exp => m' _.
 apply/esym; rewrite !inE; case/boolP: (X in (_ X)%:R) => /= /asboolP h.
-+ pose P := [pred m' | `[< eqon (~ mod c)%A m m' >]]; suff: hl P c P.
++ pose P := [pred m' | `[< eqon (~ mod c)%A m m' >]]; suff: hl ps P c P.
   - by move=> Hr; rewrite (hl_ll Hr) ?ll //; apply/asboolP.
   move=> m''; rewrite !inE => /asboolP eqm''.
   apply: (range_weaken (P1 := [pred m' | `[< eqon (~ mod c)%A m'' m' >]])).

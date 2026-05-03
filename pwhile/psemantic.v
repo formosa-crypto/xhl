@@ -142,11 +142,11 @@ Notation "m .[ x <- v ]" := (@mset _ _ (vtype x%V) m (vname x%V) v) : mem_scope.
 
 (* -------------------------------------------------------------------- *)
 Section Semantics.
-  Context {X : eqType} {cmem: memType X} {ps : nat -> (@cmd_  X cmem)}.
+  Context {X Y : eqType} {cmem: memType X} {ps : Y -> (@cmd_  X cmem Y)}.
 
 Notation vars    := (@vars_ X).
 Notation expr    := (@expr_ X cmem).
-Notation cmd     := (@cmd_  X cmem).
+Notation cmd     := (@cmd_  X cmem Y).
 Notation bexpr   := (expr bool).
 Notation dexpr T := (expr (Distr T)).
 
@@ -163,7 +163,7 @@ Fixpoint esem {T : Type} (e : expr T) (m : cmem) : T :=
   end.
 
 (* -------------------------------------------------------------------- *)
-Fixpoint ssem_aux (l: (nat* cmem) -> mdistr) (s : cmd) (m : cmem) : mdistr :=
+Fixpoint ssem_aux (l: (Y * cmem) -> mdistr) (s : cmd) (m : cmem) : mdistr :=
   match s with
   | abort => mnull
   | skip  => dunit m
@@ -189,8 +189,8 @@ Fixpoint ssem_aux (l: (nat* cmem) -> mdistr) (s : cmd) (m : cmem) : mdistr :=
   | call n => l (n, m)
   end.
 
-Fixpoint ubnf (ps: nat -> cmd) n :=
-  fun (a:nat*cmem) =>
+Fixpoint ubnf (ps: Y -> cmd) n :=
+  fun (a: Y * cmem) =>
     if n is n.+1 return Distr cmem then
       ssem_aux (ubnf ps n) (ps (fst a)) (snd a)
     else dnull.
@@ -483,14 +483,14 @@ End Semantics.
 
 (* -------------------------------------------------------------------- *)
 Section EqCmd.
-Context {I : eqType} {M : memType I} {ps : nat -> (@cmd_  I M)}.
-Local Notation cmd := (cmd_ I M).
+Context {I J : eqType} {M : memType I} {ps : J -> (@cmd_  I M J)}.
+Local Notation cmd := (cmd_ I M J).
 
 Definition eqcmd (c1 c2 : cmd) :=
-  forall m, @ssem_ _ _ ps c1 m = @ssem_ _ _ ps c2 m.
+  forall m, @ssem_ _ _ _ ps c1 m = @ssem_ _ _ _ ps c2 m.
 
 Global Instance eqcmd_R : Equivalence eqcmd.
-Proof. 
+Proof.
 constructor=> //.
 + by move=> f1 f2 eq s; rewrite eq.
 + by move=> f1 f2 f3 eq1 eq2 s; rewrite eq1.
@@ -611,14 +611,14 @@ by rewrite dlet_unit !semE bm.
 Qed.
 End EqCmd.
 
-Arguments eqcmd {_} {_} _.
+Arguments eqcmd {_} {_} {_} _.
 
-Arguments ssem_ {_} {_} _.
+Arguments ssem_ {_} {_} {_} _.
 
 Notation "c1 '=C' c2 ';' ps" := (eqcmd ps c1 c2) (at level 70, no associativity).
 
 (* -------------------------------------------------------------------- *)
-Lemma unrolln_while n (e : expr bool) c ps :
+Lemma unrolln_while {J: eqType} n (e : expr bool) c (ps: (J -> cmd_ _ _ J)) :
   (While e Do c) =C (iterc n (IfT e then c) ;; While e Do c) ; ps.
 Proof.
 rewrite ssem_iterop_iter; elim: n => [|n ih] /=.
@@ -627,16 +627,17 @@ by rewrite -seqA -ih => m; rewrite unroll_while.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma if_same (e : expr bool) c ps : If e then c else c =C c ; ps.
+Lemma if_same {J: eqType} (e : expr bool) c (ps: (J -> cmd_ _ _ J)) :
+  If e then c else c =C c ; ps.
 Proof. by move=> m; rewrite !semE; case: (esem _ _). Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma if_seq (e : expr bool) c c1 c2 ps :
+Lemma if_seq {J: eqType} (e : expr bool) c c1 c2 (ps: (J -> cmd_ _ _ J)) :
   (If e then c1 else c2 ;; c) =C If e then (c1 ;; c) else (c2 ;; c) ; ps.
 Proof. by move=> m; rewrite !semE; case: ifPn. Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma le_while (e : expr bool) c1 c2 m ps :
+Lemma le_while {J: eqType} (e : expr bool) c1 c2 m (ps: (J -> cmd_ _ _ J)):
      (forall m, esem e m -> ssem_ ps c1 m <=1 ssem_ ps c2 m)
   -> ssem_ ps (While e Do c1) m <=1 ssem_ ps (While e Do c2) m.
 Proof.
@@ -646,7 +647,7 @@ by case: ifP => // hem; apply/le_dlet => {} m' //; apply: lec.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma xsplit_while (e e1 e2 : expr bool) c ps:
+Lemma xsplit_while {J: eqType} (e e1 e2 : expr bool) c (ps: (J -> cmd_ _ _ J)):
      (forall m, esem e2 m -> esem e m)
   -> (forall m, esem e m -> ~~ esem e1 m -> esem e2 m)
   -> (While e Do c) =C (While e Do (If e1 then c else While e2 Do c)); ps.
@@ -688,11 +689,11 @@ by apply: (le_trans (le_whilen _ _ _ _ _)).
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Notation ssem   := (@ssem_ _ cmem).
+Notation ssem   := (@ssem_ _ ident cmem).
 Notation mdistr := (Distr cmem).
 Notation mnull  := (@dnull R cmem.(mheap)).
 
-Arguments ssem_ X cmem ps s%_S m%_M.
+Arguments ssem_ X Y cmem ps s%_S m%_M.
 Arguments esem X cmem T e%_X m%_M.
 
 Notation "e `_ m" := (@esem _ _ _ e%X m%M) : sem_scope.
@@ -700,7 +701,7 @@ Notation "e `_ m" := (@esem _ _ _ e%X m%M) : sem_scope.
 (* -------------------------------------------------------------------- *)
 Definition dssem ps c mu := (\dlet_(m <- mu) ssem ps c m).
 
-Instance dsem_m ps : Proper (@eqcmd _ _ ps ==> eq ==> eq) (dssem ps).
+Instance dsem_m ps : Proper (@eqcmd _ _ _ ps ==> eq ==> eq) (dssem ps).
 Proof. by move=> c1 c2 eqc /= mu _ <-; apply/eq_in_dlet. Qed.
 
 (* -------------------------------------------------------------------- *)
