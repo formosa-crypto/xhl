@@ -81,14 +81,17 @@ Fixpoint beval (σ : store) (b : bexp) : bool :=
 (* ========================================================================= *)
 
 Inductive stmt : Type :=
-  | Sskip   : stmt
-  | Sassign : ident -> aexp -> stmt
-  | Sseq    : stmt -> stmt -> stmt
-  | Sif     : bexp -> stmt -> stmt -> stmt
-  | Sloop   : stmt -> stmt -> stmt
-  | Sbreak  : stmt
-  | Slabel  : label -> stmt -> stmt
-  | Sgoto   : label -> stmt.
+  | Sskip     : stmt
+  | Sassign   : ident -> aexp -> stmt
+  | Sseq      : stmt -> stmt -> stmt
+  | Sif       : bexp -> stmt -> stmt -> stmt
+  | Sloop     : stmt -> stmt -> stmt
+  | Sbreak    : stmt
+  | Scontinue : stmt
+  | Scall     : ident -> stmt
+  | Sreturn   : stmt
+  | Slabel    : label -> stmt -> stmt
+  | Sgoto     : label -> stmt.
 
 Definition Swhile (e: bexp) (s: stmt) :=
   Sloop (Sseq (Sif e Sskip Sbreak) s) Sskip.
@@ -108,7 +111,8 @@ Inductive cont : Type :=
   | Kstop  : cont
   | Kseq   : stmt -> cont -> cont
   | Kloop1: stmt -> stmt -> cont -> cont
-  | Kloop2: stmt -> stmt -> cont -> cont.
+  | Kloop2: stmt -> stmt -> cont -> cont
+  | Kcall: ident -> cont -> cont.
 
 Fixpoint call_cont (k: cont) : cont :=
   match k with
@@ -118,12 +122,11 @@ Fixpoint call_cont (k: cont) : cont :=
   | _ => k
   end.
 
-Fixpoint stop_cont (k: cont) : cont :=
+Definition is_call_cont (k: cont) : Prop :=
   match k with
-  | Kseq s k => stop_cont k
-  | Kloop1 s1 s2 k => stop_cont k
-  | Kloop2 s1 s2 k => stop_cont k
-  | _ => k
+  | Kstop => True
+  | Kcall  _ _ => True
+  | _ => False
   end.
 
 (* ========================================================================= *)
@@ -182,68 +185,99 @@ Fixpoint find_label (lbl: label) (s: stmt) (k: cont)
 Variant state : Type :=
   | State
       (s: stmt)
-      (f: stmt)
+      (f: ident)
       (k: cont)
       (m: store) : state
-  | Final  : store -> state.
+  | Callstate
+      (fd: ident)
+      (k: cont)
+      (m: store) : state
+  | Return  : store -> cont -> state.
+
+Section Sem.
+  Context (ps : ident -> stmt).
 
 Inductive step : state -> state -> Prop :=
 
   (* --- assignment --- *)
-  | step_assign : forall x a κ c σ,
-      step (State (Sassign x a) c κ σ)
-        (State Sskip c κ (supdate σ x (aeval σ a)))
+  | step_assign : forall x a κ f σ,
+      step (State (Sassign x a) f κ σ)
+        (State Sskip f κ (supdate σ x (aeval σ a)))
 
   (* --- sequence --- *)
-  | step_seq:  forall c s1 s2 k σ,
-      step (State (Sseq s1 s2) c k σ)
-           (State s1 c (Kseq s2 k) σ)
-  | step_skip_seq: forall c s k  σ,
-      step (State c Sskip (Kseq s k) σ)
-           (State s c k σ)
-  | step_break_seq: forall c s k  σ,
-      step (State Sbreak c (Kseq s k) σ)
-           (State Sbreak c k  σ)
+  | step_seq:  forall f s1 s2 k σ,
+      step (State (Sseq s1 s2) f k σ)
+           (State s1 f (Kseq s2 k) σ)
+  | step_skip_seq: forall f s k σ,
+      step (State Sskip f (Kseq s k) σ)
+        (State s f k σ)
+  | step_continue_seq: forall f s k σ,
+      step (State Scontinue f (Kseq s k) σ)
+           (State Scontinue f k σ)
+  | step_break_seq: forall f s k  σ,
+      step (State Sbreak f (Kseq s k) σ)
+           (State Sbreak f k  σ)
 
   (* --- if-then-else --- *)
-  | step_ifthenelse:  forall c a s1 s2 k σ b,
+  | step_ifthenelse:  forall f a s1 s2 k σ b,
       beval σ a = b ->
-      step (State (Sif a s1 s2) c k σ)
-           (State (if b then s1 else s2) c k  σ)
+      step (State (Sif a s1 s2) f k σ)
+           (State (if b then s1 else s2) f k  σ)
 
   (* --- loop --- *)
-  | step_loop: forall c s1 s2 k σ,
-      step (State (Sloop s1 s2) c k σ)
-        (State s1 c (Kloop1 s1 s2 k) σ)
-  | step_skip_loop1 : forall s1 s2 c κ σ,
-      step (State Sskip c (Kloop1 s1 s2 κ) σ)
-           (State s2 c (Kloop2 s1 s2 κ) σ)
-  | step_break_loop1 : forall s1 s2 c κ σ,
-      step (State Sbreak c (Kloop1 s1 s2 κ) σ)
-        (State Sbreak c κ σ)
-  | step_skip_loop2: forall c s1 s2 k σ,
-      step (State Sskip c (Kloop2 s1 s2 k) σ)
-        (State (Sloop s1 s2) c k σ)
-  | step_break_loop2: forall c s1 s2 k σ,
-      step (State Sbreak c (Kloop2 s1 s2 k) σ)
-        (State Sskip c k σ)
+  | step_loop: forall f s1 s2 k σ,
+      step (State (Sloop s1 s2) f k σ)
+        (State s1 f (Kloop1 s1 s2 k) σ)
+  | step_skip_loop1 : forall s1 s2 f κ σ x,
+      x = Sskip \/ x = Scontinue ->
+      step (State x f (Kloop1 s1 s2 κ) σ)
+           (State s2 f (Kloop2 s1 s2 κ) σ)
+  | step_break_loop1 : forall s1 s2 f κ σ,
+      step (State Sbreak f (Kloop1 s1 s2 κ) σ)
+        (State Sbreak f κ σ)
+  | step_skip_loop2: forall f s1 s2 k σ,
+      step (State Sskip f (Kloop2 s1 s2 k) σ)
+        (State (Sloop s1 s2) f k σ)
+  | step_break_loop2: forall f s1 s2 k σ,
+      step (State Sbreak f (Kloop2 s1 s2 k) σ)
+        (State Sskip f k σ)
+
+  (* --- return --- *)
+  | step_return_0: forall f k σ ,
+      step (State Sreturn f k σ)
+        (Return σ (call_cont k))
+  | step_skip_call_stop: forall f k σ,
+      is_call_cont k ->
+      step (State Sskip f k σ)
+           (Return σ k)
+
+  (* --- call --- *)
+  | step_call:   forall f f' k σ ,
+      step (State (Scall f) f' k σ)
+           (Callstate f (Kcall f' k) σ)
+
+  (* --- function called --- *)
+  | step_function: forall f k σ,
+      step (Callstate f k σ)
+           (State (ps f) f k σ)
+
+  (* --- function_returns --- *)
+  | step_returnstate: forall f k σ,
+      step (Return σ (Kcall f k))
+           (State Sskip f k σ)
 
   (* --- label --- *)
-  | step_label: forall c lbl s k σ,
-      step (State (Slabel lbl s) c k σ)
-           (State s c k σ)
+  | step_label: forall f lbl s k σ,
+      step (State (Slabel lbl s) f k σ)
+           (State s f k σ)
 
   (* --- goto --- *)
-  | step_goto: forall c lbl k σ s' k',
-      find_label lbl c (call_cont k) = Some (s', k') ->
-      step (State (Sgoto lbl) c k σ)
-           (State  s' c k' σ)
-
-  (* --- stop --- *)
-  | step_skip_stop : forall σ c ,
-      step (State Sskip c Kstop σ)
-           (Final σ)
+  | step_goto: forall f lbl k σ s' k',
+      find_label lbl (ps f) (call_cont k) = Some (s', k') ->
+      step (State (Sgoto lbl) f k σ)
+           (State  s' f k' σ)
 .
+
 
 (* ========================================================================= *)
 (*  7. MULTI-STEP & TERMINATION                                              *)
@@ -251,23 +285,25 @@ Inductive step : state -> state -> Prop :=
 
 Inductive multi_step : state -> state -> Prop :=
   | ms_refl : forall st,
-      multi_step st st
+      multi_step st st (*This is wrong; only if we have a return state *)
   | ms_trans : forall st1 st2 st3,
       step st1 st2 ->
       multi_step st2 st3 ->
       multi_step st1 st3.
 
-Definition initial_state (s : stmt) (σ : store) : state :=
-  State s s Kstop σ.
+Definition initial_state (f : ident) (σ : store) : state :=
+  State (ps f) f Kstop σ.
 
-Definition terminates (s : stmt) (σ σ' : store) : Prop :=
-  multi_step (initial_state s σ) (Final σ').
+Definition terminates (f : ident) (σ σ' : store) : Prop :=
+  multi_step (initial_state f σ) (Return σ' Kstop).
 
 CoInductive diverges : state -> Prop :=
   | div_step : forall st1 st2,
       step st1 st2 ->
       diverges st2 ->
       diverges st1.
+
+End Sem.
 
 (* ========================================================================= *)
 (*  8. EXAMPLE PROGRAMS                                                      *)
@@ -287,9 +323,11 @@ Definition test : stmt :=
     (Slabel "loop"
           (Sgoto "loop")).
 
-Definition truc := initial_state test empty_store.
+Definition ps := fun f => if String.eqb f "main" then test else Sskip.
 
-Goal multi_step truc truc.
+Definition truc := initial_state ps "main" empty_store.
+
+Goal multi_step ps truc (Return empty_store Kstop).
 Proof.
   unfold truc at 1, test.
   eapply ms_trans.
@@ -304,41 +342,40 @@ Proof.
   apply step_goto; simpl ;reflexivity.
   Abort.
 
-(* This those not work! no semantic/ Label should not have associated stmt. Klabel check
- the label if it shoudl continuui, otherwise go into the continuation *)
+(* (* This those not work! no semantic/ Label should not have associated stmt. Klabel check *)
+(*  the label if it shoudl continuui, otherwise go into the continuation *) *)
 
-Definition ex_forward_goto : stmt :=
-  Sseq
-    (Sassign "x" (ANum 0))
-  (Sseq
-    (Swhile BTrue
-      (Sseq
-        (Sif (BNot (BLe (AVar "x") (ANum 9)))
-             (Sgoto "done")
-             Sskip)
-        (Sassign "x" (APlus (AVar "x") (ANum 1)))))
-    (Slabel "done" Sskip)).
+(* Definition ex_forward_goto : stmt := *)
+(*   Sseq *)
+(*     (Sassign "x" (ANum 0)) *)
+(*   (Sseq *)
+(*     (Swhile BTrue *)
+(*       (Sseq *)
+(*         (Sif (BNot (BLe (AVar "x") (ANum 9))) *)
+(*              (Sgoto "done") *)
+(*              Sskip) *)
+(*         (Sassign "x" (APlus (AVar "x") (ANum 1))))) *)
+(*     (Slabel "done" Sskip)). *)
 
-(* --- Example 2: Backward goto (loop without while) ---
+(* (* --- Example 2: Backward goto (loop without while) --- *)
 
-     x := 0;
-     loop: if ¬(x <= 9) then goto done else skip end;
-           x := x + 1;
-           goto loop;
-     done: skip
-*)
+(*      x := 0; *)
+(*      loop: if ¬(x <= 9) then goto done else skip end; *)
+(*            x := x + 1; *)
+(*            goto loop; *)
+(*      done: skip *)
+(* *) *)
 
-Definition ex_backward_goto : stmt :=
-  Sseq
-    (Sassign "x" (ANum 0))
-  (Sseq
-    (Slabel "loop"
-      (Sseq
-        (Sif (BNot (BLe (AVar "x") (ANum 9)))
-             (Sgoto "done")
-             Sskip)
-        (Sseq
-          (Sassign "x" (APlus (AVar "x") (ANum 1)))
-          (Sgoto "loop"))))
-    (Slabel "done" Sskip)).
-
+(* Definition ex_backward_goto : stmt := *)
+(*   Sseq *)
+(*     (Sassign "x" (ANum 0)) *)
+(*   (Sseq *)
+(*     (Slabel "loop" *)
+(*       (Sseq *)
+(*         (Sif (BNot (BLe (AVar "x") (ANum 9))) *)
+(*              (Sgoto "done") *)
+(*              Sskip) *)
+(*         (Sseq *)
+(*           (Sassign "x" (APlus (AVar "x") (ANum 1))) *)
+(*           (Sgoto "loop")))) *)
+(*     (Slabel "done" Sskip)). *)
