@@ -20,8 +20,8 @@ Local Open Scope sem_scope.
 Local Open Scope mem_scope.
 
 (* -------------------------------------------------------------------- *)
-Definition range {A : choiceType} (P : pred A) (mu : Distr A) := 
-  forall m, m \in dinsupp mu -> P m.  
+Definition range {A : choiceType} (P : pred A) (mu : Distr A) :=
+  forall m, m \in dinsupp mu -> P m.
 
 Section Range.
 Context {A B : choiceType}.
