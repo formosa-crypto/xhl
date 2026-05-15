@@ -24,16 +24,21 @@ Section Hl.
 Context {X Y : eqType} {mem : memType X} (ps: Y -> (@cmd_ X mem Y)).
 
 Notation assn := (pred mem).
+Notation assn2 := (mem -> pred mem).
 Notation cmd  := (@cmd_ X mem Y).
 
 Definition psi := Y -> (@cmd_ X mem Y).
+
+(* -------------------------------------------------------------------- *)
+(* Classical Hoare triple                                               *)
+(* -------------------------------------------------------------------- *)
 
 Definition hl_ (ps: psi) (P : assn) (c : cmd) (Q : assn) :=
   forall m, P m -> range Q (ssem_ ps c m).
 
 Arguments hl_ ps P%_A c%_S Q%_A.
 
-Notation hl   := (@hl_ ps).
+Notation hl   := (hl_ ps).
 
 Definition forall_in {T : IhbType.type} (mu : mem -> Distr T) (P : T -> assn) : assn :=
   `[< fun m => forall t,  t \in dinsupp (mu m) -> P t m >]%A.
@@ -45,9 +50,34 @@ Notation "`[ 'forall' x 'in' mu | m => Q ]" :=
   (@forall_in _ mu%A (fun x m => Q)): assn.
 
 (* -------------------------------------------------------------------- *)
+(* Pratical Hoare triple                                                           *)
+(* -------------------------------------------------------------------- *)
+
+Definition khl_ (ps: psi) (P : assn) (c : cmd) (Q : assn2) :=
+  forall m, P m -> range (Q m) (ssem_ ps c m).
+
+Arguments khl_ ps P%_A c%_S Q%_A.
+
+Notation khl   := (khl_ ps).
+
+Lemma khl_hl P c Q :
+  khl P c Q <-> (forall s0, P s0 -> hl (fun s => s == s0) c (Q s0)).
+Proof.
+  split.
+  + by move=> h s0 ?? /eqP ?; subst s0; apply h.
+  by  move => h s hP;apply: (h s hP).
+Qed.
+
+Lemma hl_khl P c Q :
+  khl P c (fun _ => Q) <-> hl P c Q.
+Proof.
+  by split; move => h s hP; apply h.
+Qed.
+
+(* -------------------------------------------------------------------- *)
 (* Core rules                                                           *)
 (* -------------------------------------------------------------------- *)
-Lemma hl_eq (P Q : assn) (c c' : cmd) :
+Lemma hl_eq (P Q: assn) (c c' : cmd) :
      (forall m, P m -> ssem_ ps c m = ssem_ ps c' m)
   -> hl P c Q
   -> hl P c' Q.
@@ -60,7 +90,7 @@ Proof. by move=> ??-> ??? ??->;split;apply hl_eq. Qed.
 
 (* -------------------------------------------------------------------- *)
 
-Lemma hl_conseq (P2 Q2 P1 Q1 : assn) (c : cmd):
+Lemma hl_conseq (P2 Q2 P1 Q1 : assn)(c : cmd):
  (forall m, P1 m -> P2 m) ->
  (forall m, Q2 m -> Q1 m) ->
  hl P2 c Q2 -> hl P1 c Q1.
@@ -75,7 +105,7 @@ Proof. by []. Qed.
 (* -------------------------------------------------------------------- *)
 
 Lemma hl_skip (P : assn) : hl P skip P.
-Proof. by move=> ??;rewrite ssemE;apply range_dunit. Qed.
+Proof. by move=> ??; rewrite ssemE;apply range_dunit. Qed.
 
 (* -------------------------------------------------------------------- *)
 
@@ -134,7 +164,7 @@ Qed.
 
 (** Definition of a procedure contract **)
 
-Definition clause : Type := assn * assn.
+Definition clause : Type := assn * assn2.
 
 Definition get_pre (an:clause) :=
   let (pre,post) := an in
@@ -148,37 +178,125 @@ Definition phi : Type := Y -> clause.
 
 (** Hoare triple for a com with procedure context **)
 
-Definition hoare_triple_ctx (cl : phi) (ps: psi) (P: assn) (Q: assn) (c: cmd) :=
-  (forall p, hl_ ps (get_pre (cl p)) (call p) (get_post (cl p))) ->
-  hl_ ps P c Q.
+Definition hoare_triple_ctx (cl : phi) (ps: psi) (P: assn) (Q: assn2) (c: cmd) :=
+  (forall p, khl_ ps (get_pre (cl p)) (call p) (get_post (cl p))) ->
+  khl_ ps P c Q.
 
 (** Hoare triple for a procedure with procedure context **)
 
 Definition hoare_triple_proc_ctx (cl : phi) (ps_init :psi):=
   forall p ps, hoare_triple_ctx cl ps (get_pre (cl p)) (get_post (cl p)) (ps_init p).
 
-Lemma recursive_proc :
-  forall ps cl,
-  hoare_triple_proc_ctx cl ps ->
-  (forall p, hl_ ps (get_pre (cl p)) (call p) (get_post (cl p))).
+
+Fixpoint inliner (c:cmd) inline :=
+  match c with
+  | seqc p1 p2 => seqc (inliner p1 inline) (inliner p2 inline)
+  | cond b p1 p2 => cond b (inliner p1 inline) (inliner p2 inline)
+  | while b p => while b (inliner p inline)
+  | call f => inline f
+  | _ => c
+  end.
+
+Fixpoint k_inliner1 n (c:cmd) (ps : psi) :=
+  match n with
+  | 0 => while (cst_ true) skip
+  | S n' => inliner c (fun f => k_inliner1 n' (ps f) ps)
+  end.
+
+Definition k_inliner_ps n ps := fun p => k_inliner1 n (ps p) ps.
+
+Lemma test4 (ps' : psi) p s :
+  ssem_ (k_inliner_ps 0 ps') (call p) s = dnull.
+Proof.
+have ubnL : forall n m, ubn (@dunit R _) (fun _ : mem => true) n m = dnull.
++ elim=> [|n IHn] m //=.
+  by rewrite dlet_unit IHn.
+rewrite semE.
+rewrite (eq_dlim (gn := fun _ => dnull)); last by rewrite dlimC.
+case=> [|n] //=.
+rewrite (eq_dlim (gn := fun _ => dnull)); last by rewrite dlimC.
+by move=> k /=; rewrite ubnL.
+Qed.
+
+Lemma test3 (ps' : psi) c s:
+  ssem_ ps' (inliner c ps') s =  ssem_ ps' c s.
+Proof.
+Admitted.
+
+Lemma test5 (ps1 : psi) c s n:
+  forall ps2,
+  ssem_ ps2 (k_inliner1 (S n) c ps1) s = ssem_ (k_inliner_ps n ps1) c s.
 Proof.
   Admitted.
-(*   intros. *)
-(*   apply i_hoare_triple_hoare_triple. *)
-(*   intros n. *)
-(*   generalize dependent p. *)
-(*   induction n. *)
-(*   - intros p s s' HPre Heval. *)
-(*     inversion Heval;subst. *)
-(*     apply ceval_inf_loop in H1. *)
-(*     contradiction H1. *)
-(*   - intros p s s' HPre Heval. *)
-(*     eapply H. *)
-(*     + apply IHn. *)
-(*     + apply HPre. *)
-(*     + apply Inline1.n_inline_ps_inline in Heval. *)
-(*       apply Heval. *)
-(* Qed. *)
+
+(* Lemma test ps' c s n: *)
+(*   forall ps1 ps2, *)
+(*   ssem_ ps1 (k_inliner1 n c ps') s = ssem_ ps2 (k_inliner1 n c ps') s. *)
+(* Proof. *)
+(* Admitted. *)
+
+Lemma test2 (ps' : psi) c s n:
+  ssem_ (k_inliner_ps n.+1 ps') c s =
+    (ssem_ (k_inliner_ps n ps') (inliner c ps') s).
+Proof.
+  Admitted.
+
+Fixpoint k_inliner2 n (c:cmd) (ps : psi) :=
+  match n with
+  | 0 => c
+  | S n' => inliner c (fun f => k_inliner2 n' (ps f) ps)
+  end.
+
+Lemma ubnf_dnull (ps' : psi) c n s:
+ ssem_aux (ubnf ps' n) c s =
+   ssem_aux (fun _ => dnull) (k_inliner2 n c ps') s.
+Proof.
+Admitted.
+
+Definition false_ps : psi := (fun _ => while (cst_ true) skip).
+
+Lemma ubnf_ssem_ (ps' : psi) c n s:
+  ssem_aux (fun _ => dnull) (k_inliner2 n c ps') s =
+  ssem_ false_ps (k_inliner2 n c ps') s.
+Proof.
+Admitted.
+
+Lemma test9 (ps' : psi) c n s:
+  forall ps0,
+    ssem_ false_ps (k_inliner2 n c ps') s =
+    ssem_ ps0 (k_inliner1 (S n) c ps') s.
+Proof.
+Admitted.
+
+Lemma test8 (ps' : psi) c s:
+  ssem_ ps' c s =
+  \dlim_(n) ssem_aux (ubnf ps n) c s.
+Proof.
+Admitted.
+
+
+Lemma test1 (ps' : psi) c s:
+  \dlim_(n) ssem_ (k_inliner_ps n ps') c s =
+  ssem_ ps' c s.
+Proof.
+Admitted.
+
+Lemma recursive_proc ps' cl' :
+  hoare_triple_proc_ctx cl' ps' ->
+  (forall p, khl_ ps' (get_pre (cl' p)) (call p) (get_post (cl' p))).
+Proof.
+  move => h p s hP.
+  rewrite -test1.
+  apply/range_dlim=> n.
+  revert hP; revert p; revert s.
+  elim : n => [| n Hn].
+  + move => ???. rewrite test4.
+    by  apply range_dnull.
+  move => s p hP.
+  rewrite test2.
+  apply: h => // p0 s0 hP0.
+  by apply: Hn.
+Qed.
 
 (** Modular Hoare Triple Verification **)
 
@@ -186,13 +304,12 @@ Theorem recursion_hoare_triple :
   forall P Q c cl,
     hoare_triple_proc_ctx cl ps  ->
     hoare_triple_ctx cl ps P Q c ->
-    hl P c Q.
+    khl P c Q.
 Proof.
   move => ???? H H0.
   apply H0.
   by apply: recursive_proc.
 Qed.
-
 
 (* -------------------------------------------------------------------- *)
 Lemma hl_ll (P Q : assn) (c:cmd) m:
@@ -244,20 +361,20 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 Lemma mod_spec c m ps :
-   hl ps [pred m' | m == m'] c
+   hl_ ps [pred m' | m == m'] c
        [pred m' | `[<eqon (predC (mod c)) m m'>] ].
 Proof. elim: c m.
 + by move=> m; apply hl_abort.
 + move=> m; pose P := [pred m' | m == m'].
   apply (hl_conseq (P2 := P) (Q2 := P))=> //; last exact/hl_skip.
   by move=> m' /eqP ->; apply/asboolT.
-+ move=> t x e m; set Q := (Q in hl ps _ _ Q).
++ move=> t x e m; set Q := (Q in hl_ ps _ _ Q).
   pose R := [pred m' | Q m'.[x <- `[{e}] m']].
   apply (hl_conseq (P2 := R) (Q2 := Q))=> //; last exact/hl_assign.
   move=> m' /eqP <-; apply/asboolP=> -[u y] /asboolP /=.
   move/eq_vars=> neq; rewrite mget_neq //.
   by case: eqP neq; intuition.
-+ move=> t x d m; set Q := (Q in hl ps _ _ Q).
++ move=> t x d m; set Q := (Q in hl_ ps _ _ Q).
   pose R := forall_in `[{d}] (fun v m => Q m.[x <- v]).
   apply (hl_conseq (P2 := R) (Q2 := Q)) => //; last exact/hl_random.
   move=> m' /= /eqP <-; apply/asboolP => z.
@@ -304,7 +421,7 @@ Lemma modll c mu m ps : lossless predT c ->
 Proof.
 move=> ll; rewrite pr_dlet pr_exp; apply/eq_exp => m' _.
 apply/esym; rewrite !inE; case/boolP: (X in (_ X)%:R) => /= /asboolP h.
-+ pose P := [pred m' | `[< eqon (~ mod c)%A m m' >]]; suff: hl ps P c P.
++ pose P := [pred m' | `[< eqon (~ mod c)%A m m' >]]; suff: hl_ ps P c P.
   - by move=> Hr; rewrite (hl_ll Hr) ?ll //; apply/asboolP.
   move=> m''; rewrite !inE => /asboolP eqm''.
   apply: (range_weaken (P1 := [pred m' | `[< eqon (~ mod c)%A m'' m' >]])).

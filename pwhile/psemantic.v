@@ -38,9 +38,9 @@ Lemma funext2 : forall {T U V : Type} (f g : T -> U -> V),
 Proof. by move=> T U V f g eq; apply/funext=> x; apply/funext. Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma distr_eqP {T : choiceType} (f1 f2 : Distr T): 
+Lemma distr_eqP {T : choiceType} (f1 f2 : Distr T):
   f1 =1 f2 <-> f1 = f2.
-Proof. 
+Proof.
 split=> [|->] //; case: f1 f2 => [mu1 ge0_1 s1 le1_1] [mu2 ge0_2 s2 le1_2].
 move/funext => /= eq_mu; have PI (A : Prop): A \/ ~ A by case: (asboolP A); auto.
 by subst; f_equal; apply proof_irrelevance_cci.
