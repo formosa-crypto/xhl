@@ -203,43 +203,7 @@ Fixpoint k_inliner1 n (c:cmd) (ps : psi) :=
   | S n' => inliner c (fun f => k_inliner1 n' (ps f) ps)
   end.
 
-Definition k_inliner_ps n ps := fun p => k_inliner1 n (ps p) ps.
-
-Lemma test4 (ps' : psi) p s :
-  ssem_ (k_inliner_ps 0 ps') (call p) s = dnull.
-Proof.
-have ubnL : forall n m, ubn (@dunit R _) (fun _ : mem => true) n m = dnull.
-+ elim=> [|n IHn] m //=.
-  by rewrite dlet_unit IHn.
-rewrite semE.
-rewrite (eq_dlim (gn := fun _ => dnull)); last by rewrite dlimC.
-case=> [|n] //=.
-rewrite (eq_dlim (gn := fun _ => dnull)); last by rewrite dlimC.
-by move=> k /=; rewrite ubnL.
-Qed.
-
-Lemma test3 (ps' : psi) c s:
-  ssem_ ps' (inliner c ps') s =  ssem_ ps' c s.
-Proof.
-Admitted.
-
-Lemma test5 (ps1 : psi) c s n:
-  forall ps2,
-  ssem_ ps2 (k_inliner1 (S n) c ps1) s = ssem_ (k_inliner_ps n ps1) c s.
-Proof.
-  Admitted.
-
-(* Lemma test ps' c s n: *)
-(*   forall ps1 ps2, *)
-(*   ssem_ ps1 (k_inliner1 n c ps') s = ssem_ ps2 (k_inliner1 n c ps') s. *)
-(* Proof. *)
-(* Admitted. *)
-
-Lemma test2 (ps' : psi) c s n:
-  ssem_ (k_inliner_ps n.+1 ps') c s =
-    (ssem_ (k_inliner_ps n ps') (inliner c ps') s).
-Proof.
-  Admitted.
+Definition k_inliner_ps1 n ps := fun p => k_inliner1 n (ps p) ps.
 
 Fixpoint k_inliner2 n (c:cmd) (ps : psi) :=
   match n with
@@ -247,13 +211,229 @@ Fixpoint k_inliner2 n (c:cmd) (ps : psi) :=
   | S n' => inliner c (fun f => k_inliner2 n' (ps f) ps)
   end.
 
-Lemma ubnf_dnull (ps' : psi) c n s:
+Definition k_inliner_ps2 n ps := fun p => k_inliner2 n (ps p) ps.
+
+Definition false_ps : psi := (fun _ => while (cst_ true) skip).
+
+
+Lemma ssem_loop_while (ps' : psi) s:
+  ssem_ ps' (While true%:S Do skip) s = dnull.
+Proof.
+  rewrite semE //=.
+  rewrite (eq_dlim (gn := fun _ => dnull)); last by rewrite dlimC.
+  move=> k /=.
+  elim k => [|{}k IHk] //=.
+  +   by rewrite semE.
+  by rewrite !semE dlet_unit IHk.
+Qed.
+
+Lemma ubnf_dnull n p s:
+  (ubnf false_ps) n (p, s) = dnull.
+Proof.
+case n => [|{}n] //=.
+rewrite (eq_dlim (gn := fun _ => dnull)); last by rewrite dlimC.
+move=> k /=.
+elim k => [|{}k IHk] //=.
+by rewrite dlet_unit IHk.
+Qed.
+
+Lemma ssem_false_ps p s :
+  ssem_ false_ps (call p) s = dnull.
+Proof.
+rewrite semE.
+rewrite (eq_dlim (gn := fun _ => dnull)); last by rewrite dlimC.
+move => n.
+exact: ubnf_dnull.
+Qed.
+
+  (* Lemma inline2_def m: forall i ps, *)
+  (*   k_inliner (S m) i ps = inliner (k_inliner m i ps) ps. *)
+  (* Proof. *)
+
+Lemma kinliner1_cseq n ps' p1 p2: k_inliner1 (S n) (seqc p1 p2) ps' =
+                                seqc (k_inliner1 (S n) p1 ps') (k_inliner1 (S n) p2 ps').
+Proof.
+  reflexivity.
+Qed.
+
+Lemma kinliner1_cif n ps' b p1 p2: k_inliner1 (S n) (cond b p1 p2) ps' =
+                                 cond b (k_inliner1 (S n) p1 ps') (k_inliner1 (S n) p2 ps').
+Proof.
+  reflexivity.
+Qed.
+
+Lemma kinliner1_cwhile n ps' p b: k_inliner1 (S n) (while b p) ps' =
+                                           while b (k_inliner1 (S n) p ps').
+Proof.
+  reflexivity.
+Qed.
+
+Lemma kinliner1_ccall n f ps' :
+  k_inliner1 (S n) (call f) ps' = k_inliner1 n (ps' f) ps'.
+Proof.
+  reflexivity.
+Qed.
+
+
+Lemma kinliner2_cseq n ps' p1 p2: k_inliner2 (S n) (seqc p1 p2) ps' =
+                                seqc (k_inliner2 (S n) p1 ps') (k_inliner2 (S n) p2 ps').
+Proof.
+  reflexivity.
+Qed.
+
+Lemma kinliner2_cif n ps' b p1 p2: k_inliner2 (S n) (cond b p1 p2) ps' =
+                                 cond b (k_inliner2 (S n) p1 ps') (k_inliner2 (S n) p2 ps').
+Proof.
+  reflexivity.
+Qed.
+
+Lemma kinliner2_cwhile n ps' p b: k_inliner2 (S n) (while b p) ps' =
+                                           while b (k_inliner2 (S n) p ps').
+Proof.
+  reflexivity.
+Qed.
+
+Lemma kinliner2_ccall n f ps' :
+  k_inliner2 (S n) (call f) ps' = k_inliner2 n (ps' f) ps'.
+Proof.
+  reflexivity.
+Qed.
+
+
+Lemma inline12_split n m (ps1 : psi) c :
+  k_inliner1 (S n) (k_inliner2 m c ps1) ps1 =
+  k_inliner1 ((S n) + m) c ps1.
+Proof.
+  move: n c ps1.
+  elim m.
+  + move => n c ps1 //=.
+    by rewrite addn0.
+  + move => {}m h n c ps1.
+    elim c.
+    1-4 : move => //=.
+    + move => e ? hc1 ? hc2.
+      rewrite kinliner2_cif.
+      rewrite kinliner1_cif.
+      rewrite hc1 hc2.
+      by rewrite (kinliner1_cif (n + m.+1)).
+    + move => e ? hc1.
+      rewrite kinliner2_cwhile.
+      rewrite kinliner1_cwhile.
+      rewrite hc1.
+      by rewrite (kinliner1_cwhile (n + m.+1)).
+    + move => ? hc1 ? hc2.
+      rewrite kinliner2_cseq.
+      rewrite kinliner1_cseq.
+      rewrite hc1 hc2.
+      by rewrite (kinliner1_cseq (n + m.+1)).
+    + move => s.
+      rewrite kinliner2_ccall.
+      rewrite h.
+      rewrite (kinliner1_ccall (n + m.+1)).
+      by rewrite addSnnS.
+Qed.
+
+Lemma test8 (ps' : psi) c s:
+  ssem_ ps' c s =
+  \dlim_(n) ssem_aux (ubnf ps' n) c s.
+Proof.
+  rewrite /ssem_ unlock /ssem_r.
+Admitted.
+
+Lemma ssem_ubnf_dnull (ps' : psi) c n s:
  ssem_aux (ubnf ps' n) c s =
    ssem_aux (fun _ => dnull) (k_inliner2 n c ps') s.
 Proof.
 Admitted.
 
-Definition false_ps : psi := (fun _ => while (cst_ true) skip).
+
+Lemma test2 (ps' : psi) c s n:
+  ssem_ (k_inliner_ps1 n.+1 ps') c s =
+    (ssem_ (k_inliner_ps1 n ps') (inliner c ps') s).
+Proof.
+    move : s.
+    elim c.
+    1-4: by move => *; rewrite !semE.
+    + move => e ? hc1 ? hc2 s.
+      rewrite !semE.
+      case (`[{e}] s).
+      + by rewrite hc1.
+      + by rewrite hc2.
+    + admit.
+    + move => ? hc1 ? hc2 s.
+      rewrite !semE hc1.
+      by apply: eq_in_dlet.
+    + move => f s.
+      rewrite !test8.
+      apply: eq_dlim.
+      move => n0.
+      rewrite !ssem_ubnf_dnull.
+  Admitted.
+
+
+
+Lemma inline2_split n m (ps1 : psi) c s:
+  ssem_ (k_inliner_ps1 (m + n) ps1) c s  =
+  ssem_ (k_inliner_ps1 n ps1) (k_inliner2 m c ps1) s.
+Proof.
+  move: n c ps1 s.
+  elim m.
+  + by auto.
+  + move => {}m h n c ps1.
+    elim c.
+    1-4: by move => *; rewrite !semE.
+    + move => e ? hc1 ? hc2 s.
+      rewrite !semE.
+      case (`[{e}] s).
+      + by rewrite hc1.
+      + by rewrite hc2.
+    + admit.
+    + move => ? hc1 ? hc2 s.
+      rewrite !semE hc1.
+      by apply: eq_in_dlet.
+    + move => f s //=.
+      rewrite -h.
+      by rewrite (test2 _ _ _ (m+ n)).
+Admitted.
+
+
+
+Lemma test5 (ps1 ps2: psi) c s n:
+  ssem_ ps2 (k_inliner1 (S n) c ps1) s = ssem_ (k_inliner_ps1 n ps1) c s.
+Proof.
+move : c s.
+elim n.
++ admit.
++ move => n0 h c s.
+  replace (n0.+1) with (1 + n0 ) at 2.
+  rewrite inline2_split.
+  rewrite -h.
+  rewrite inline12_split.
+  replace (n0.+2) with (n0.+1 + 1).
+  reflexivity.
+  by rewrite -addn1 -(addn1 (n0 + 1)).
+  rewrite -addn1.
+  (* revert s. *)
+(* elim c. *)
+(* 1-4: by move => *; rewrite !semE. *)
+(* + move => e ? hc1 ? hc2 s ?. *)
+(*   rewrite !semE. *)
+(*   case (`[{e}] s). *)
+(*   + by rewrite hc1. *)
+(*   + by rewrite hc2. *)
+(* + admit. *)
+(* + move => ? hc1 ? hc2 s ?. *)
+(*   rewrite !semE hc1. *)
+(*   by apply: eq_in_dlet. *)
+(* + move => f l ps2. *)
+(*   revert ps1. *)
+(*   elim n. *)
+(*   + move => ?;rewrite ssem_false_ps //=. *)
+(*     exact: ssem_loop_while. *)
+(*   move => n0 h ps1. *)
+
+Admitted.
+
 
 Lemma ubnf_ssem_ (ps' : psi) c n s:
   ssem_aux (fun _ => dnull) (k_inliner2 n c ps') s =
@@ -268,18 +448,14 @@ Lemma test9 (ps' : psi) c n s:
 Proof.
 Admitted.
 
-Lemma test8 (ps' : psi) c s:
-  ssem_ ps' c s =
-  \dlim_(n) ssem_aux (ubnf ps n) c s.
-Proof.
-Admitted.
-
 
 Lemma test1 (ps' : psi) c s:
-  \dlim_(n) ssem_ (k_inliner_ps n ps') c s =
-  ssem_ ps' c s.
+  \dlim_(n) ssem_ (k_inliner_ps1 n ps') c s =  ssem_ ps' c s.
 Proof.
-Admitted.
+  rewrite test8.
+  apply: eq_dlim.
+  + by move => ?; rewrite ssem_ubnf_dnull ubnf_ssem_ (test9 _ _ _ _ ps') test5.
+Qed.
 
 Lemma recursive_proc ps' cl' :
   hoare_triple_proc_ctx cl' ps' ->
@@ -290,7 +466,7 @@ Proof.
   apply/range_dlim=> n.
   revert hP; revert p; revert s.
   elim : n => [| n Hn].
-  + move => ???. rewrite test4.
+  + move => ???. rewrite ssem_false_ps.
     by  apply range_dnull.
   move => s p hP.
   rewrite test2.
