@@ -1,5 +1,5 @@
 (* -------------------------------------------------------------------- *)
-
+From Stdlib.Logic Require Import FunctionalExtensionality.
 From Stdlib             Require Import Setoid Morphisms.
 From mathcomp           Require Import all_boot all_order all_algebra.
 From mathcomp.reals     Require Import reals.
@@ -42,6 +42,85 @@ End PreCouplings.
 
 Section PreCouplingsTheory.
 
+Lemma isprecoupling_eq {A B : choiceType} (u1 u2 u1' u2' : Distr _) (ν : Distr (A * B)) (f1 f2 : _ -> Distr _) :
+  u1 =1 u1' -> u2 =1 u2' -> isprecoupling u1 u2 f1 f2 ν -> isprecoupling u1' u2' f1 f2 ν.
+Proof. by do 2! move=> /distr_eqP->. Qed.
+
+Lemma isprecoupling_dnull {A B : choiceType} (f1 f2 : _ -> Distr _):
+	@isprecoupling A B dnull dnull f1 f2 dnull.
+Proof.
+by split; rewrite dmarginE !dlet_null.
+Qed.
+
+Lemma isprecoupling_dunit {A B : choiceType} (f1 f2 : _ -> Distr _) m':
+@isprecoupling A B (f1 m'.1) (f2 m'.2) f1 f2 (dunit m').
+Proof.
+by split; rewrite dmarginE !dlet_unit.
+Qed.
+
+Lemma isprecoupling_swap {A : choiceType} (u1 u2 : Distr A) (ν : Distr (A * A)) (f1 f2 : _ -> Distr _):
+  isprecoupling u1 u2 f1 f2 ν -> isprecoupling u2 u1 f2 f1 (dswap ν).
+Proof.
+case=> <- <-; split.
++ apply eq_in_dlet=> //.
+  apply distr_eqP=> m.
+	by rewrite dfst_dswap.
+apply eq_in_dlet=> //.
+apply distr_eqP=> m.
+by rewrite dsnd_dswap.
+Qed.
+
+Lemma isprecoupling_dlet {A B C D: choiceType}
+  (u1 u2 : Distr _) (f1 f2 : _ -> Distr _) (u: Distr (A * B))
+  (v1 v2 : _ -> Distr _) (g1 g2 : _ -> Distr _) (v: _ -> Distr (C * D)) :
+  isprecoupling u1 u2 f1 f2 u
+  -> (forall x, x \in dinsupp u ->
+    isprecoupling (\dlet_(y <- f1 x.1) (v1 y)) (\dlet_(y <- f2 x.2) (v2 y)) g1 g2 (v x))
+    -> isprecoupling
+      (\dlet_(x <- u1) (v1 x))
+      (\dlet_(x <- u2) (v2 x))
+      g1 g2
+      (\dlet_(x <- u) (v x)).
+Proof.
+move=> [eq1 eq2] hC.
+subst u1 u2.
+split.
++ rewrite dlet_dmargin !dlet_dlet.
+  apply: eq_in_dlet => // y /hC [+ _].
+  by rewrite dlet_dmargin dlet_unit.
+rewrite dlet_dmargin !dlet_dlet.
+apply: eq_in_dlet => // y /hC [_ +].
+by rewrite dlet_dmargin dlet_unit.
+Qed.
+
+Lemma isprecoupling_dlim {A B: choiceType}
+  (μ1 μ2 : nat -> Distr _) (f1 f2 : _ -> Distr _) (ν : nat -> Distr (A * B)) :
+
+     (forall n, isprecoupling (μ1 n) (μ2 n) f1 f2 (ν n))
+  -> (forall n m, (n <= m)%N -> ν n <=1 ν m)
+  -> isprecoupling (dlim μ1) (dlim μ2) f1 f2 (dlim ν).
+Proof.
+move=> hC mono.
+rewrite /isprecoupling !dmarginE !dlet_lim //.
++ move=> n m /mono H x.
+  rewrite -!dmarginE.
+  rewrite !dfstE.
+  apply le_psum; last by apply summable_fst.
+  move=> w.
+  move: (H (x, w))=> ->.
+  by rewrite ge0_mu.
++ move=> n m /mono H x.
+  rewrite -!dmarginE.
+  rewrite !dsndE.
+  apply le_psum; last by apply summable_snd.
+  move=> w.
+  move: (H (w, x))=> ->.
+  by rewrite ge0_mu.
+by split; apply/eq_dlim => n; case: (hC n); rewrite -dmarginE.
+Qed.
+
+End PreCouplingsTheory.
+
 Section Variables.
 
 Fixpoint fv {T : Type} (e : expr T) : set ident :=
@@ -69,8 +148,8 @@ Fixpoint read (c : cmd) : set ident :=
   | skip => set0
   | assign _ _ e => fv e
   | random _ _ d => fv d
-  | cond b _ _ => fv b
-  | while b _ => fv b
+  | cond b c1 c2 => fv b `|` read c1 `|` read c2
+  | while b c1 => fv b `|` read c1
   | seqc c1 c2 => read c1 `|` (read c2 `\` write c1) 
   end.
 
@@ -224,80 +303,99 @@ move=> m' /(disjoint_cmd Hdisj) eqe.
 by rewrite ssem_ifE -eqe (negbTE He).
 Qed.
 
-End Variables.
-
-Lemma isprecoupling_dnull {A B : choiceType} (f1 f2 : _ -> Distr _):
-	@isprecoupling A B dnull dnull f1 f2 dnull.
+Lemma mem_ext (m1 m2 : cmem): (forall T (x : vars T), m1.[x] = m2.[x]) -> m1 = m2.
 Proof.
-by split; rewrite dmarginE !dlet_null.
+move: m1 m2.
+unlock cmem.
+move=> [m1] [m2] H.
+congr (CoreMem).
+extensionality T.
+extensionality x.
+by move: (H T (Var T x)).
 Qed.
 
-Lemma isprecoupling_dunit {A B : choiceType} (f1 f2 : _ -> Distr _) m':
-@isprecoupling A B (f1 m'.1) (f2 m'.2) f1 f2 (dunit m').
+Lemma disjoint_set {T : IhbType.type} c (x : vars T) v:
+	(vname x) \notin (read c `|` write c)
+  -> forall m w, ssem c m w = ssem c m.[x <- v] w.[x <- v].
 Proof.
-by split; rewrite dmarginE !dlet_unit.
-Qed.
-
-Lemma isprecoupling_dlet {A B C D: choiceType}
-  (u1 u2 : Distr _) (f1 f2 : _ -> Distr _) (u: Distr (A * B))
-  (v1 v2 : _ -> Distr _) (g1 g2 : _ -> Distr _) (v: _ -> Distr (C * D)) :
-  isprecoupling u1 u2 f1 f2 u
-  -> (forall x, x \in dinsupp u ->
-    isprecoupling (\dlet_(y <- f1 x.1) (v1 y)) (\dlet_(y <- f2 x.2) (v2 y)) g1 g2 (v x))
-    -> isprecoupling
-      (\dlet_(x <- u1) (v1 x))
-      (\dlet_(x <- u2) (v2 x))
-      g1 g2
-      (\dlet_(x <- u) (v x)).
-Proof.
-move=> [eq1 eq2] hC.
-subst u1 u2.
-split.
-+ rewrite dlet_dmargin !dlet_dlet.
-  apply: eq_in_dlet => // y /hC [+ _].
-  by rewrite dlet_dmargin dlet_unit.
-rewrite dlet_dmargin !dlet_dlet.
-apply: eq_in_dlet => // y /hC [_ +].
-by rewrite dlet_dmargin dlet_unit.
-Qed.
-
-Lemma isprecoupling_dlim {A B: choiceType}
-  (μ1 μ2 : nat -> Distr _) (f1 f2 : _ -> Distr _) (ν : nat -> Distr (A * B)) :
-
-     (forall n, isprecoupling (μ1 n) (μ2 n) f1 f2 (ν n))
-  -> (forall n m, (n <= m)%N -> ν n <=1 ν m)
-  -> isprecoupling (dlim μ1) (dlim μ2) f1 f2 (dlim ν).
-Proof.
-move=> hC mono.
-rewrite /isprecoupling !dmarginE !dlet_lim //.
-+ move=> n m /mono H x.
-  rewrite -!dmarginE.
-  admit. (* Should be provable *)
-+ move=> n m /mono H x.
-  rewrite -!dmarginE.
-  admit. (* Should be provable *)
-by split; apply/eq_dlim => n; case: (hC n); rewrite -dmarginE.
+elim c=> /=.
++ move=> _ m w.
+  by rewrite !ssem_abortE !dnullE.
++ move=> _ m w.
+  rewrite !ssem_skipE !dunit1E.
+  admit. (* equality *)
++ move=> t v0 e H m w.
+  rewrite !ssem_assnE !dunit1E.
+  admit. (* x \notin fv e => `[{e}] m = `[{e}] m.[x <- v] 
+					  x <> v0 => m.[x <- v][v0 <- `[{e}] m] = m.[v0 <- `[{e}] m][x <- v] *)
++ move=> t v0 d H m w.
+  rewrite !ssem_rndE !dletE.
+  apply eq_psum=> y.
+  rewrite !dunit1E.
+  admit. (* x \notin fv d => `[{d}] m = `[{d}] m.[x <- v] 
+					  x <> v0 => m.[x <- v][v0 <- y] = m.[v0 <- y][x <- v] *)
++ move=> e c1 H1 c2 H2 H3 m w.
+  rewrite !semE.
+  have <-: `[{e}] m = `[{e}] m.[x <- v].
+  + apply disjoint_exp.
+    admit.
+  case: ifPn=> _.
+  + apply H1.
+    admit.
+  apply H2.
+  admit.
++ move=> e c1 H1 H2 m w.
+  rewrite !semE !dlimE.
+  congr (constructive_ereal.fine (nlim _)).
+  apply funext=> n.
+  elim n.
+  + move=> /=.
+    by rewrite !ssem_abortE !dnullE.
+  move=> p _.
+  rewrite !(whilen_iterc _ _ _ _).
+  move: m w.
+  elim p.
+  + move=> m w.
+    rewrite iterc0.
+    rewrite !(seq_skip_l _ _).
+    rewrite !semE.
+    have <-: `[{e}] m = `[{e}] m.[x <- v].
+  	+ apply disjoint_exp.
+    	admit.
+		case: ifPn=> _.
+  	+ by rewrite !dnullE.
+    admit. (* eqaulity *)
+  move=> q Iq m w.
+  rewrite !ssem_seqE !(itercSl q _ _) -!ssem_seqE.
+  rewrite -!(seqA _ _ _ _) ssem_seqE ssem_seqE.
+  admit. (* fiddly *)
+admit. (* fiddly *)
 Admitted.
 
-End PreCouplingsTheory.
+End Variables.
+
 
 (* -------------------------------------------------------------------- *)
+(* Judgement Definition *)
+(* -------------------------------------------------------------------- *)
+
 Implicit Types P Q R I : rassn.
 Implicit Types c r s t : cmd.
 
-(* -------------------------------------------------------------------- *)
 Definition dprhl P r1 r2 c1 c2 s1 s2 Q :=
-  forall m : rmem, P m ->
-                   exists2 ν,
-  isprecoupling
-    (ssem (r1 ;; c1) m.1) (ssem (r2 ;; c2) m.2)
-    (ssem s1) (ssem s2)
-    ν
-  & range Q ν.
+  forall m : rmem, P m
+	-> exists2 ν,
+  		isprecoupling
+    	(ssem (r1 ;; c1) m.1) (ssem (r2 ;; c2) m.2)
+    	(ssem s1) (ssem s2)
+    	ν
+  		& range Q ν.
 
+(* -------------------------------------------------------------------- *)
 Lemma dprhlw P r1 r2 c1 c2 s1 s2 Q m :
-  dprhl P r1 r2 c1 c2 s1 s2 Q -> P m ->
-    { ν | isprecoupling (ssem (r1 ;; c1) m.1) (ssem (r2 ;; c2) m.2) (ssem s1) (ssem s2) ν & range Q ν }.
+  dprhl P r1 r2 c1 c2 s1 s2 Q
+	-> P m
+	-> { ν | isprecoupling (ssem (r1 ;; c1) m.1) (ssem (r2 ;; c2) m.2) (ssem s1) (ssem s2) ν & range Q ν }.
 Proof.
 move=> h Pm.
 have: exists ν, 
@@ -306,6 +404,7 @@ have: exists ν,
 + by case: (h _ Pm) => ν h1 h2; exists ν; split.
 by case/cid=> ν [h1 h2]; exists ν.
 Qed.
+
 
 (* -------------------------------------------------------------------- *)
 Lemma dprhl_sem P r1 r2 r'1 r'2 c1 c2 c'1 c'2 s1 s2 s'1 s'2 Q :
@@ -333,6 +432,10 @@ by [].
 Qed.
 
 (* -------------------------------------------------------------------- *)
+(* Synchronous Rules *)
+(* -------------------------------------------------------------------- *)
+
+
 Lemma dprhl_skip P r1 r2 Q:
   (forall m : rmem, P m -> Q m)
   -> dprhl P r1 r2 skip skip r1 r2 Q.
@@ -343,6 +446,7 @@ exists (dunit m).
 by apply/range_dunit/H1/H2.
 Qed.
 
+(* -------------------------------------------------------------------- *)
 Lemma dprhl_seq P r1 r2 c1 c2 R t1 t2 c1' c2' s1 s2 Q:
   dprhl P r1 r2 c1 c2 t1 t2 R
   -> dprhl R t1 t2 c1' c2' s1 s2 Q
@@ -365,27 +469,7 @@ move=> p; case: dprhlw.
 by rewrite !ssemE.
 Qed.
 
-Lemma dprhl_assignL {T : IhbType.type} Q r1 r'1 r2 (x : vars T) (e : expr T) :
-  (forall m, ssem r'1 m = ssem r1 m.[x <- `[{ e }] m])
-  -> [disjoint (write r'1) & (fv e)]
-  -> dprhl [pred m : rmem | Q m.[~1 x <- `[{ e }] m.1]] r'1 r2 (x <<- e) skip r1 r2 Q.
-Proof.
-move=> Heq Hwrite.
-move=> m /= Qmxe; exists (dunit (m.[~1 x <- `[{ e }] m.1])); last first.
-+ by apply/range_dunit.
-split.
-+ rewrite dlet_dmargin dlet_unit.
-  rewrite ssem_seqE.
-  rewrite -/(mselect '1 _) mselect_mset /=.
-  under eq_in_dlet => [? _|] do [rewrite ssem_assnE|].
-  rewrite -Heq -{1}(dlet_dunit_id (ssem r'1 _)).
-  apply eq_in_dlet; last done.
-  move=> /= m2 /(disjoint_cmd Hwrite) <-.
-  admit. (* Need equality of memories *)
-rewrite dlet_dmargin dlet_unit seq_skip_r.
-by rewrite -/(mselect '2 _) mselect_mset.
-Admitted.
-
+(* -------------------------------------------------------------------- *)
 Lemma dprhl_if P e1 e2 c1 c'1 c2 c'2 Q r1 r2 s1 s2:
   [disjoint (write r1) & (fv e1)]
   -> [disjoint (write r2) & (fv e2)]
@@ -405,17 +489,6 @@ case: ifPn => hc.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma dprhl_ifL P e c1 c2 c Q r1 r2 s1 s2:
-  [disjoint (write r1) & (fv e)]
-  -> dprhl (P /\ `[{    e#'1 }])%A r1 r2 c1 c s1 s2 Q
-  -> dprhl (P /\ `[{ ~~ e#'1 }])%A r1 r2 c2 c s1 s2 Q
-  -> dprhl P r1 r2 (If e then c1 else c2) c s1 s2 Q.
-Proof.
-move=> /(disjoint_cond c1 c2) eq h1 h2 m Pm; rewrite eq; case: ifPn => he.
-+ by apply/h1 => /=; rewrite ssemE Pm.
-+ by apply/h2 => /=; rewrite ssemE Pm.
-Qed.
-
 Lemma dprhl_while I e1 e2 c1 c2 r1 r2:
   [disjoint (write r1) & (fv e1)]
   -> [disjoint (write r2) & (fv e2)]
@@ -429,7 +502,8 @@ Lemma dprhl_while I e1 e2 c1 c2 r1 r2:
       (While e2 Do c2)
 			r1 r2
     (I /\ `[{ ~~ e1#'1}] /\ `[{ ~~ e2#'2 }])%A.
-Proof. set J := (I /\ _)%A => Hdisj1 Hdisj2 hs h.
+Proof.
+set J := (I /\ _)%A => Hdisj1 Hdisj2 hs h.
 pose ν1 m := if @idP (J m) is ReflectT Rm then tag (dprhlw h Rm) else dunit m.
 pose νn := fix νn n m {struct n} :=
   if n is n.+1 then \dlet_(m' <- νn n m) ν1 m' else dunit m.
@@ -493,6 +567,58 @@ exists (dlim ν).
   by move: (hs _ Im'); rewrite !ssemE => /eqP <-; rewrite hNe1.
 Qed.
 
+
+(* -------------------------------------------------------------------- *)
+(* Asynchronous Rules *)
+(* -------------------------------------------------------------------- *)
+
+Lemma dprhl_assignL {T : IhbType.type} Q r1 r'1 r2 (x : vars T) (e : expr T) :
+  (forall m, ssem r'1 m = ssem r1 m.[x <- `[{ e }] m])
+  -> [disjoint (write r'1) & (fv e)]
+  -> dprhl [pred m : rmem | Q m.[~1 x <- `[{ e }] m.1]] r'1 r2 (x <<- e) skip r1 r2 Q.
+Proof.
+move=> Heq Hwrite.
+move=> m /= Qmxe; exists (dunit (m.[~1 x <- `[{ e }] m.1])); last first.
++ by apply/range_dunit.
+split.
++ rewrite dlet_dmargin dlet_unit.
+  rewrite ssem_seqE.
+  rewrite -/(mselect '1 _) mselect_mset /=.
+  under eq_in_dlet => [? _|] do [rewrite ssem_assnE|].
+  rewrite -Heq -{1}(dlet_dunit_id (ssem r'1 _)).
+  apply eq_in_dlet; last done.
+  move=> /= m2 /[dup] H /(disjoint_cmd Hwrite) <-.
+  rewrite Heq in H.
+  apply distr_eqP=> w.
+  rewrite !dunit1E.
+  suff {1}->: m2.[x <- `[{e}] m.1] = m2.
+  + by [].
+  apply mem_ext=> U.
+  have := eqVneq T U.
+  admit.
+rewrite dlet_dmargin dlet_unit seq_skip_r.
+by rewrite -/(mselect '2 _) mselect_mset.
+Admitted.
+
+(* -------------------------------------------------------------------- *)
+Lemma dprhl_rndL {t : IhbType.type} P (x : vars t) (d : dexpr t) r1 r2 Q :
+  [disjoint (write r1) & ((vname x) |` (fv d))]
+	->  (vname x) \notin (read r1)
+	-> P =1 [pred m : rmem
+       |  dweight (`[{ d }] m.1) == 1
+       & `[< range [pred v | Q m.[~1 x <- v]] (`[{ d }] m.1) >]]
+  -> dprhl P r1 r2 (x <$- d) skip r1 r2 Q.
+Proof.
+admit.
+(* 
+move=> PE -[m1 m2] /=; rewrite {}PE => /andP[/= /eqP wgt1] /asboolP hrg.
+rewrite !ssemE; set μ := `[{ d }] m1.
+pose ν := \dlet_(v <- μ) dunit (m1.[x <- v], m2); exists ν.
+admit.
+*)
+Admitted.
+
+(* -------------------------------------------------------------------- *)
 Lemma dprhl_seqL1 P r1 r2 c1 c2 R t1 t2 c1' s1 s2 Q:
   dprhl P r1 r2 c1 skip t1 t2 R
   -> dprhl R t1 t2 c1' c2 s1 s2 Q
@@ -511,6 +637,7 @@ apply: dprhl_seq.
 by [].
 Qed.
 
+(* -------------------------------------------------------------------- *)
 Lemma dprhl_seqL2 P r1 r2 c1 c2 R t1 t2 c1' s1 s2 Q:
   dprhl P r1 r2 c1 c2 t1 t2 R
   -> dprhl R t1 t2 c1' skip s1 s2 Q
@@ -529,19 +656,67 @@ apply: dprhl_seq.
 by [].
 Qed.
 
+
+(* -------------------------------------------------------------------- *)
+Lemma dprhl_ifL P e c1 c2 c Q r1 r2 s1 s2:
+  [disjoint (write r1) & (fv e)]
+  -> dprhl (P /\ `[{    e#'1 }])%A r1 r2 c1 c s1 s2 Q
+  -> dprhl (P /\ `[{ ~~ e#'1 }])%A r1 r2 c2 c s1 s2 Q
+  -> dprhl P r1 r2 (If e then c1 else c2) c s1 s2 Q.
+Proof.
+move=> /(disjoint_cond c1 c2) eq h1 h2 m Pm; rewrite eq; case: ifPn => he.
++ by apply/h1 => /=; rewrite ssemE Pm.
++ by apply/h2 => /=; rewrite ssemE Pm.
+Qed.
+
+
 (* -------------------------------------------------------------------- *)
 (* Structural Rules *)
+(* -------------------------------------------------------------------- *)
 
-Lemma dprhl_pushL Q r1 r2 c1 c2:
-  dprhl Q r1 r2 c1 c2 (r1 ;; c1) (r2 ;; c2) Q.
+Lemma dprhl_delayL Q r1 r2 c1 c2:
+  dprhl Q r1 r2 c1 skip (r1 ;; c1) r2 Q.
 Proof.
 move=> m Qm.
 exists (dunit m).
-+ by split; rewrite dmargin_dunit dlet_unit.
++ split; rewrite dmargin_dunit dlet_unit //.
+  by rewrite seq_skip_r.
 by apply: range_dunit.
 Qed.
 
-Lemma dprhl_popL P r1 r2 c1 c1' c2 s1 s2 Q:
+(* -------------------------------------------------------------------- *)
+Lemma dprhl_delaystarL P Q r1 r2 c1 s1:
+	(forall m1 m2, Q (m1, m2) -> P (m1, m1))
+  -> dprhl (P /\ [ pred m | m.1 == m.2 ])%A r1 skip c1 s1 skip skip [ pred m | m.1 == m.2 ]
+  -> dprhl Q r1 r2 c1 skip s1 r2 Q.
+Proof.
+move=> Hp H [m1 m2 /[dup] Hq /Hp HP].
+move: (H (m1, m1)).
+rewrite /= eq_refl HP /=.
+case; first done.
+move=> v.
+rewrite seq_skip_l.
+move=> H2 /=.
+exists (dunit (m1, m2)); last by apply range_dunit.
+rewrite seq_skip_r.
+split; rewrite dlet_dmargin dlet_unit //=.
+move: H2=> [<- <-].
+congr (\dlet_(_ <- _) _).
+apply distr_eqP=> w. 
+rewrite dfstE dsndE.
+apply eq_psum=> m.
+have [->|Hneq] := eqVneq m w.
++ by [].
+have -> : v (w, m) = 0.
+have := dinsuppPn v (w, m).
+move=> /reflect_eq ->.
+move: (q (w, m)).
+admit.
+admit.
+Admitted.
+
+(* -------------------------------------------------------------------- *)
+Lemma dprhl_push_popL P r1 r2 c1 c1' c2 s1 s2 Q:
   dprhl P r1 r2 (c1 ;; c1') c2 s1 s2 Q
   <->
   dprhl P (r1 ;; c1) r2 c1' c2 s1 s2 Q.
@@ -549,6 +724,18 @@ Proof.
 by split; move=> H m {}/H; rewrite seqA.
 Qed.
 
+(* -------------------------------------------------------------------- *)
+Lemma dprhl_conseq P P' r1 r2 c1 c2 s1 s2 Q Q' :
+     (forall m, P' m -> P  m)
+  -> (forall m, Q  m -> Q' m)
+  -> dprhl P  r1 r2 c1 c2 s1 s2 Q
+  -> dprhl P' r1 r2 c1 c2 s1 s2 Q'.
+Proof.
+move=> hP hQ h m /hP /h [ν hC hR]; exists ν => //.
+by apply/range_weaken/hQ: hR.
+Qed.
+
+(* -------------------------------------------------------------------- *)
 Lemma dprhl_case P A r1 r2 c1 c2 s1 s2 Q :
      dprhl (P /\   A)%A r1 r2 c1 c2 s1 s2 Q
   -> dprhl (P /\ ~ A)%A r1 r2 c1 c2 s1 s2 Q
@@ -558,3 +745,61 @@ move=> hA hNA m Pm; case/boolP: (A m) => [Am | NAm].
 + by apply/hA; rewrite -(rwP andP).
 + by apply/hNA; rewrite -(rwP andP).
 Qed.
+
+(* -------------------------------------------------------------------- *)
+(*
+Lemma dprhl_frame P r1 r2 c1 c2 s1 s2 Q R:
+	[disjoint (fv (rprp R)) & (write r1 `|` write r2 `|` write c1 `|` write c2)] 
+	-> dprhl P r1 r2 c1 c2 s1 s2 Q
+	-> dprhl (P /\ R)%A r1 r2 c1 c2 s1 s2 (Q /\ R)%A.
+*)
+
+(* -------------------------------------------------------------------- *)
+Lemma dprhl_congr P r1 r2 c1 c2 s1 s2 t1 t2 Q:
+	dprhl P r1 r2 c1 c2 s1 s2 Q
+	-> dprhl P r1 r2 (c1 ;; t1) (c2 ;; t2) (s1 ;; t1) (s2 ;; t2) Q.
+Proof.
+move=> H m {}/H.
+move=> [v [Hfst Hsnd] Hsupp].
+exists v; last exact Hsupp.
+split; rewrite -sem_seqA ssem_seqE. 
++ rewrite -Hfst dlet_dlet.
+  by under eq_in_dlet => [? _ |] do [rewrite ssem_seqE|].
+rewrite -Hsnd dlet_dlet.
+by under eq_in_dlet => [? _ |] do [rewrite ssem_seqE|].
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma dprhl_swap P c1 c2 Q r1 r2 s1 s2:
+  dprhl P r2 r1 c2 c1 s2 s1 Q <-> dprhl (pswap P) r1 r2 c1 c2 s1 s2 (pswap Q).
+Proof.
+move: P Q c1 c2 r1 r2 s1 s2 => [:hG] P Q c1 c2 r1 r2 s1 s2; split; last first.
++ move: P Q c1 c2 r1 r2 s1 s2; abstract: hG => P Q c1 c2 r1 r2 s1 s2 h -[m1 m2] Pm.
+  case: (h (m2, m1))=> //= ν [hC1 hC2] hR; exists (dswap ν) => /=.
+  * by apply/isprecoupling_swap.
+  * by move/range_pswap: hR; apply/range_weaken; case.
++ by move=> h; apply/hG ; apply/dprhl_conseq: h; case.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma dprhl_exfalso c1 c2 r1 r2 s1 s2 Q : dprhl pred0 r1 r2 c1 c2 s1 s2 Q.
+Proof. by []. Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma dprhl_abort P r1 r2 c1 c2 s1 s2 Q : dprhl P r1 r2 abort abort s1 s2 Q.
+Proof.
+move=> m _; exists dnull; last by apply/range_dnull.
+by rewrite !seq_abort_r !ssemE; split; rewrite dmarginE !dlet_null.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma dprhl_trans P12 P23 r1 r2 r3 c1 c2 c3 s1 s2 s3 Q12 Q23:
+	dprhl P12 r1 r2 c1 c2 s1 s2 Q12
+	-> dprhl P23 r2 r3 c2 c3 s2 s3 Q23
+	-> dprhl [pred m | `[<exists m', P12 (m.1, m') /\ P23 (m', m.2)>]] r1 r3 c1 c3 s1 s3 [pred m | `[<exists m', Q12 (m.1, m') /\ Q23 (m', m.2)>]].
+Proof.
+move=> H12 H23 [m1 m3] /= /asboolP [m2 [HP12 HP23]].
+move: (H12 (m1, m2) HP12)=> [/= v12 pc12 rng12].
+move: (H23 (m2, m3) HP23)=> [/= v23 pc23 rng23].
+admit.
+Admitted.
