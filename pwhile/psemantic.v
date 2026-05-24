@@ -542,15 +542,15 @@ Global Instance seq_m : Proper (eqcmd ==> eqcmd ==> eqcmd) seqc.
 Proof. by move=> ?? H1 ?? H2 m;rewrite !semE; apply eq_in_dlet. Qed.
 
 Global Instance while_m : Proper (eq ==> eqcmd ==> eqcmd) while.
-Proof. 
+Proof.
 move=> ?? H1 ?? H2 m; rewrite !ssem_while_ubn H1; apply/eq_dlim=> n.
 by elim: n m => //= n ih m; case: ifP => // _; apply eq_in_dlet.
 Qed.
 
 Global Instance cond_m : Proper (eq ==> eqcmd ==> eqcmd ==> eqcmd) cond.
-Proof. by move=> ?? H1 ?? H2 ?? H3 m; rewrite !semE H1; case: ifP. Qed. 
+Proof. by move=> ?? H1 ?? H2 ?? H3 m; rewrite !semE H1; case: ifP. Qed.
 
-Fixpoint mk_seqr (c1 c2 : cmd) := 
+Fixpoint mk_seqr (c1 c2 : cmd) :=
   match c2 with
   | skip        => c1
   | seqc c2 c2' => mk_seqr (mk_seqr c1 c2) c2'
@@ -813,3 +813,141 @@ Ltac diff_v := try (right; (assumption || rewrite eq_sym; assumption)).
 Notation SET := ((_.[_ <- _].[_])%pattern) (only parsing).
 
 Ltac mem_t := rewrite ?mget_iE ![SET](mget_eq, mget_neq); diff_v.
+
+(* ================================================================== *)
+Lemma le_ubn_body {A : choiceType} (f g : A -> Distr A) (t : pred A) n :
+  f <=2 g -> ubn f t n <=2 ubn g t n.
+Proof.
+move=> le_fg; elim: n => [|n ih] a m' //=.
+by case: ifP => // _; apply/le_dlet => // x _; exact: ih.
+Qed.
+
+Lemma le_ubn_n {A : choiceType} (f : A -> Distr A) (t : pred A) n :
+  ubn f t n <=2 ubn f t n.+1.
+Proof.
+elim: n => [|n ih] a m' /=; first exact: lef_dnull.
+by case: ifP => // _; apply/le_in_dlet => // x _; exact: ih.
+Qed.
+
+Lemma homo_ubn_n {A : choiceType} (f : A -> Distr A) (t : pred A) n p :
+  (n <= p)%N -> ubn f t n <=2 ubn f t p.
+Proof.
+elim: p n => [|p ihp] n; first by rewrite leqn0 => /eqP->.
+rewrite leq_eqVlt => /orP[/eqP->//|]; rewrite ltnS => le.
+by move=> a m'; apply/(le_trans (ihp _ le a m'))/le_ubn_n.
+Qed.
+
+(* ================================================================== *)
+Lemma mono_ssem_aux
+  {X Y : eqType} {cmem: memType X}
+  (l l' : (Y * cmem) -> {distr cmem / R}) c  (m : cmem) :
+  (forall x, l x <=1 l' x) -> ssem_aux l c m <=1 ssem_aux l' c m.
+Proof.
+move=> le_ll'; elim: c m => [||T x e|T x e|e c1 ih1 c2 ih2|e c ih|c1 ih1 c2 ih2|f] m m' //=.
+- by case: ifP => _; [exact: ih1 | exact: ih2].
+- have hb : ssem_aux l c <=2 ssem_aux l' c by move=> a a'; exact: ih.
+  apply/leub_dlim => n m0.
+  apply: (le_trans (@le_ubn_body _ _ _ (esem e) n hb m m0)).
+  by apply/dlim_ub => n1 n2 hle; exact: homo_ubn_n.
+by apply/le_dlet => [|x _]; [exact: ih1 | exact: ih2].
+Qed.
+
+(* ================================================================== *)
+Lemma mono_ubnf {X Y : eqType} {cmem: memType X} {ps : Y -> (@cmd_  X cmem Y)} n :
+  ubnf ps n <=2 ubnf ps n.+1.
+Proof.
+elim: n => [|n ih] [f m'] m /=; first exact: lef_dnull.
+by apply/mono_ssem_aux => x; exact: ih.
+Qed.
+
+Lemma homo_ubnf {X Y : eqType} {cmem: memType X} {ps : Y -> (@cmd_  X cmem Y)} n p :
+  (n <= p)%N -> ubnf ps n <=2 ubnf ps p.
+Proof.
+elim: p n => [|p ihp] n; first by rewrite leqn0 => /eqP->.
+rewrite leq_eqVlt => /orP[/eqP->//|]; rewrite ltnS => le a m'.
+by apply/(le_trans (ihp _ le a m'))/mono_ubnf.
+Qed.
+
+(* ================================================================== *)
+
+Lemma dlim_dlim_diag {A : choiceType} (F : nat -> nat -> Distr A) :
+  (forall k n1 n2, (n1 <= n2)%N -> F n1 k <=1 F n2 k) ->
+  (forall n k1 k2, (k1 <= k2)%N -> F n k1 <=1 F n k2) ->
+  dlim (fun k => dlim (fun n => F n k)) <=1 dlim (fun n => F n n).
+Proof.
+move=> mono_n mono_k.
+have mono_diag : forall j1 j2, (j1 <= j2)%N -> F j1 j1 <=1 F j2 j2.
+  by move=> j1 j2 hle m'; exact: (le_trans (mono_n j1 _ _ hle m') (mono_k j2 _ _ hle m')).
+apply/leub_dlim => k; apply/leub_dlim => n m0.
+have h1 := mono_n k _ _ (leq_maxl n k) m0.
+have h2 := mono_k (maxn n k) _ _ (leq_maxr n k) m0.
+have h3 := @dlim_ub R A (fun j => F j j) (maxn n k) mono_diag m0.
+exact: (le_trans h1 (le_trans h2 h3)).
+Qed.
+
+(* Lemma dlim_dlim' {A : choiceType} (F : nat -> nat -> Distr A) : *)
+(*   (forall k n1 n2, (n1 <= n2)%N -> F n1 k <=1 F n2 k) -> *)
+(*   (forall n k1 k2, (k1 <= k2)%N -> F n k1 <=1 F n k2) -> *)
+(*   dlim (fun k => dlim (fun n => F n k)) =1 dlim (fun n => F n n). *)
+(* Proof. *)
+
+
+(*   Lemma dlet_lim : (forall n m, (n <= m)%N -> f n <=1 f m) -> *)
+(*   \dlet_(x <- \dlim_(n) f n) h x = \dlim_(n) \dlet_(x <- f n) h x. *)
+(* Proof. by move=> ?; apply/distr_eqP/dlet_lim. Qed. *)
+
+(* Admitted. *)
+
+
+(* ================================================================== *)
+
+Lemma dlet_dlim_diag {T U : choiceType}
+  (d : nat -> Distr T) (h : nat -> T -> Distr U) :
+  (forall n m, (n <= m)%N -> d n <=1 d m) ->
+  (forall x n m, (n <= m)%N -> h n x <=1 h m x) ->
+  \dlet_(x <- \dlim_(n) d n) \dlim_(n) h n x =1
+    \dlim_(n) \dlet_(x <- d n) h n x.
+Proof.
+move=> mono_d mono_h u; apply/eqP; rewrite eq_le; apply/andP; split.
+- rewrite dlet_lim //; apply/leub_dlim => n.
+  rewrite -dlim_let; last by move=> x k1 k2 hle; apply: mono_h.
+  apply/leub_dlim => k u'.
+  have hle_d : d n <=1 d (maxn k n) by apply/mono_d/leq_maxr.
+  have hle_h : {in dinsupp (d n), forall x, h k x <=1 h (maxn k n) x}.
+    by move=> x _; apply/mono_h/leq_maxl.
+  have h1 := le_dlet hle_d hle_h u'.
+  have h2 : (\dlet_(x <- d (maxn k n)) h (maxn k n) x) u' <=
+             dlim (fun j => \dlet_(x <- d j) h j x) u'.
+    by apply/dlim_ub => j1 j2 hj;
+       apply/le_dlet => [|x _]; [apply: mono_d | apply: mono_h].
+  exact (le_trans h1 h2).
+- apply/leub_dlim => n; apply/le_dlet.
+    by apply/dlim_ub => k1 k2; apply: mono_d.
+  by move=> x _; apply/dlim_ub => k1 k2 hle; apply: mono_h.
+Qed.
+
+Lemma dlet_dlim_diag' {T U : choiceType}
+  (d : nat -> Distr T) (h : nat -> T -> Distr U) :
+  (forall n m, (n <= m)%N -> d n <=1 d m) ->
+  (forall x n m, (n <= m)%N -> h n x <=1 h m x) ->
+  \dlet_(x <- \dlim_(n) d n) \dlim_(n) h n x =
+    \dlim_(n) \dlet_(x <- d n) h n x.
+Proof.
+  move => mono_n mono_k.
+  by apply/distr_eqP /dlet_dlim_diag.
+
+  (* move => mono_d mono_h. *)
+  (* rewrite -dlim_let //=. *)
+  (* rewrite {1}(eq_dlim *)
+  (*                 (gn := *)
+  (*                    fun n => \dlim_(n0) \dlet_(x <- d n0)  h n x)); last first. *)
+  (* + move => ?;rewrite -dlet_lim //=. *)
+  (* rewrite dlim_dlim' //=. *)
+  (* + move => k n1 n2 hn x. *)
+  (*   apply: le_mu_dlet. *)
+  (*   by apply: mono_d. *)
+  (* + move => n k1 h2 hk x. *)
+  (*   apply: le_in_dlet. *)
+  (*   move => ???. *)
+  (*   by apply: mono_h. *)
+Qed.

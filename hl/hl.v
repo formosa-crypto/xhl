@@ -12,7 +12,7 @@ Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 Unset SsrOldRewriteGoalsOrder.
 
-Import GRing.Theory Num.Theory.
+Import GRing.Theory Num.Theory Order.Theory.
 
 Local Open Scope ring_scope.
 Local Open Scope syn_scope.
@@ -160,7 +160,9 @@ apply (@hl_if I)=> //; last by apply hl_skip.
 by apply (hl_seq Hc)=> ??; apply Hn.
 Qed.
 
+
 (* -------------------------------------------------------------------- *)
+
 
 (** Definition of a procedure contract **)
 
@@ -333,19 +335,83 @@ Proof.
       by rewrite addSnnS.
 Qed.
 
+Lemma dlim_dlim_com {T: choiceType} (f : nat -> nat -> {distr T / R}) :
+  \dlim_(n) (\dlim_(m) f n m) =  \dlim_(m) (\dlim_(n) f n m).
+Proof.
+  Admitted.
+
+Lemma dlim_whilen n e c0 (ps':psi) s:
+  ssem_aux (ubnf ps' n) (While e Do c0) s =
+    \dlim_(n0) ssem_aux (ubnf ps' n) (whilen e c0 n0) s.
+Proof.
+Admitted.
+
 Lemma test8 (ps' : psi) c s:
   ssem_ ps' c s =
   \dlim_(n) ssem_aux (ubnf ps' n) c s.
 Proof.
-  rewrite /ssem_ unlock /ssem_r.
-Admitted.
+  move : s.
+  elim c.
+  1-4: by move => * //=; rewrite /ssem_ unlock /ssem_r dlimC.
+  + move => e ? hc1 ? hc2 s //=.
+    rewrite semE.
+    case (`[{e}] s).
+    + by rewrite hc1.
+    + by rewrite hc2.
+  + move => e c0 h s.
+    rewrite semE.
+    symmetry; under eq_dlim do rewrite dlim_whilen.
+    rewrite dlim_dlim_com.
+    apply eq_dlim => n.
+    move : s.
+    elim n.
+    + by move => ? //=;rewrite semE dlimC.
+    + move => {}n hi s //=.
+      rewrite semE.
+      case :(`[{e}] s); [|by rewrite semE dlimC].
+      + rewrite semE -dlet_dlim_diag' //=.
+        + by move => *; rewrite mono_ssem_aux // => *; rewrite homo_ubnf.
+        + by move => *; rewrite mono_ssem_aux // => *; rewrite homo_ubnf.
+        + apply /eq_in_dlet;[| by rewrite h].
+          by move => ??;rewrite hi.
+  + move => c1 hc1 c2 hc2 s //=.
+    rewrite semE.
+    rewrite -dlet_dlim_diag' //=.
+    + by move => *; rewrite mono_ssem_aux // => *; rewrite homo_ubnf.
+    + by move => *; rewrite mono_ssem_aux // => *; rewrite homo_ubnf.
+    + apply eq_in_dlet;[|by rewrite hc1].
+      by move => *; rewrite hc2.
+  + by move => f s; rewrite semE.
+Qed.
 
 Lemma ssem_ubnf_dnull (ps' : psi) c n s:
  ssem_aux (ubnf ps' n) c s =
    ssem_aux (fun _ => dnull) (k_inliner2 n c ps') s.
 Proof.
-Admitted.
-
+  move : c s.
+  elim n => [//=|n0 h c].
+  elim c .
+  1-4: move => * //=.
+  + move => e ? hc1 ? hc2 s //=.
+    case (`[{e}] s).
+    + by rewrite hc1.
+    + by rewrite hc2.
+  + move => e c0 //= hi s.
+    apply eq_dlim.
+    move => n1.
+    move :s.
+    elim n1 => //=.
+    move => n2 hii s.
+    case (`[{e}] s) => //=.
+    apply eq_in_dlet.
+    + by move => s' ?;rewrite hii.
+    + by rewrite hi.
+  + move => ? hc1 ? hc2 s //=.
+    apply: eq_in_dlet.
+    + by move => ??; rewrite hc2.
+    + by rewrite hc1.
+  + move => f s //=.
+Qed.
 
 Lemma test2 (ps' : psi) c s n:
   ssem_ (k_inliner_ps1 n.+1 ps') c s =
@@ -369,8 +435,6 @@ Proof.
       move => n0.
       rewrite !ssem_ubnf_dnull.
   Admitted.
-
-
 
 Lemma inline2_split n m (ps1 : psi) c s:
   ssem_ (k_inliner_ps1 (m + n) ps1) c s  =
@@ -448,7 +512,6 @@ Lemma test9 (ps' : psi) c n s:
 Proof.
 Admitted.
 
-
 Lemma test1 (ps' : psi) c s:
   \dlim_(n) ssem_ (k_inliner_ps1 n ps') c s =  ssem_ ps' c s.
 Proof.
@@ -462,6 +525,8 @@ Lemma recursive_proc ps' cl' :
   (forall p, khl_ ps' (get_pre (cl' p)) (call p) (get_post (cl' p))).
 Proof.
   move => h p s hP.
+  rewrite /range.
+  rewrite /dinsupp.
   rewrite -test1.
   apply/range_dlim=> n.
   revert hP; revert p; revert s.
