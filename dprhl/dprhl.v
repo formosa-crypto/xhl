@@ -20,14 +20,55 @@ Local Open Scope syn_scope.
 Local Open Scope sem_scope.
 Local Open Scope mem_scope.
 
-Lemma seq_abort_r (c : cmd): (c ;; abort) =C abort.
+(* -------------------------------------------------------------------- *)
+Section TOMOVE.
+
+Lemma mem_ext (m1 m2 : cmem): (forall T (x : vars T), m1.[x] = m2.[x]) -> m1 = m2.
 Proof.
-move=> m.
-rewrite !semE.
-apply distr_eqP=> v.
-under eq_in_dlet=> [? _|] do [rewrite ssem_abortE|].
-by rewrite dletC dnullE mulr0.
+move: m1 m2.
+unlock cmem.
+move=> [m1] [m2] H.
+congr (CoreMem).
+extensionality T.
+extensionality x.
+by move: (H T (Var T x)).
 Qed.
+
+End TOMOVE.
+
+(* -------------------------------------------------------------------- *)
+Section Disjoint.
+
+Context {T : Type}.
+Implicit Types A B C D : set T.
+
+Lemma disjointUr A B C:
+	[disjoint A & B `|` C]
+	<-> [disjoint A & B] /\ [disjoint A & C].
+Proof.
+by rewrite -!(rwP disj_set2P) setIUr setU_eq0.
+Qed.
+
+Lemma disjointUl A B C:
+	[disjoint A `|` B &  C]
+	<-> [disjoint A & C] /\ [disjoint B & C].
+Proof.
+by rewrite disj_set_sym disjointUr disj_set_sym [disj_set C B]disj_set_sym.
+Qed.
+
+Lemma disjoint1 x A:
+	[disjoint [set x] & A]
+	<-> x \notin A.
+Proof.
+rewrite -(rwP disj_set2P) set1I.
+case: ifPn=> _ //=.
+split; last by [].
+rewrite -(in_set0 x)=> <-.
+by rewrite mem_set.
+Qed.
+
+End Disjoint.
+
 
 (* -------------------------------------------------------------------- *)
 Section PreCouplings.
@@ -158,19 +199,15 @@ Lemma disjoint_exp {T1 : Type} {T2 : IhbType.type} (e : expr T1) (x : vars T2):
   -> forall m u, `[{e}] m = `[{e}] m.[x <- u].
 Proof.
 elim e.
-+ move=> T3 y /= dv m u.
-  rewrite mget_neq; last by [].
-  right.
-  move: dv=> /(elimT disj_set2P).
-  rewrite disjoints_subset.
-  move=> /(_ (vname x)) /=.
-  move=> /(_ (Logic.eq_refl _)).
-  by rewrite contra.Internals.eqType_neqP.
++ move=> T3 y /=. 
+	rewrite disjoint1 notin_setE=> H m u.
+	rewrite mget_neq //.
+	right.
+	by apply/eqP/H.
 + by [].
-+ move=> p /(elimT disj_set2P).
-  rewrite disjoints_subset /=.
-	rewrite sub1set in_setC notin_setE //=.
-  move=> + m u.
++ move=> p.
+	rewrite disjoint1 notin_setE=> + m u.
+	move=> /=.
   rewrite -forallNE=> /(_ (vtype x)).
   rewrite -forallNE=> /(_ m).
 	rewrite -forallNE=> /(_ x).
@@ -178,23 +215,10 @@ elim e.
 	rewrite not_andP /=.
 	rewrite not_notE.
 	rewrite -implyE.
-	move=> /(_ Logic.eq_refl) ->.
-	by [].
-move=> T3 T4 e1 H1 e2 H2 /=.
-move=> /(elimT disj_set2P) /disjoints_subset Hsubs m u.
-rewrite -H2.
-+ apply /(introT disj_set2P).
-  rewrite disjoints_subset.
-  move=> w /Hsubs.
-  rewrite setCU.
-  by case.
-+ rewrite -H1.
-  apply /(introT disj_set2P).
-  rewrite disjoints_subset.
-  move=> w /Hsubs.
-  rewrite setCU.
-  by case.
-by [].
+	by move=> /(_ Logic.eq_refl) ->.
+move=> T3 T4 e1 + e2 /[swap].
+move=> /[swap] /= + + + m u.
+by rewrite disjointUr=> - [-> ->] <- // <-.
 Qed.
 
 Lemma disjoint_cmd {T : Type} (c : cmd) (e : expr T):
@@ -223,22 +247,14 @@ elim c.
   move=> /dinsupp_dlet [u] _.
   move=> /in_dunit ->.
   exact /disjoint_exp/H.
-+ move=> e1 c0 Hl c1 Hr.
-  move=> /(elimT disj_set2P) /disjoints_subset /= + m m'.
-  rewrite subUset.
-  move=> [Hsubl Hsubr].
-  rewrite ssem_ifE.
-  case (`[{e1}] m).
-  + apply Hl.
-    apply /(introT disj_set2P).
-    rewrite disjoints_subset.
-    by move=> w /Hsubl.
-  + apply Hr.
-    apply /(introT disj_set2P).
-    rewrite disjoints_subset.
-    by move=> w /Hsubr.
-+ move=> e1 c0 IH.
-  move=> /= Hdisj m m'.
++ move=> e1 c0 Hl c1 Hr /=.
+	rewrite disjointUl=> - [] {}/Hl Hl {}/Hr Hr m m'.
+	rewrite ssem_ifE.
+	case: ifPn=> _.
+	+ by move=> /Hl.
+	by move=> /Hr.
++ move=> e1 c0 /= H.
+  move=> {}/H H m m'.
   rewrite ssem_whileE.
   move=> /dinsupp_dlim [k].
   case k.
@@ -251,10 +267,10 @@ elim c.
   rewrite ssem_seqE.
   move=> /dinsupp_dlet [m1].
   rewrite ssem_ifE ssem_abortE ssem_skipE -in_dinsupp.
-  case (`[{e1}] m1).
-  + move=> _ /dinsuppP.
+	case: ifPn.
+  + move=> _ _ /dinsuppP.
     by rewrite dnullE.
-  move=> + /in_dunit ->.
+ 	move=> _ + /in_dunit ->.
   move: m1.
   elim n.
   + move=> m1.
@@ -267,24 +283,13 @@ elim c.
   case (`[{e1}] m2); last first.
   + by move=> /in_dunit ->.
   rewrite {}H2.
-  by apply IH.
-move=> c0 Hl c1 Hr.
-move=> /(elimT disj_set2P) /disjoints_subset /= + m m'.
-rewrite subUset.
-move=> [Hsubl Hsubr].
+  by apply H.
+move=> c0 Hl c1 Hr /=.
+rewrite disjointUl=> - [] {}/Hl Hl {}/Hr Hr m m'.
 rewrite ssem_seqE.
 move=> /dinsupp_dlet [m1] /Hl m1v.
-rewrite -in_dinsupp=> H.
-have Hdisjl: [disjoint (write c0) & (fv e)].
-+ apply /(introT disj_set2P).
-  rewrite disjoints_subset.
-  by move=> w /Hsubl.
-have Hdisjr: [disjoint (write c1) & (fv e)].
-+ apply /(introT disj_set2P).
-  rewrite disjoints_subset.
-  by move=> w /Hsubr.
-move: (Hr Hdisjr m1 m' H)=> <-.
-exact (m1v Hdisjl).
+rewrite -in_dinsupp=> /Hr <-.
+exact (m1v).
 Qed.
 
 Lemma disjoint_cond (c ct cf : cmd) (e : expr bool):
@@ -292,87 +297,310 @@ Lemma disjoint_cond (c ct cf : cmd) (e : expr bool):
   -> forall m,
    ssem (c ;; (If e then ct else cf)) m = (if `[{e}] m then ssem (c ;; ct) m else ssem (c ;; cf) m).
 Proof.
-move=> Hdisj m.
+move=> /disjoint_cmd + m.
 rewrite !ssem_seqE.
-case: ifPn=> He.
+case: ifPn=> He /(_ m) H.
 + apply eq_in_dlet; last done.
-  move=> m' /(disjoint_cmd Hdisj) eqe.
-  by rewrite ssem_ifE -eqe He.
+  move=> m' {}/H.
+	by rewrite ssem_ifE He=> <-.
 apply eq_in_dlet; last done.
-move=> m' /(disjoint_cmd Hdisj) eqe.
-by rewrite ssem_ifE -eqe (negbTE He).
+move=> m' {}/H.
+by rewrite ssem_ifE (negbTE He)=> <-.
 Qed.
 
-Lemma mem_ext (m1 m2 : cmem): (forall T (x : vars T), m1.[x] = m2.[x]) -> m1 = m2.
+Lemma vars_neq {T : IhbType.type} (x : vars T) (y : vars T):
+	x != y
+	-> vname x != vname y.
 Proof.
-move: m1 m2.
-unlock cmem.
-move=> [m1] [m2] H.
-congr (CoreMem).
-extensionality T.
-extensionality x.
-by move: (H T (Var T x)).
+move: x y.
+unlock vars=> - [x] [y].
+have [->|] //= := eqVneq x y.
+by rewrite eq_refl.
 Qed.
-
-Lemma disjoint_set {T : IhbType.type} c (x : vars T) v:
-	(vname x) \notin (read c `|` write c)
-  -> forall m w, ssem c m w = ssem c m.[x <- v] w.[x <- v].
-Proof.
-elim c=> /=.
-+ move=> _ m w.
-  by rewrite !ssem_abortE !dnullE.
-+ move=> _ m w.
-  rewrite !ssem_skipE !dunit1E.
-  admit. (* equality *)
-+ move=> t v0 e H m w.
-  rewrite !ssem_assnE !dunit1E.
-  admit. (* x \notin fv e => `[{e}] m = `[{e}] m.[x <- v] 
-					  x <> v0 => m.[x <- v][v0 <- `[{e}] m] = m.[v0 <- `[{e}] m][x <- v] *)
-+ move=> t v0 d H m w.
-  rewrite !ssem_rndE !dletE.
-  apply eq_psum=> y.
-  rewrite !dunit1E.
-  admit. (* x \notin fv d => `[{d}] m = `[{d}] m.[x <- v] 
-					  x <> v0 => m.[x <- v][v0 <- y] = m.[v0 <- y][x <- v] *)
-+ move=> e c1 H1 c2 H2 H3 m w.
-  rewrite !semE.
-  have <-: `[{e}] m = `[{e}] m.[x <- v].
-  + apply disjoint_exp.
-    admit.
-  case: ifPn=> _.
-  + apply H1.
-    admit.
-  apply H2.
-  admit.
-+ move=> e c1 H1 H2 m w.
-  rewrite !semE !dlimE.
-  congr (constructive_ereal.fine (nlim _)).
-  apply funext=> n.
-  elim n.
-  + move=> /=.
-    by rewrite !ssem_abortE !dnullE.
-  move=> p _.
-  rewrite !(whilen_iterc _ _ _ _).
-  move: m w.
-  elim p.
-  + move=> m w.
-    rewrite iterc0.
-    rewrite !(seq_skip_l _ _).
-    rewrite !semE.
-    have <-: `[{e}] m = `[{e}] m.[x <- v].
-  	+ apply disjoint_exp.
-    	admit.
-		case: ifPn=> _.
-  	+ by rewrite !dnullE.
-    admit. (* eqaulity *)
-  move=> q Iq m w.
-  rewrite !ssem_seqE !(itercSl q _ _) -!ssem_seqE.
-  rewrite -!(seqA _ _ _ _) ssem_seqE ssem_seqE.
-  admit. (* fiddly *)
-admit. (* fiddly *)
-Admitted.
 
 End Variables.
+
+Section Swapping.
+
+
+Lemma mset_swap {S T : IhbType.type} (m : cmem) (x : vars T) (y : vars S) e u:
+	vname x != vname y
+	-> (m.[x <- e]).[y <- u] = (m.[y <- u]).[x <- e].
+Proof.
+move=> neqxy.
+apply mem_ext=> R.
+have [/[dup] _ <- z | /eqP neqSR] := eqVneq S R; last first.
++ have [/[dup] eqTR <- z | /eqP neqTR z] := eqVneq T R.
+	+ have [eqxz|neqxz] := eqVneq x z.
+		+ rewrite -eqxz mget_eq mget_neq.
+			+ by right; rewrite eq_sym.
+			by rewrite mget_eq.
+		move: x e neqxy z neqxz.
+		rewrite eqTR=> x e _ z /vars_neq neqxz.
+		rewrite !mget_neq /vtype //=.
+		+ by left.
+		+ by right.
+		+ by right.
+		by left.
+	by rewrite !mget_neq /vtype //=; left.
+move: x y e u neqxy z.
+have [<- | /eqP neqTS] := eqVneq T S.
++ move=> x y e u neqxy z.
+	have [eqxz|/vars_neq neqxz] := eqVneq x z.
+		+ rewrite -eqxz mget_eq mget_neq.
+			+ by right; rewrite eq_sym.
+			by rewrite mget_eq.
+		have [eqyz|/vars_neq neqyz] := eqVneq y z.
+		+ rewrite -eqyz mget_eq mget_neq.
+			+ by right. 
+			by rewrite mget_eq.
+		by rewrite !mget_neq /vtype //; right.
+move=> x y e u neqxy z.
+have [eqyz|/vars_neq neqyz] := eqVneq y z.
++ rewrite -eqyz mget_eq mget_neq.
+	+ by right. 
+	by rewrite mget_eq.
+rewrite !mget_neq /vtype //.
++ by right.
++ by left.
++ by left.
+by right.
+Qed.
+
+Lemma swap_abort (c : cmd):
+	(abort ;; c) =C (c ;; abort).
+Proof. by rewrite seq_abort_l seq_abort_r. Qed.
+
+Lemma swap_skip (c : cmd):
+	(skip ;; c) =C (c ;; skip).
+Proof. by rewrite seq_skip_l seq_skip_r. Qed.
+
+Lemma swap_asgn_asgn {S T : IhbType.type} (x : vars T) (y : vars S) e (u : expr S):
+	vname x <> vname y
+	-> vname x \notin fv u
+	-> vname y \notin fv e
+	-> (x <<- e ;; y <<- u) =C (y <<- u ;; x <<- e).
+Proof.
+move=> /eqP H1 H2 H3 m.
+rewrite !ssemE !dlet_unit !ssemE.
+congr dunit.
+have <-: `[{u}] m = `[{u}] m.[x <- `[{e}] m] by apply/disjoint_exp/disjoint1.
+have <-: `[{e}] m = `[{e}] m.[y <- `[{u}] m] by apply/disjoint_exp/disjoint1.
+clear H2 H3.
+by apply mset_swap.
+Qed.
+
+Lemma swap_samp_asgn {S T : IhbType.type} (x : vars T) (y : vars S) d (e : expr S):
+	vname x <> vname y
+	-> vname x \notin fv e
+	-> vname y \notin fv d
+	-> (x <$- d ;; y <<- e) =C (y <<- e ;; x <$- d).
+Proof.
+move=> /eqP H1 H2 H3 m.
+rewrite !ssemE dlet_unit dlet_dlet !ssemE.
+have H4: forall i, `[{e}] m = `[{e}] m.[x <- i] by move=> i; apply/disjoint_exp/disjoint1.
+under eq_in_dlet=> [m' _ |] do [rewrite dlet_unit ssemE -H4|].
+have <-: `[{d}] m = `[{d}] m.[y <- `[{e}] m] by apply/disjoint_exp/disjoint1.
+clear H2 H3.
+apply eq_in_dlet=> //.
+move=> v _.
+congr dunit.
+by apply mset_swap.
+Qed.
+
+Lemma dlet_swap (T U V: choiceType) (d1 : {distr T / R}) (d2 : {distr U / R}) (F : T -> U -> {distr V / R}):
+    \dlet_(x1 <- d1) (\dlet_(x2 <- d2) F x1 x2)
+  = \dlet_(x2 <- d2) (\dlet_(x1 <- d1) F x1 x2).
+Proof.
+apply distr_eqP=> c; rewrite !dletE.
+pose G ab := d1 ab.1 * d2 ab.2 * (F ab.1 ab.2) c.
+under eq_psum=> x.
++ rewrite dletE -psumZ.
+	+ by apply ge0_mu.
+	rewrite (@eq_psum R U _ (fun y => G (x, y))).
+	+ move=> y /=.
+		by rewrite /G /= mulrA.
+	over.
+under [RHS]eq_psum=> y.
++ rewrite dletE -psumZ.
+	+ by apply ge0_mu.
+	rewrite (@eq_psum R T _ (fun x => G (x, y))).
+	+ move=> x /=.
+	  by rewrite /G /= mulrA [d2 y * _]mulrC.
+	over.
+have sumG : summable G.
++ admit.
+by rewrite -psum_pair // -psum_pair_swap.
+Admitted.
+
+Lemma swap_samp_samp {S T : IhbType.type} (x : vars T) (y : vars S) d1 d2:
+	vname x <> vname y
+	-> vname x \notin fv d2
+	-> vname y \notin fv d1
+	-> (x <$- d1 ;; y <$- d2) =C (y <$- d2 ;; x <$- d1).
+Proof.
+move=> /eqP H1 H2 H3 m.
+rewrite !ssemE !dlet_dlet.
+have H4: forall i, `[{d2}] m = `[{d2}] m.[x <- i] by move=> i; apply/disjoint_exp/disjoint1.
+have H5: forall i, `[{d1}] m = `[{d1}] m.[y <- i] by move=> i; apply/disjoint_exp/disjoint1.
+under eq_in_dlet=> [m' _|] do [rewrite dlet_unit ssemE -H4|].
+under [RHS]eq_in_dlet=> [m' _ |] do [rewrite dlet_unit ssemE -H5|].
+rewrite dlet_swap.
+clear H2 H3 H4 H5.
+apply eq_in_dlet=> //.
+move=> v _.
+apply eq_in_dlet=> //.
+move=> u _.
+congr dunit.
+by apply mset_swap.
+Qed.
+
+Lemma swap_if e c ct cf:
+	(ct ;; c) =C (c ;; ct)
+	-> (cf ;; c) =C (c ;; cf)
+	-> [disjoint write c & fv e]
+	-> (If e then ct else cf ;; c) =C (c ;; If e then ct else cf).
+Proof.
+move=> Hct Hcf /disjoint_cond Hcond m.
+by rewrite Hcond if_seq -Hct -Hcf ssemE.
+Qed.
+
+Lemma swap_while e c ct:
+	(ct ;; c) =C (c ;; ct)
+	-> [disjoint write c & fv e]
+	-> (While e Do ct ;; c) =C (c ;; While e Do ct).
+Proof.
+move=> Hct Hcond m.
+rewrite !ssemE.
+under [RHS]eq_in_dlet=> [v _|] do [rewrite ssemE|].
+rewrite -dlim_let.
++ by apply homo_whilen.
+rewrite dlet_lim.
++ by apply homo_whilen.
+apply eq_dlim=> n.
+rewrite -!ssem_seqE.
+elim: n m.
++ move=> /=.
+	by apply swap_abort.
+move=> /= n H.
+apply swap_if=> //; last by apply swap_skip.
+rewrite seqA -Hct.
+move=> m.
+rewrite -seqA ssem_seqE.
+under eq_in_dlet=> [m' _|] do [rewrite H|].
+by rewrite -ssem_seqE seqA.
+Qed.
+
+Lemma swap_cmd c1 c2:
+	[disjoint (write c1) & (read c2 `|` write c2)]
+	-> [disjoint (write c2) & (read c1)]
+	-> (c1 ;; c2) =C (c2 ;; c1).
+Proof.
+elim c1.
++	by rewrite swap_abort.
++ by rewrite swap_skip.
++ move=> T x e /=.
+	elim c2.
+	+	by rewrite swap_abort.
+	+ by rewrite swap_skip.
+	+ move=> S y u /=.
+		rewrite disjointUr !disjoint1=> - [H1].
+		rewrite notin_setE /= => H2 H3.
+		by apply swap_asgn_asgn.
+	+ move=> S y u /=.
+		rewrite disjointUr !disjoint1=> - [H1].
+		rewrite notin_setE /= => H2 H3 m.
+		apply /Logic.eq_sym/swap_samp_asgn=> //.
+		apply /eqP.
+		rewrite eq_sym.
+		by move: H2=> /eqP.
+	+ move=> b ct Hct cf Hcf /=.
+		rewrite -!setUA.
+	  rewrite disjointUr=> - [] Hdx.
+		rewrite [write ct `|` _]setUC [read cf `|` _]setUA [_ `|` write ct]setUC setUA.
+		rewrite disjointUr=> - [] {}/Hct Hct {}/Hcf Hcf.
+		rewrite disjointUl=> - [] {}/Hcf Hcf {}/Hct Hct.
+		move=> m.
+		by apply /Logic.eq_sym/swap_if.
+	+ move=> b ct Hct /=.
+		rewrite -!setUA.
+	  rewrite disjointUr=> - [] Hdx {}/Hct Hct.
+		move=> {}/Hct Hct.
+		move=> m.
+		by apply /Logic.eq_sym/swap_while.
+	move=> d1 /= + d2  +/=.
+	rewrite !disjointUr !disjointUl=> Hd1 Hd2 - [] [H1 H2] [H3 H4] [H5 H6].
+	rewrite seqA Hd1 //.
+	rewrite -seqA Hd2 //; last by rewrite seqA.
+	split; last by exact H4.
+	have := disjointUr (set1 (vname x)) (write d1) (read d2 `\` write d1).
+	rewrite {}H3 {}H2 (rwP andP) /=.
+	rewrite setUDr setDv setD0.
+	move=> [] _ /implyP /=.
+	by rewrite disjointUr=> - [] _.
++ move=> T x d /=.
+	elim c2.
+	+	by rewrite swap_abort.
+	+ by rewrite swap_skip.
+	+ move=> S y u /=.
+		rewrite disjointUr !disjoint1=> - [H1].
+		rewrite notin_setE /= => H2 H3.
+		by apply swap_samp_asgn.
+	+ move=> S y u /=.
+		rewrite disjointUr !disjoint1=> - [H1].
+		rewrite notin_setE /= => H2 H3 m.
+		apply /Logic.eq_sym/swap_samp_samp=> //.
+		apply /eqP.
+		rewrite eq_sym.
+		by move: H2=> /eqP.
+	+ move=> b ct Hct cf Hcf /=.
+		rewrite -!setUA.
+	  rewrite disjointUr=> - [] Hdx.
+		rewrite [write ct `|` _]setUC [read cf `|` _]setUA [_ `|` write ct]setUC setUA.
+		rewrite disjointUr=> - [] {}/Hct Hct {}/Hcf Hcf.
+		rewrite disjointUl=> - [] {}/Hcf Hcf {}/Hct Hct.
+		move=> m.
+		by apply /Logic.eq_sym/swap_if.
+	+ move=> b ct Hct /=.
+		rewrite -!setUA.
+	  rewrite disjointUr=> - [] Hdx {}/Hct Hct.
+		move=> {}/Hct Hct.
+		move=> m.
+		by apply /Logic.eq_sym/swap_while.
+	move=> d1 /= + d2  +/=.
+	rewrite !disjointUr !disjointUl=> Hd1 Hd2 - [] [H1 H2] [H3 H4] [H5 H6].
+	rewrite seqA Hd1 //.
+	rewrite -seqA Hd2 //; last by rewrite seqA.
+	split; last by exact H4.
+	have := disjointUr (set1 (vname x)) (write d1) (read d2 `\` write d1).
+	rewrite {}H3 {}H2 (rwP andP) /=.
+	rewrite setUDr setDv setD0.
+	move=> [] _ /implyP /=.
+	by rewrite disjointUr=> - [] _.
++ move=> e ct Hct cf Hcf /=.
+	rewrite disjointUl=> - [] {}/Hct Hct {}/Hcf Hcf.
+	rewrite !disjointUr=> - [[]] /disjoint_cond Hcond {}/Hct Hct {}/Hcf Hcf m.
+	by rewrite Hcond if_seq -Hct -Hcf ssemE.
++ move=> e ct /= Hct.
+	move=> {}/Hct Hct.
+	rewrite disjointUr=> - [] /[swap] /Hct.
+	by apply swap_while.
+move=> d1 Hd1 d2 Hd2 /=. 
+rewrite disjointUl=> - [] /[dup] + {}/Hd1 Hd1 {}/Hd2 Hd2.
+rewrite disjointUr=> - [_ Hdw1].
+rewrite disj_set_sym in Hdw1.
+rewrite disjointUr=> - [] {}/Hd1 Hd1 Hdw2.
+have := disjointUr (write c2) (write d1) (read d2 `\` write d1).
+rewrite {}Hdw1 {}Hdw2.
+rewrite (rwP andP) /=.
+rewrite setUDr setDv setD0.
+move=> [] _.
+move=> /implyP /=.
+rewrite disjointUr=> - [] _ {}/Hd2 Hd2.
+by rewrite -seqA Hd2 seqA Hd1 seqA.
+Qed.
+
+End Swapping.
 
 
 (* -------------------------------------------------------------------- *)
@@ -437,13 +665,51 @@ Qed.
 
 
 Lemma dprhl_skip P r1 r2 Q:
-  (forall m : rmem, P m -> Q m)
-  -> dprhl P r1 r2 skip skip r1 r2 Q.
+	dprhl Q r1 r2 skip skip r1 r2 Q.
 Proof.
-move=> H1 m H2.
+move=> m H.
 exists (dunit m).
 + by split; rewrite dmargin_dunit dlet_unit seq_skip_r.
-by apply/range_dunit/H1/H2.
+by apply/range_dunit/H.
+Qed.
+
+Lemma dprhl_sample {T U : IhbType.type} P r1 r2 (x1 : vars T) d1 (x2 : vars U) d2 Q:
+  [disjoint (write r1) & ((vname x1) |` (fv d1))]
+	-> [disjoint (write r2) & ((vname x2) |` (fv d2))]
+	-> (vname x1) \notin (read r1)
+	-> (vname x2) \notin (read r2)
+	-> (forall m, P m -> exists mu,
+		dfst mu = `[{d1}] m.1
+		/\ dsnd mu = `[{d2}] m.2
+		/\ (forall u v, (u, v) \in dinsupp mu -> Q (m.[~1 x1 <- u].[~2 x2 <- v])))
+	-> dprhl P r1 r2 (x1 <$- d1) (x2 <$- d2) r1 r2 Q.
+Proof.
+rewrite !disjointUr=> - [] H1 H2 [] H3 H4 H5 H6.
+move=> H m {}/H [mu [cplL [cplR cplS]]].
+exists (\dlet_(w <- mu) dunit (m.[~1 x1 <- w.1].[~2 x2 <- w.2])); last first.
++ move=> m' /dinsupp_dlet [[u v]] /cplS Hq.
+	rewrite dunit1E.
+	have [] := eqVneq (m.[~1 x1 <- u]).[~2 x2 <- v] m'.
+	+ move=> <- _.
+		exact Hq.
+	move=> _.
+	by rewrite eq_refl.
+rewrite swap_cmd.
++ by rewrite disjointUr H2 H1.
++ by rewrite disjoint1.
+rewrite [r2 ;; _]swap_cmd.
++ by rewrite disjointUr H4 H3.
++ by rewrite disjoint1.
+rewrite !ssemE !dlet_dlet -cplL -cplR.
+split.
++ rewrite !dlet_dmargin.
+	apply eq_in_dlet=> //.
+	move=> v _. 
+	by rewrite dlet_unit -/(mselect '1 _) !mselect_mset.
+rewrite !dlet_dmargin.
+apply eq_in_dlet=> //.
+move=> v _. 
+by rewrite dlet_unit -/(mselect '2 _) !mselect_mset.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -572,33 +838,23 @@ Qed.
 (* Asynchronous Rules *)
 (* -------------------------------------------------------------------- *)
 
-Lemma dprhl_assignL {T : IhbType.type} Q r1 r'1 r2 (x : vars T) (e : expr T) :
-  (forall m, ssem r'1 m = ssem r1 m.[x <- `[{ e }] m])
-  -> [disjoint (write r'1) & (fv e)]
-  -> dprhl [pred m : rmem | Q m.[~1 x <- `[{ e }] m.1]] r'1 r2 (x <<- e) skip r1 r2 Q.
+Lemma dprhl_assignL {T : IhbType.type} Q r1 r2 (x : vars T) (e : expr T) :
+  [disjoint (write r1) & ((vname x) |` (fv e))]
+	->  (vname x) \notin (read r1)
+  -> dprhl [pred m : rmem | Q m.[~1 x <- `[{ e }] m.1]] r1 r2 (x <<- e) skip r1 r2 Q.
 Proof.
-move=> Heq Hwrite.
+rewrite disjointUr=> - [] H1 H2 H3.
 move=> m /= Qmxe; exists (dunit (m.[~1 x <- `[{ e }] m.1])); last first.
 + by apply/range_dunit.
-split.
-+ rewrite dlet_dmargin dlet_unit.
-  rewrite ssem_seqE.
-  rewrite -/(mselect '1 _) mselect_mset /=.
-  under eq_in_dlet => [? _|] do [rewrite ssem_assnE|].
-  rewrite -Heq -{1}(dlet_dunit_id (ssem r'1 _)).
-  apply eq_in_dlet; last done.
-  move=> /= m2 /[dup] H /(disjoint_cmd Hwrite) <-.
-  rewrite Heq in H.
-  apply distr_eqP=> w.
-  rewrite !dunit1E.
-  suff {1}->: m2.[x <- `[{e}] m.1] = m2.
-  + by [].
-  apply mem_ext=> U.
-  have := eqVneq T U.
-  admit.
-rewrite dlet_dmargin dlet_unit seq_skip_r.
-by rewrite -/(mselect '2 _) mselect_mset.
-Admitted.
+rewrite swap_cmd.
++ by rewrite disjointUr H2 H1.
++ by rewrite disjoint1.
+rewrite seq_skip_r.
+split; first last.
++ by rewrite dlet_dmargin dlet_unit -/(mselect '2 _) mselect_mset.
+rewrite dlet_dmargin dlet_unit -/(mselect '1 _) mselect_mset /=.
+by rewrite !ssemE dlet_unit.
+Qed.
 
 (* -------------------------------------------------------------------- *)
 Lemma dprhl_rndL {t : IhbType.type} P (x : vars t) (d : dexpr t) r1 r2 Q :
@@ -710,7 +966,8 @@ have [->|Hneq] := eqVneq m w.
 have -> : v (w, m) = 0.
 have := dinsuppPn v (w, m).
 move=> /reflect_eq ->.
-move: (q (w, m)).
+move: (q (w, m))=> /=.
+case Hv: ((w, m) \notin dinsupp v)=> //.
 admit.
 admit.
 Admitted.
@@ -754,20 +1011,6 @@ Lemma dprhl_frame P r1 r2 c1 c2 s1 s2 Q R:
 	-> dprhl (P /\ R)%A r1 r2 c1 c2 s1 s2 (Q /\ R)%A.
 *)
 
-(* -------------------------------------------------------------------- *)
-Lemma dprhl_congr P r1 r2 c1 c2 s1 s2 t1 t2 Q:
-	dprhl P r1 r2 c1 c2 s1 s2 Q
-	-> dprhl P r1 r2 (c1 ;; t1) (c2 ;; t2) (s1 ;; t1) (s2 ;; t2) Q.
-Proof.
-move=> H m {}/H.
-move=> [v [Hfst Hsnd] Hsupp].
-exists v; last exact Hsupp.
-split; rewrite -sem_seqA ssem_seqE. 
-+ rewrite -Hfst dlet_dlet.
-  by under eq_in_dlet => [? _ |] do [rewrite ssem_seqE|].
-rewrite -Hsnd dlet_dlet.
-by under eq_in_dlet => [? _ |] do [rewrite ssem_seqE|].
-Qed.
 
 (* -------------------------------------------------------------------- *)
 Lemma dprhl_swap P c1 c2 Q r1 r2 s1 s2:

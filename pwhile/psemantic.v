@@ -127,6 +127,116 @@ Proof. by case: s => /=; [apply/summable_fst | apply/summable_snd]. Qed.
 End DProj.
 
 (* -------------------------------------------------------------------- *)
+Section DScalar.
+Context {R : realType} {T : choiceType}.
+
+Definition mscalar (k : R) (mu : {distr T / R}) :=
+  fun x => k * (mu x).
+
+Lemma isdistr_mscalar k mu:
+  0 <= k <= (dweight mu)^-1 -> isdistr (mscalar k mu).
+Proof.
+move=> /= /andP [ge0_k le_k_Vmu].
+split.
++ by move=> x; rewrite /mscalar /= mulr_ge0.
+rewrite /mscalar /=.
+move=> J uq_J.
+rewrite -mulr_sumr -(pr_mem _ uq_J).
+have [-> //=| nz_k] := eqVneq k 0.
++ by rewrite mul0r ler01.
+admit.
+(*
+have [| nz_mu] := eqVneq (\P_[mu] predT) 0.
++ move=> /pr_eq0.
+  rewrite /predT /=.
+	by rewrite mul0r ler01.
+have {ge0_k nz_k} lt0_k : 0 < k.
++ by rewrite lt0r nz_k ge0_k.
+rewrite -ler_pdivlMl // mulr1.
+move: le_k_Vmu=> /[dup] le_k_Vmu le_mu_Vk.
+rewrite invf_pge // in le_mu_Vk; first last.
++ rewrite posrE.
+rewrite lt0r ge0_pr.
+Search (0 < \P_[_] _).
+apply (@le_trans _ _ (\P_[mu] predT)); last exact le_k_Vmu.
+by apply subset_pr.
+*)
+Admitted.
+
+(*
+op dscalar (k : real) (d : 'a distr) = mk (mscalar k (mu1 d)).
+
+abbrev (\cdot) (k : real) (d : 'a distr) = dscalar k d.
+
+lemma dscalar1E (k : real) (d : 'a distr) (x : 'a):
+  0%r <= k <= inv (weight d) => mu1 (k \cdot d) x = k * mu1 d x.
+proof.
+move=> [ge0_k le1_k]; rewrite  muK //.
+by rewrite isdistr_mscalar 1:isdistr_mu1 mkK.
+qed.
+
+lemma dscalarE (k : real) (d : 'a distr) (E : 'a -> bool):
+  0%r <= k => k <= inv (weight d) =>
+  mu (k \cdot d) E = k * mu d E.
+proof.
+move=> ge0_k k_le_weight; rewrite !muE.
+rewrite -(@eq_sum (fun x => k * if E x then mu1 d x else 0%r)).
++ by move=> x /=; case: (E x) => //= _; rewrite dscalar1E.
+by rewrite sumZ.
+qed.
+
+lemma dscalar0r ['a] k : k \cdot dnull<:'a> = dnull.
+proof.
+apply/eq_distr=> a; rewrite muK; last by rewrite /mscalar !dnull1E.
+split => /=.
+- by move=> {a}a @/mscalar; rewrite dnull1E.
+- move=> s _; rewrite (@BRA.eq_bigr _ _ (fun _ => 0%r)).
+  - by move=> a' /= _ @/mscalar; rewrite dnull1E.
+  - by rewrite Bigreal.sumr_const.
+qed.
+
+lemma dscalar1 ['a] (d : 'a distr) : 1%r \cdot d = d.
+proof.
+case: (d = dnull) => [->|nz_d]; first by rewrite dscalar0r.
+apply/eq_distr=> x; rewrite dscalar1E //=.
+have nz_wd: weight d <> 0%r.
+- by apply: contra nz_d; apply: weight_eq0_dnull.
+by apply: invr_ge1 => //; rewrite ltr_neqAle eq_sym ge0_weight.
+qed.
+
+lemma weight_dscalar (k : real) (d : 'a distr):
+  0%r <= k => k <= inv (weight d) =>
+  weight (k \cdot d) = k * weight d.
+proof. by move=> ge0_k k_le_weight; rewrite dscalarE. qed.
+
+lemma supp_dscalar (k : real) (d : 'a distr) x:
+  0%r < k => k <= inv (weight d) =>
+  x \in (k \cdot d) <=> x \in d.
+proof.
+move=> gt0_k k_le_weight; rewrite /support dscalar1E 1:ltrW // /#.
+qed.
+
+lemma dscalar_fu (k : real) (d : 'a distr):
+  0%r < k => k <= inv (weight d) =>
+  is_full d => is_full (k \cdot d).
+proof. by move=> gt0k gekw df x;rewrite supp_dscalar //;apply df. qed.
+
+lemma dscalar_ll (d : 'a distr):
+  0%r < weight d =>
+  is_lossless (inv (weight d) \cdot d).
+proof. move=> gt0;rewrite /is_lossless dscalarE // /#. qed.
+
+lemma dscalar_uni (k : real) (d : 'a distr):
+  0%r < k <= inv (weight d) => is_uniform d => is_uniform (k \cdot d).
+proof.
+move=> [gt0_k lek] Hu x y; rewrite !dscalar1E ?(@ltrW 0%r) //.
+by rewrite !supp_dscalar // => /Hu H/H ->.
+qed.
+
+*)
+End DScalar.
+
+(* -------------------------------------------------------------------- *)
 Fixpoint ubn {A : choiceType} (f : A -> Distr A) (t : pred A) n := fun a =>
   if n is n.+1 return Distr A then
     if t a then \dlet_(x <- f a) ubn f t n x else dunit a
@@ -486,6 +596,18 @@ Notation "c1 '=C' c2" := (eqcmd c1 c2) (at level 70, no associativity).
 
 Notation CLHS := (X in X =C _)%pattern.
 Notation CRHS := (X in _ =C X)%pattern.
+
+Lemma seq_abort_r (c : cmd): (c ;; abort) =C abort.
+Proof.
+move=> m.
+rewrite !semE.
+apply distr_eqP=> v.
+under eq_in_dlet=> [? _|] do [rewrite ssem_abortE|].
+by rewrite dletC dnullE mulr0.
+Qed.
+
+Lemma seq_abort_l (c : cmd): (abort ;; c) =C abort.
+Proof. by move=> m; rewrite !semE dlet_null. Qed.
 
 Lemma seq_skip_l (c : cmd) : (skip ;; c) =C c.
 Proof. by move=> m;rewrite !semE dlet_unit. Qed.
