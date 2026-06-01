@@ -865,14 +865,27 @@ Lemma dprhl_rndL {t : IhbType.type} P (x : vars t) (d : dexpr t) r1 r2 Q :
        & `[< range [pred v | Q m.[~1 x <- v]] (`[{ d }] m.1) >]]
   -> dprhl P r1 r2 (x <$- d) skip r1 r2 Q.
 Proof.
-admit.
-(* 
-move=> PE -[m1 m2] /=; rewrite {}PE => /andP[/= /eqP wgt1] /asboolP hrg.
-rewrite !ssemE; set μ := `[{ d }] m1.
-pose ν := \dlet_(v <- μ) dunit (m1.[x <- v], m2); exists ν.
-admit.
-*)
-Admitted.
+rewrite disjointUr disj_set_sym disjoint1=> - [] H1 H2 H3 HP.
+move=> m.
+rewrite (HP m)=> - /andP [/eqP d_ll /asboolP d_rng].
+rewrite -swap_skip swap_cmd /=.
++ by rewrite disjointUr H2 disj_set_sym disjoint1.
++ by rewrite disjoint1.
+exists (\dlet_(v <- `[{d}] m.1) dunit (m.[~1 x <- v])); last first.
++ move=> m' /dinsupp_dlet [v] vsupp /eqP/dinsuppP/in_dunit ->.
+  by apply d_rng.
+split.
++ rewrite !ssemE dmargin_dlet !dlet_dlet.
+	apply eq_in_dlet=> //=. 
+	move=> y ysupp.
+	by rewrite dlet_dmargin !dlet_unit -/(mselect '1 _) mselect_mset.
+apply distr_eqP=> m'.
+rewrite seq_skip_l dmargin_dlet dlet_dlet -[RHS]mul1r -d_ll -dletC.
+rewrite !dletE /vtype /=.
+apply eq_psum=> v.
+congr (_ * _).
+by rewrite dlet_dmargin dlet_unit -/(mselect '2 _) mselect_mset.
+Qed.
 
 (* -------------------------------------------------------------------- *)
 Lemma dprhl_seqL1 P r1 r2 c1 c2 R t1 t2 c1' s1 s2 Q:
@@ -912,7 +925,6 @@ apply: dprhl_seq.
 by [].
 Qed.
 
-
 (* -------------------------------------------------------------------- *)
 Lemma dprhl_ifL P e c1 c2 c Q r1 r2 s1 s2:
   [disjoint (write r1) & (fv e)]
@@ -925,6 +937,21 @@ move=> /(disjoint_cond c1 c2) eq h1 h2 m Pm; rewrite eq; case: ifPn => he.
 + by apply/h2 => /=; rewrite ssemE Pm.
 Qed.
 
+(* -------------------------------------------------------------------- *)
+Lemma dprhl_whileL I e1 c1 r1 r2:
+  [disjoint (write r1) & (fv e1)]
+  -> (dprhl (I /\ `[{ e1#'1 }])%A r1 r2 c1 skip r1 r2 I)
+	-> (forall m, I m -> dweight (ssem (While e1 Do c1) m.1) = 1)
+	->
+  dprhl
+    I 
+			r1 r2
+      (While e1 Do c1)
+      skip
+			r1 r2
+    (I /\ `[{ ~~ e1#'1}])%A.
+Proof.
+Admitted.
 
 (* -------------------------------------------------------------------- *)
 (* Structural Rules *)
@@ -963,14 +990,15 @@ rewrite dfstE dsndE.
 apply eq_psum=> m.
 have [->|Hneq] := eqVneq m w.
 + by [].
-have -> : v (w, m) = 0.
-have := dinsuppPn v (w, m).
-move=> /reflect_eq ->.
-move: (q (w, m))=> /=.
-case Hv: ((w, m) \notin dinsupp v)=> //.
-admit.
-admit.
-Admitted.
+suff : forall m, m.1 != m.2	-> v m = 0.
++ move=> H2.
+	by rewrite !H2 //= eq_sym.
+move=> m' neq.
+apply /dinsuppPn.
+Search dinsupp.
+case Hin: (m' \in dinsupp v)=> //.
+by move: (q m' Hin) neq=> //= ->.
+Qed.
 
 (* -------------------------------------------------------------------- *)
 Lemma dprhl_push_popL P r1 r2 c1 c1' c2 s1 s2 Q:
