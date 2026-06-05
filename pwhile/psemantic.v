@@ -13,6 +13,82 @@ Unset Printing Implicit Defensive.
 
 Import GRing.Theory Num.Theory Order.Theory.
 
+Section BigExtra.
+Variables (R : Type) (idx : R) (op : Monoid.com_law idx).
+
+Lemma bigD1_seq_cond (I : eqType) (r : seq I) j (P : pred I) F :
+    j \in r -> uniq r ->
+  \big[op/idx]_(i <- r | P i) F i
+	=	if P j then
+			op (F j) (\big[op/idx]_(i <- r | P i && (i != j)) F i)
+		else
+			\big[op/idx]_(i <- r | P i && (i != j)) F i.
+Proof.
+move=> H1 H2.
+by rewrite (big_rem_AC _ _ _ _ H1) !rem_filter // !big_filter_cond big_andbC.
+Qed.
+
+Lemma partition_big_seq {I J : eqType} (h : I -> J) (P Q : pred _) F (s : seq I) (s' : seq J):
+	uniq s'
+	-> (forall x, x \in s -> P x -> (h x) \in s' /\ Q (h x))
+	-> \big[op/idx]_(i <- s | P i) F i = \big[op/idx]_(j <- s' | Q j) \big[op/idx]_(i <- s | P i && (h i == j)) F i.
+Proof.
+move=> uq_s'.
+elim: s=> /= [|x xs ih] hm.
++ rewrite big_nil.
+	under eq_bigr=> j _ do rewrite big_nil.
+	by rewrite [RHS]big1_eq.
+rewrite big_cons. 
+case: ifPn=> /= [Px|/negP PxN]; last first.
++ rewrite ih //.
+	+ apply eq_bigr=> i _.
+		rewrite big_cons.
+		case: ifPn=> //.
+		by move=> /andP [].
+	move=> y y_xs.
+	apply hm.
+	by rewrite in_cons y_xs orbT.
+have := hm x.
+rewrite Px in_cons eq_refl /==> - []// s'_px Qpx.
+apply Logic.eq_sym.
+rewrite (bigD1_seq_cond _ _ s'_px uq_s') Qpx /= big_cons /= Px /= eq_refl.
+rewrite -Monoid.mulmA.
+congr (op _ _).
+apply Logic.eq_sym.
+rewrite ih; first last.
++ move=> y y_xs.
+	apply hm.
+	by rewrite in_cons y_xs orbT.
+rewrite (bigD1_seq_cond _ _ s'_px uq_s') Qpx /=.
+congr (op _ _).
+apply eq_bigr=> j /andP [] Qj.
+rewrite eq_sym=> /eqP ne_pxj.
+rewrite big_cons.
+case: ifPn=> //. 
+by move=> /andP [] _ /eqP.
+Qed.
+
+End BigExtra.
+
+Section SeqExtra.
+
+Lemma mem_pair {T S : choiceType} (s : seq (T * S)) x: (x \in s) -> (x.1 \in unzip1 s) && (x.2 \in unzip2 s).
+Proof.
+elim: s.
++ move=> /=.
+	by rewrite in_nil.
+move=> y ys H.
+rewrite in_cons.
+case /orP.
++ move=> /eqP -> /=.
+	by rewrite !in_cons !eq_refl.
+move=> /H /andP [].
+rewrite /= !in_cons=> -> -> /=.
+by rewrite !orbT.
+Qed.
+
+End SeqExtra.
+
 Local Open Scope ring_scope.
 Local Open Scope syn_scope.
 Local Open Scope mem_scope.
@@ -126,6 +202,100 @@ Lemma summable_proj s x1 :
 Proof. by case: s => /=; [apply/summable_fst | apply/summable_snd]. Qed.
 End DProj.
 
+
+(* -------------------------------------------------------------------- *)
+Section DProd.
+Context {T S: choiceType}.
+
+Definition mprod (mu1 : {distr T / R}) (mu2 : {distr S / R}) v := mu1 v.1 * mu2 v.2.
+
+Lemma isd_mprod mu1 mu2: isdistr (mprod mu1 mu2).
+Proof.
+split=> [x|s uqs].
++ by apply/mulr_ge0; apply/ge0_mu.
+rewrite (@partition_big_seq _ _ _ _ _ fst _ predT _ _ (undup (unzip1 s))); first last.
++ move=> x /mem_pair /andP [] + _ _ /=.
+	by rewrite mem_undup => ->.
++ by apply undup_uniq.
+rewrite /prod /=.
+rewrite (@eq_bigr _ _ _ _ _ _ _ (fun j => mu1 j * \sum_(i <- s | i.1 == j) mu2 i.2)); last first.
++ move=> x _.
+	by rewrite mulr_sumr; apply/eq_bigr=> -[v w] /= /eqP <-.
+apply (@le_trans _ _ (\sum_(i <- undup (unzip1 s)) `| mu1 i |)); first last.
++ apply (@le_trans _ _ (psum mu1)); last by apply le1_mu.
+	apply ger_big_psum.
+	+ by apply undup_uniq.
+	by apply summable_mu.
+apply ler_sum=> x _.
+rewrite ger0_norm; last by apply ge0_mu.
+apply ler_piMr; first by apply ge0_mu.
+rewrite -big_filter.
+rewrite -(@big_map _ _ _ _ _ snd _ predT).
+apply (@le_trans _ _ (psum mu2)); last by apply le1_mu.
+under eq_bigr=> i _.
++ rewrite -(@ger0_norm _ (mu2 i)); last by apply ge0_mu.
+	by over.
+apply ger_big_psum; last by apply summable_mu.
+rewrite map_inj_in_uniq ?filter_uniq //.
+case=> [a1 b1] [c1 d1].
+by rewrite !mem_filter /==> - /andP [/eqP <- _] /andP [/eqP -> _] ->.
+Qed.
+
+Definition dprod mu1 mu2 := locked (mkdistr (isd_mprod mu1 mu2)).
+
+Lemma dprodE mu1 mu2 x: (dprod mu1 mu2) x = mu1 x.1 * mu2 x.2.
+Proof.
+by unlock dprod.
+Qed.
+
+Lemma dprod_dlet mu1 mu2: dprod mu1 mu2 = \dlet_(x <- mu1) \dlet_(y <- mu2) dunit (x, y).
+Proof.
+apply distr_eqP=> - [u v].
+rewrite dprodE dletE /=.
+under eq_psum=> x.
++ rewrite dletE.
+	under eq_psum=> y do rewrite dunit1E.
+	rewrite -psumZ; last by apply ge0_mu.
+	rewrite (@eq_psum _ _ _ (fun y => mu1 u * mu2 v * (x == u)%:R * (y == v)%:R)); first by over.
+	move=> y /=.
+	have [] := eqVneq (x, y) (u, v).
+	+ rewrite pair_equal_spec=> - [-> ->].
+		by rewrite !eq_refl !mulr1.
+	move=> /eqP.
+	rewrite pair_equal_spec not_andP.
+	case=> /eqP.
+	+ case: (x == u)=> //=.
+		by rewrite !mulr0 mul0r.
+	case: (y == v)=> //=.
+	by rewrite !mulr0.
+rewrite psum_sum; first last.
++ move=> x.
+	apply ge0_psum.
+under eq_sum=> x.
++ rewrite psum_sum; first last.
+	+ move=> y.
+		apply mulr_ge0.
+  	+	apply mulr_ge0.
+			+ by apply mulr_ge0; apply ge0_mu.
+			by case: (x == u).
+		by case: (y == v).
+	rewrite sumZ (sum_seq1 v).
+	+ rewrite eq_refl mulr1.
+		by over.
+	move=> y.
+	rewrite [y == v]eq_sym.
+	case: (v == y)=> //.
+	by rewrite eq_refl.
+rewrite sumZ (sum_seq1 u).
++ by rewrite eq_refl mulr1.
+move=> x.
+rewrite [x == u]eq_sym.
+case: (u == x)=> //.
+by rewrite eq_refl.
+Qed.
+
+End DProd.
+
 (* -------------------------------------------------------------------- *)
 Section DScalar.
 Context {R : realType} {T : choiceType}.
@@ -133,7 +303,7 @@ Context {R : realType} {T : choiceType}.
 Definition mscalar (k : R) (mu : {distr T / R}) :=
   fun x => k * (mu x).
 
-Lemma isdistr_mscalar k mu:
+Lemma isd_mscalar k mu:
   0 <= k <= (dweight mu)^-1 -> isdistr (mscalar k mu).
 Proof.
 move=> /= /andP [ge0_k le_k_Vmu].
@@ -144,12 +314,14 @@ move=> J uq_J.
 rewrite -mulr_sumr -(pr_mem _ uq_J).
 have [-> //=| nz_k] := eqVneq k 0.
 + by rewrite mul0r ler01.
-admit.
-(*
 have [| nz_mu] := eqVneq (\P_[mu] predT) 0.
-+ move=> /pr_eq0.
-  rewrite /predT /=.
-	by rewrite mul0r ler01.
++ move=> /pr_eq0 H.
+	suff -> : \P_[mu] [pred x in J] = 0.
+	+ by rewrite mulr0 ler01.
+	rewrite -(@eq_in_pr _ _ pred0).
+	+ by apply pr_pred0.
+	move=> x /dinsuppP.
+	by rewrite -(H x).
 have {ge0_k nz_k} lt0_k : 0 < k.
 + by rewrite lt0r nz_k ge0_k.
 rewrite -ler_pdivlMl // mulr1.
@@ -157,83 +329,18 @@ move: le_k_Vmu=> /[dup] le_k_Vmu le_mu_Vk.
 rewrite invf_pge // in le_mu_Vk; first last.
 + rewrite posrE.
 rewrite lt0r ge0_pr.
-Search (0 < \P_[_] _).
-apply (@le_trans _ _ (\P_[mu] predT)); last exact le_k_Vmu.
++ by apply /andP.
+apply (@le_trans _ _ (\P_[mu] predT)); last by [].
 by apply subset_pr.
-*)
-Admitted.
+Qed.
 
-(*
-op dscalar (k : real) (d : 'a distr) = mk (mscalar k (mu1 d)).
+Definition dscalar k mu (bndk: 0 <= k <= (dweight mu)^-1) := locked (mkdistr (isd_mscalar bndk)).
 
-abbrev (\cdot) (k : real) (d : 'a distr) = dscalar k d.
+Lemma dscalarE k mu (bndk: 0 <= k <= (dweight mu)^-1) x: (dscalar bndk) x = k * mu x.
+Proof.
+by unlock dscalar.
+Qed.
 
-lemma dscalar1E (k : real) (d : 'a distr) (x : 'a):
-  0%r <= k <= inv (weight d) => mu1 (k \cdot d) x = k * mu1 d x.
-proof.
-move=> [ge0_k le1_k]; rewrite  muK //.
-by rewrite isdistr_mscalar 1:isdistr_mu1 mkK.
-qed.
-
-lemma dscalarE (k : real) (d : 'a distr) (E : 'a -> bool):
-  0%r <= k => k <= inv (weight d) =>
-  mu (k \cdot d) E = k * mu d E.
-proof.
-move=> ge0_k k_le_weight; rewrite !muE.
-rewrite -(@eq_sum (fun x => k * if E x then mu1 d x else 0%r)).
-+ by move=> x /=; case: (E x) => //= _; rewrite dscalar1E.
-by rewrite sumZ.
-qed.
-
-lemma dscalar0r ['a] k : k \cdot dnull<:'a> = dnull.
-proof.
-apply/eq_distr=> a; rewrite muK; last by rewrite /mscalar !dnull1E.
-split => /=.
-- by move=> {a}a @/mscalar; rewrite dnull1E.
-- move=> s _; rewrite (@BRA.eq_bigr _ _ (fun _ => 0%r)).
-  - by move=> a' /= _ @/mscalar; rewrite dnull1E.
-  - by rewrite Bigreal.sumr_const.
-qed.
-
-lemma dscalar1 ['a] (d : 'a distr) : 1%r \cdot d = d.
-proof.
-case: (d = dnull) => [->|nz_d]; first by rewrite dscalar0r.
-apply/eq_distr=> x; rewrite dscalar1E //=.
-have nz_wd: weight d <> 0%r.
-- by apply: contra nz_d; apply: weight_eq0_dnull.
-by apply: invr_ge1 => //; rewrite ltr_neqAle eq_sym ge0_weight.
-qed.
-
-lemma weight_dscalar (k : real) (d : 'a distr):
-  0%r <= k => k <= inv (weight d) =>
-  weight (k \cdot d) = k * weight d.
-proof. by move=> ge0_k k_le_weight; rewrite dscalarE. qed.
-
-lemma supp_dscalar (k : real) (d : 'a distr) x:
-  0%r < k => k <= inv (weight d) =>
-  x \in (k \cdot d) <=> x \in d.
-proof.
-move=> gt0_k k_le_weight; rewrite /support dscalar1E 1:ltrW // /#.
-qed.
-
-lemma dscalar_fu (k : real) (d : 'a distr):
-  0%r < k => k <= inv (weight d) =>
-  is_full d => is_full (k \cdot d).
-proof. by move=> gt0k gekw df x;rewrite supp_dscalar //;apply df. qed.
-
-lemma dscalar_ll (d : 'a distr):
-  0%r < weight d =>
-  is_lossless (inv (weight d) \cdot d).
-proof. move=> gt0;rewrite /is_lossless dscalarE // /#. qed.
-
-lemma dscalar_uni (k : real) (d : 'a distr):
-  0%r < k <= inv (weight d) => is_uniform d => is_uniform (k \cdot d).
-proof.
-move=> [gt0_k lek] Hu x y; rewrite !dscalar1E ?(@ltrW 0%r) //.
-by rewrite !supp_dscalar // => /Hu H/H ->.
-qed.
-
-*)
 End DScalar.
 
 (* -------------------------------------------------------------------- *)
@@ -717,6 +824,7 @@ rewrite ssem_iterop_iter; elim: n => [|n ihn] /=.
 rewrite -seqA -ihn /= => m; rewrite !semE; case: ifP => // bm.
 by rewrite dlet_unit !semE bm.
 Qed.
+
 End EqCmd.
 
 Notation "c1 '=C' c2" := (eqcmd c1 c2) (at level 70, no associativity).

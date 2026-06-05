@@ -443,25 +443,25 @@ Lemma dlet_swap (T U V: choiceType) (d1 : {distr T / R}) (d2 : {distr U / R}) (F
   = \dlet_(x2 <- d2) (\dlet_(x1 <- d1) F x1 x2).
 Proof.
 apply distr_eqP=> c; rewrite !dletE.
-pose G ab := d1 ab.1 * d2 ab.2 * (F ab.1 ab.2) c.
+pose G ab := (dprod d1 d2 ab) * (fun v => F v.1 v.2) ab c.
 under eq_psum=> x.
 + rewrite dletE -psumZ.
 	+ by apply ge0_mu.
 	rewrite (@eq_psum R U _ (fun y => G (x, y))).
 	+ move=> y /=.
-		by rewrite /G /= mulrA.
+		by rewrite /G /= mulrA dprodE.
 	over.
 under [RHS]eq_psum=> y.
 + rewrite dletE -psumZ.
 	+ by apply ge0_mu.
 	rewrite (@eq_psum R T _ (fun x => G (x, y))).
 	+ move=> x /=.
-	  by rewrite /G /= mulrA [d2 y * _]mulrC.
+	  by rewrite /G dprodE /= mulrA [d2 y * _]mulrC.
 	over.
 have sumG : summable G.
-+ admit.
++ by apply summable_mlet.
 by rewrite -psum_pair // -psum_pair_swap.
-Admitted.
+Qed.
 
 Lemma swap_samp_samp {S T : IhbType.type} (x : vars T) (y : vars S) d1 d2:
 	vname x <> vname y
@@ -632,6 +632,10 @@ Qed.
 End Swapping.
 
 (*
+Section Prod.
+
+Definition edprod {T S : IhbType.type} := @cst_ ident cmem _ (fun d1 d2 => dprod d1 d2).
+
 Lemma sem_dprod {T S : IhbType.type} (x : vars T) (y : vars S) v d1 d2:
 	(x <$- d1 ;; y <$- d2 ;; v <<- app2_ (pair %:S) ` x ` y) =C (v <$- app2_ edprod d1 d2 ;; x <<- app_ (fst %:S) ` v ;; y <<- app_ (snd %:S) ` v).
 Proof.
@@ -641,6 +645,8 @@ apply eq_in_dlet=> //.
 move=> u usupp.
 rewrite dlet_unit ssem_rndE !dlet_dlet.
 apply eq_in_dlet; last first.
+
+End Prod.
 *)
 
 (* -------------------------------------------------------------------- *)
