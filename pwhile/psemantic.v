@@ -247,8 +247,11 @@ Lemma dprodE mu1 mu2 x: (dprod mu1 mu2) x = mu1 x.1 * mu2 x.2.
 Proof.
 by unlock dprod.
 Qed.
+End DProd.
 
-Lemma dprod_dlet mu1 mu2: dprod mu1 mu2 = \dlet_(x <- mu1) \dlet_(y <- mu2) dunit (x, y).
+Section DProdLemmas.
+
+Lemma dprod_dlet {T S : choiceType} (mu1 : {distr T / R}) (mu2 : {distr S / R}): dprod mu1 mu2 = \dlet_(x <- mu1) \dlet_(y <- mu2) dunit (x, y).
 Proof.
 apply distr_eqP=> - [u v].
 rewrite dprodE dletE /=.
@@ -294,7 +297,34 @@ case: (u == x)=> //.
 by rewrite eq_refl.
 Qed.
 
-End DProd.
+Lemma dlet_swap {T U V: choiceType} (d1 : {distr T / R}) (d2 : {distr U / R}) (F : T -> U -> {distr V / R}):
+    \dlet_(x1 <- d1) (\dlet_(x2 <- d2) F x1 x2)
+  = \dlet_(x2 <- d2) (\dlet_(x1 <- d1) F x1 x2).
+Proof.
+apply distr_eqP=> c; rewrite !dletE.
+pose G ab := (dprod d1 d2 ab) * (fun v => F v.1 v.2) ab c.
+under eq_psum=> x.
++ rewrite dletE -psumZ; last by apply ge0_mu.
+	rewrite (@eq_psum R U _ (fun y => G (x, y))); first by over.
+	move=> y /=.
+	by rewrite /G /= mulrA dprodE.
+under [RHS]eq_psum=> y.
++ rewrite dletE -psumZ; last by apply ge0_mu.
+	rewrite (@eq_psum R T _ (fun x => G (x, y))); first by over.
+	move=> x /=.
+	by rewrite /G dprodE /= mulrA [d2 y * _]mulrC.
+have sumG : summable G.
++ by apply summable_mlet.
+by rewrite -psum_pair // -psum_pair_swap.
+Qed.
+
+Lemma dprod_dnull1 {T S : choiceType} (mu : {distr S / R}): dprod (dnull : {distr T / R}) mu = dnull.
+Proof. by rewrite dprod_dlet dlet_null. Qed.
+
+Lemma dprod_dnull2 {T S : choiceType} (mu : {distr T / R}): dprod mu (dnull : {distr S / R}) = dnull.
+Proof. by rewrite dprod_dlet dlet_swap dlet_null. Qed.
+
+End DProdLemmas.
 
 (* -------------------------------------------------------------------- *)
 Section DScalar.

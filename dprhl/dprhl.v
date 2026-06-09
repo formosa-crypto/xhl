@@ -237,27 +237,6 @@ move=> /[swap].
 by rewrite -disjoint1 disjointUr !disjoint1=> - [-> ->] <- // <-.
 Qed.
 
-Lemma eq_exp_mem {T : Type} (e : expr T) m m':
-	(forall S (x : vars S), vname x \in fv_ e -> m.[x] = m'.[x])
-  -> `[{e}] m = `[{e}] m'.
-Proof.
-elim e.
-+ move=> S y /= H.
-	apply H.
-	by rewrite in_set1.
-+ by [].
-+	admit.
-move=> U V e1 + e2 + /= H.
-move=> <-.
-+ move=> S x x_in.
-	apply H.
-	by rewrite in_setU x_in.
-move=> <- //.
-move=> S x x_in.
-apply H.
-by rewrite in_setU x_in orbT.
-Admitted.
-
 Lemma disjoint_cmd {T : Type} (c : cmd) (e : expr T):
   [disjoint (write_ c) & (fv_ e)]
   -> forall (m m': mem), m' \in dinsupp (ssem c m)
@@ -438,30 +417,6 @@ congr dunit.
 by apply mset_swap.
 Qed.
 
-Lemma dlet_swap (T U V: choiceType) (d1 : {distr T / R}) (d2 : {distr U / R}) (F : T -> U -> {distr V / R}):
-    \dlet_(x1 <- d1) (\dlet_(x2 <- d2) F x1 x2)
-  = \dlet_(x2 <- d2) (\dlet_(x1 <- d1) F x1 x2).
-Proof.
-apply distr_eqP=> c; rewrite !dletE.
-pose G ab := (dprod d1 d2 ab) * (fun v => F v.1 v.2) ab c.
-under eq_psum=> x.
-+ rewrite dletE -psumZ.
-	+ by apply ge0_mu.
-	rewrite (@eq_psum R U _ (fun y => G (x, y))).
-	+ move=> y /=.
-		by rewrite /G /= mulrA dprodE.
-	over.
-under [RHS]eq_psum=> y.
-+ rewrite dletE -psumZ.
-	+ by apply ge0_mu.
-	rewrite (@eq_psum R T _ (fun x => G (x, y))).
-	+ move=> x /=.
-	  by rewrite /G dprodE /= mulrA [d2 y * _]mulrC.
-	over.
-have sumG : summable G.
-+ by apply summable_mlet.
-by rewrite -psum_pair // -psum_pair_swap.
-Qed.
 
 Lemma swap_samp_samp {S T : IhbType.type} (x : vars T) (y : vars S) d1 d2:
 	vname x <> vname y
@@ -986,8 +941,8 @@ Qed.
 (* -------------------------------------------------------------------- *)
 Lemma dprhl_whileL I e1 c1 r1 r2:
   [disjoint (write r1) & (fv e1)]
-  -> (dprhl (I /\ `[{ e1#'1 }])%A r1 r2 c1 skip r1 r2 I)
 	-> (forall m, I m -> dweight (ssem (While e1 Do c1) m.1) = 1)
+  -> (dprhl (I /\ `[{ e1#'1 }])%A r1 r2 c1 skip r1 r2 I)
 	->
   dprhl
     I 
@@ -1078,22 +1033,58 @@ move=> he hNe m Pm. case/boolP: (`[{e}] m) => [em | Nem].
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma dprhl_frame P r1 r2 c1 c2 s1 s2 Q e:
-	(forall p, e <> prp_ p)
-	-> [disjoint (rfv e) & (rwrite (r1#'1)%S `|` rwrite (r2#'2)%S `|` rwrite (c1#'1)%S `|` rwrite (c2#'2)%S `|` rwrite (s1#'1)%S `|` rwrite (s2#'2)%S)] 
+Lemma dprhl_frame P r1 r2 c1 c2 s1 s2 Q R:
+	[disjoint (rfv (rprp R)) & (rwrite ((r1 ;; c1 ;; s1)#'1)%S `|` rwrite ((r2 ;; c2 ;; s2)#'2)%S)]
+	-> (forall m, Q m -> (exists m', m' \in dinsupp (ssem s1 m.1)) /\ (exists m', m' \in dinsupp (ssem s2 m.2)))
 	-> dprhl P r1 r2 c1 c2 s1 s2 Q
-	-> dprhl (P /\ `[{e}])%A r1 r2 c1 c2 s1 s2 (Q /\ `[{e}])%A.
+	-> dprhl (P /\ R)%A r1 r2 c1 c2 s1 s2 (Q /\ R)%A.
 Proof.
-move=> Hnp Hd Hw m /= /andP [] HP HR.
+move=> Hd Hnz Hw m /= /andP [] HP HR.
 case: (Hw m HP)=> v vcpl vrng.
 exists v; first by [].
 move=> m' m'supp /=.
 apply /andP.
 split; first by apply vrng.
-case: vcpl.
-rewrite !dlet_dmargin.
-admit.
-Admitted.
+have /Hnz [l r] := vrng m' m'supp.
+case: l=> m1' s1supp.
+case: r=> m2' s2supp.
+have : m1' \in dinsupp (\dlet_(t <- dfst v) ssem s1 t).
++ rewrite dlet_dmargin.
+  by apply (dlet_dinsupp m'supp).
+have : m2' \in dinsupp (\dlet_(t <- dsnd v) ssem s2 t).
++ rewrite dlet_dmargin.
+  by apply (dlet_dinsupp m'supp).
+case: vcpl=> -> -> rc2supp rc1supp.
+rewrite -esem_prpE.
+rewrite (@disjoint_cmd _ _ _ (ircmd '1 s1) _ _ m' (m1', m'.2)).
++ rewrite disj_set_sym. 
+	move: Hd.
+	by rewrite //= !disjointUr => - [] [].
++ rewrite ssem_iE //=.
+	apply (dlet_dinsupp s1supp).
+  by rewrite dunit1E eq_refl oner_neq0.
+rewrite (@disjoint_cmd _ _ _ (ircmd '2 s2) _ _ (m1', m'.2) (m1', m2')).
++ rewrite disj_set_sym. 
+	move: Hd.
+	by rewrite //= !disjointUr => - [] _ [] [].
++ rewrite ssem_iE //=.
+	apply (dlet_dinsupp s2supp).
+  by rewrite dunit1E eq_refl oner_neq0.
+rewrite -(@disjoint_cmd _ _ _ (ircmd '1 (r1 ;; c1)) _ _ (m.1, m2') (m1', m2')).
++ rewrite disj_set_sym. 
+	move: Hd.
+  by rewrite //= !disjointUr => - [] [] [].
++ rewrite ssem_iE //=.
+	apply (dlet_dinsupp rc1supp).
+  by rewrite dunit1E eq_refl oner_neq0.
+rewrite -(@disjoint_cmd _ _ _ (ircmd '2 (r2 ;; c2)) _ _ m (m.1, m2')) //.
++ rewrite disj_set_sym. 
+	move: Hd.
+  by rewrite //= !disjointUr => - [] _ [] [].
+rewrite ssem_iE //=.
+apply (dlet_dinsupp rc2supp).
+by rewrite dunit1E eq_refl oner_neq0.
+Qed.
 
 (* -------------------------------------------------------------------- *)
 Lemma dprhl_swap P c1 c2 Q r1 r2 s1 s2:
