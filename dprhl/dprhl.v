@@ -996,7 +996,6 @@ suff : forall m, m.1 != m.2	-> v m = 0.
 	by rewrite !H2 //= eq_sym.
 move=> m' neq.
 apply /dinsuppPn.
-Search dinsupp.
 case Hin: (m' \in dinsupp v)=> //.
 by move: (q m' Hin) neq=> //= ->.
 Qed.
@@ -1111,12 +1110,39 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 Lemma dprhl_trans P12 P23 r1 r2 r3 c1 c2 c3 s1 s2 s3 Q12 Q23:
-	dprhl P12 r1 r2 c1 c2 s1 s2 Q12
-	-> dprhl P23 r2 r3 c2 c3 s2 s3 Q23
+	dprhl P12 r1 r2 c1 c2 s1 skip Q12
+	-> dprhl P23 r2 r3 c2 c3 skip s3 Q23
 	-> dprhl [pred m | `[<exists m', P12 (m.1, m') /\ P23 (m', m.2)>]] r1 r3 c1 c3 s1 s3 [pred m | `[<exists m', Q12 (m.1, m') /\ Q23 (m', m.2)>]].
 Proof.
 move=> H12 H23 [m1 m3] /= /asboolP [m2 [HP12 HP23]].
-move: (H12 (m1, m2) HP12)=> [/= v12 pc12 rng12].
-move: (H23 (m2, m3) HP23)=> [/= v23 pc23 rng23].
-admit.
-Admitted.
+move: (H12 (m1, m2) HP12)=> [/= v12 [pc12l pc12r] rng12].
+move: (H23 (m2, m3) HP23)=> [/= v23 [pc23l pc23r] rng23].
+move: pc12r pc23l.
+under eq_in_dlet=> [x _|] do [rewrite ssemE|].
+rewrite dlet_dunit_id=> pc12r.
+under eq_in_dlet=> [x _|] do [rewrite ssemE|].
+rewrite dlet_dunit_id=> pc23l.
+exists (dmargin (fun v => (v.1.1, v.2)) (dglue pc12r pc23l)).
++ split.
+	+ by rewrite -proj_glue1 pc12l.
+	by rewrite -proj_glue2 pc23r.
+move=> [m1' m3'] /=.
+rewrite dmarginE.
+move=> /dinsupp_dlet [] /= [] [] m1'' m2' m3'' /dinsuppPn.
+rewrite dglueE dunit1E /=.
+have [] := eqVneq (m1'', m3'') (m1', m3'); last by rewrite eq_refl.
+rewrite pair_equal_spec=> - [] -> ->.
+case: ifPn=> //.
+move=> m2_supp /eqP H _.
+apply /asboolP.
+exists m2'.
+split.
++ apply /rng12/dinsuppP/eqP.
+	move: H.
+	have [->|//]:= eqVneq (v12 (m1', m2')) 0.
+	by rewrite !mul0r eq_refl.
+apply /rng23/dinsuppP/eqP.
+move: H.
+have [->|//]:= eqVneq (v23 (m2', m3')) 0.
+by rewrite mulr0 mul0r eq_refl.
+Qed.

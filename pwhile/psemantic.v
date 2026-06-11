@@ -326,6 +326,244 @@ Proof. by rewrite dprod_dlet dlet_swap dlet_null. Qed.
 
 End DProdLemmas.
 
+Section DGlue.
+Context {T S U: choiceType}.
+
+Definition mglue (mu12 : {distr (T * S) / R}) (mu23 : {distr (S * U) / R}) (mu2 : {distr S / R}) (v : T * S * U)
+	:= if mu2 v.1.2 != 0 then mu12 v.1 * mu23 (v.1.2, v.2) / mu2 v.1.2 else 0.
+
+Lemma isd_mglue mu12 mu23 mu2: dsnd mu12 = mu2 -> dfst mu23 = mu2 -> isdistr (mglue mu12 mu23 mu2).
+Proof.
+move=> cpl1 cpl2.
+split=> [x|s uqs].
++ rewrite /mglue.
+	case: ifPn=> // /eqP neq0.
+	apply mulr_ge0.
+	+ by apply mulr_ge0; apply ge0_mu.
+	rewrite invr_ge0.
+	by apply ge0_mu.
+rewrite /mglue.
+rewrite -big_mkcond /=.
+rewrite (@partition_big_seq _ _ _ _ _ (fun v => v.1.2) _ predT _ _ (undup (unzip2 (unzip1 s)))); first last.
++ move=> x /mem_pair /andP [] + _ _ /=.
+	move=> /mem_pair /andP [] _.
+	by rewrite mem_undup => ->.
++ by apply undup_uniq.
+rewrite /=.
+rewrite (@eq_bigr _ _ _ _ _ _ _ (fun j => (\sum_(i <- s | (mu2 j != 0) && (i.1.2 == j)) mu12 (i.1.1, j) * mu23 (j, i.2) / mu2 j))); last first.
++ move=> x _.
+	apply eq_big.
+	+ move=> [] [] u v w /=.
+		by have [-> |] := eqVneq v x; rewrite ?andbF ?andbT.
+	by move=> [] [] u v w /andP [_ /eqP <-].
+apply (@le_trans _ _ (\sum_(i <- undup (unzip2 (unzip1 s))) `| mu2 i |)); first last.
++ apply (@le_trans _ _ (psum mu2)); last by apply le1_mu.
+	apply ger_big_psum.
+	+ by apply undup_uniq.
+	by apply summable_mu.
+apply ler_sum=> x _.
+rewrite ger0_norm; last by apply ge0_mu.
+case H: (mu2 x != 0)=> /=; move: H=> /eqP H; first last.
++	by rewrite big_pred0_eq H.
+rewrite -mulr_suml ler_pdivrMr; first last.
++ rewrite lt0r ge0_mu.
+	by move: H=> /eqP ->.
+rewrite (@partition_big_seq _ _ _ _ _ (fun v => v.1.1) _ predT _ _ (undup (unzip1 (unzip1 s)))); first last.
++ move=> y /mem_pair /andP [] + _ _ /=.
+	move=> /mem_pair /andP [].
+	by rewrite mem_undup => ->.
++ by apply undup_uniq.
+rewrite (@eq_bigr _ _ _ _ _ _ _ (fun j => mu12 (j, x) * (\sum_(i <- s | (i.1.2 == x) && (i.1.1 == j)) mu23 (x, i.2)))); last first.
++ move=> y _.
+	rewrite mulr_sumr.
+	apply eq_bigr.
+	by move=> [] [] u v w /andP [_ /eqP <-].
+move: H=> /eqP H.
+apply (@le_trans _ _ ((\sum_(i <- undup (unzip1 (unzip1 s))) `| mu12 (i, x) |) * mu2 x)); first last.
++ rewrite -ler_pdivrMr; last by rewrite lt0r ge0_mu H.
+	rewrite -mulrA divff // mulr1.
+	rewrite -cpl1 dsndE.
++ apply ger_big_psum.
+	+ by apply undup_uniq.
+	by apply summable_snd.
+rewrite mulr_suml.
+apply ler_sum=> y _.
+rewrite ger0_norm; last by apply ge0_mu.
+have [-> | H2] := eqVneq (mu12 (y, x)) 0.
++ by rewrite !mul0r.
++ rewrite -ler_pdivrMl; last by rewrite lt0r ge0_mu H2.
+	rewrite mulrA [_ * mu12 _]mulrC divff // mul1r.
+	rewrite -cpl2 dfstE.
+rewrite (@partition_big_seq _ _ _ _ _ (fun v => v.2) _ predT _ _ (undup (unzip2 s))); first last.
++ move=> z /mem_pair /andP [] _ /=.
+	by rewrite mem_undup => ->.
++ by apply undup_uniq.
+apply (@le_trans _ _ ((\sum_(i <- undup (unzip2 s)) `| mu23 (x, i) |))); first last.
+	apply ger_big_psum.
+	+ by apply undup_uniq.
+	by apply summable_fst.
+apply ler_sum=> z _.
+rewrite ger0_norm; last by apply ge0_mu.
+rewrite big_seq_cond /=.
+case H3: ((y, x, z) \in [seq i <- s | (i.1.2 == x) && (i.1.1 == y) & i.2 == z]); first last.
++ move: H3.
+	rewrite mem_filter !eq_refl /=.
+	move=> H3.
+	rewrite (@eq_bigl _ _ _ _ _  _ pred0).
+	+ by rewrite big_pred0_eq.
+	move=> [[]] v1 v2 v3 /=.
+	have [->|] := eqVneq v2 x; last by rewrite /= andbF.
+	have [->|] := eqVneq v1 y; last by rewrite /= andbF.
+	have [->|] := eqVneq v3 z; last by rewrite /= andbF.
+	by rewrite H3.
+rewrite -big_seq_cond.
+rewrite -big_filter.
+rewrite (@bigD1_seq _ _ _ _ _ (y, x, z)) //=.
+rewrite big_filter_cond.
+rewrite big_pred0.
++ by rewrite addr0.
+	move=> [[]] v1 v2 v3 /=.
+	have [->|//] := eqVneq v2 x.
+	have [->|//] := eqVneq v1 y.
+	have [->|//] := eqVneq v3 z.
+	by rewrite eq_refl.
+by apply filter_uniq.
+Qed.
+
+Variables  (mu12 : {distr (T * S) / R}) (mu23 : {distr (S * U) / R}) (mu2 : {distr S / R}).
+Hypothesis (cpl1 : dsnd mu12 = mu2) (cpl2 : dfst mu23 = mu2).
+
+Definition dglue := locked (mkdistr (isd_mglue cpl1 cpl2)).
+Lemma dglueE v: dglue v = if mu2 v.1.2 != 0 then mu12 v.1 * mu23 (v.1.2, v.2) / mu2 v.1.2 else 0.
+Proof.
+by unlock dglue.
+Qed.
+
+Lemma proj_glue1 : dfst mu12 = dfst (dmargin (fun v => (v.1.1, v.2)) dglue).
+Proof.
+apply distr_eqP=> v.
+rewrite dfstE /= !dmarginE /= !dlet_dlet dletE /=.
+rewrite psum_pair; first last.
++ by apply summable_mlet.
+under [RHS]eq_psum.
+move=> x.
+under eq_psum.
+move=> y.
+rewrite dlet_unit dglueE dunit1E /=.
+over.
+have ->: psum (fun y : U => (if mu2 x.2 != 0 then mu12 x * mu23 (x.2, y) / mu2 x.2 else 0) * (x.1 == v)%:R)
+				=	mu12 x * ((mu2 x.2 != 0) && (x.1 == v))%:R.
++ case H: ((mu2 x.2 != 0) && (x.1 == v)); move: H; first last.
+	+ move /negP/negP.
+		rewrite negb_and=> /orP.
+		case.
+		+ move=> /negbNE/eqP ->.
+			by rewrite mulr0 eq_refl psum_eq0 //= mul0r.
+		case: (x.1 == v)=> //=.
+		rewrite mulr0 psum_eq0 //.
+		by move=> w; rewrite mulr0.
+	move=> /andP [/[dup] neq0mu2 -> ->] /=.
+	under eq_psum=> w do rewrite mulr1.
+	rewrite mulr1 -[RHS]mulr1.
+	have <- := divff neq0mu2.
+	rewrite mulrA -{2}cpl2 dfstE.
+	rewrite -psumZ; last by apply ge0_mu.
+	rewrite -psumZr; first last.
+	+ rewrite invr_ge0.
+		by apply ge0_mu.
+	by apply eq_psum.
+over.
+rewrite psum_pair_swap /=; last by apply/summable_condr/summable_mu.
+apply eq_psum=> w.
+have [|neq0] /= := eqVneq (mu2 w) 0.
++ rewrite psum_eq0 //; last	by move=> ?; rewrite mulr0.
+	rewrite -cpl1 dsndE.
+	move=> /(eq0_psum (summable_snd mu12 w)).
+	by move=> /(_ v).
+rewrite psum_sum; first last.
++ move=> x.
+	apply mulr_ge0.
+	+ by apply ge0_mu.
+	by case: (x == v).
+rewrite (@sum_seq1 _ _ _ v).
++ by rewrite eq_refl mulr1.
+move=> y.
+have [] // := eqVneq y v.
+by rewrite mulr0 eq_refl.
+Qed.
+
+Lemma proj_glue2 : dsnd mu23 = dsnd (dmargin (fun v => (v.1.1, v.2)) dglue).
+Proof.
+apply distr_eqP=> v.
+rewrite dsndE /= !dmarginE /= !dlet_dlet dletE /=.
+rewrite psum_pair; first last.
++ by apply summable_mlet.
+under [RHS]eq_psum.
+move=> x.
+under eq_psum.
+move=> y.
+rewrite dlet_unit dglueE dunit1E /=.
+over.
+rewrite psum_sum; first last.
++ move=> w.
+	case: (w == v); rewrite ?mulr0 ?mulr1 //.
+	case: ifP=> //.
+	move=> neq0.
+	apply mulr_ge0.
+	+ by apply mulr_ge0; apply ge0_mu.
+	by rewrite invr_ge0; apply ge0_mu.
+rewrite (@sum_seq1 _ _ _ v); first last.
++ move=> y.
+	rewrite [y == v]eq_sym.
+	case: (v == y)=> //.
+	by rewrite mulr0 eq_refl.
+rewrite eq_refl mulr1.
+rewrite -mulrA.
+over.
+have -> : psum (fun x => if mu2 x.2 != 0 then mu12 x * (mu23 (x.2, v) / mu2 x.2) else 0)
+				=	psum (fun x => mu12 x * ((mu23 (x.2, v) / mu2 x.2) * (mu2 x.2 != 0)%:R)).
++ apply eq_psum=> x.
+	by case : ifPn; rewrite ?mulr0 ?mulr1.
+rewrite psum_pair_swap; first last.
++ Search summable.
+	apply summable_mu_wgtd.
+	move=> [x y] /=.
+	case H: (mu2 y == 0); rewrite ?mulr0 ?mulr1.
+	+ by rewrite le_refl ler01.
+	apply /andP.
+	split.
+	+ apply mulr_ge0; first by apply ge0_mu.
+		rewrite invr_ge0.
+		by apply ge0_mu.
+	rewrite ler_pdivrMr; last first.
+	+ by rewrite lt0r ge0_mu H.
+	rewrite mul1r -cpl2 dfstE.
+Search psum.
+	apply (@le_trans _ _ (psum (fun w => mu23 (y, w) * (v == w)%:R))).
+	+ rewrite psum_sum.
+		+ rewrite (@sum_seq1 _ _ _ v).
+			+ by rewrite eq_refl mulr1.
+			move=> w.
+			by case: (v == w)=> //; rewrite mulr0 eq_refl.
+		move=> w.
+		apply mulr_ge0; first by apply ge0_mu.
+		by case: (v == w).
+	by apply /le_psum_condr/summable_fst.
+apply eq_psum=> w /=.
+have [|neq0] /= := eqVneq (mu2 w) 0.
++ rewrite psum_eq0 //; last by move=> ?; rewrite mulrA mulr0.
+	rewrite -cpl2 dfstE.
+	move=> /(eq0_psum (summable_fst mu23 w)).
+	by move=> /(_ v).
+rewrite !psumZr // mulr1; first last.
++ apply mulr_ge0; first by apply ge0_mu.
+	rewrite invr_ge0.
+	by apply ge0_mu.
+by rewrite -dsndE cpl1 [_ / _]mulrC mulrA divff // mul1r.
+Qed.
+
+End DGlue.
+
 (* -------------------------------------------------------------------- *)
 Section DScalar.
 Context {R : realType} {T : choiceType}.
