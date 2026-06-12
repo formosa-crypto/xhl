@@ -85,27 +85,32 @@ End CouplingsTheory.
 Implicit Types P Q S I : rassn.
 Implicit Types c       : cmd.
 
+Definition psi := ident -> (@cmd_ ident cmem ident).
+
+Section PRHL.
+Context {ps: psi}.
+
 (* -------------------------------------------------------------------- *)
 Definition prhl P c1 c2 Q :=
   forall m : rmem, P m ->
     exists2 ν,
-        iscoupling (ssem c1 m.1) (ssem c2 m.2) ν
+        iscoupling (ssem_ ps c1 m.1) (ssem_ ps c2 m.2) ν
       & range Q ν.
 
 (* -------------------------------------------------------------------- *)
 Lemma prhlw P c1 c2 Q m :
   prhl P c1 c2 Q -> P m ->
-    { ν | iscoupling (ssem c1 m.1) (ssem c2 m.2) ν & range Q ν }.
+    { ν | iscoupling (ssem_ ps c1 m.1) (ssem_ ps c2 m.2) ν & range Q ν }.
 Proof. move=> h Pm.
-have: exists ν, iscoupling (ssem c1 m.1) (ssem c2 m.2) ν /\ range Q ν.
+have: exists ν, iscoupling (ssem_ ps c1 m.1) (ssem_ ps c2 m.2) ν /\ range Q ν.
 + by case: (h _ Pm) => ν h1 h2; exists ν; split.
 by case/cid=> ν [h1 h2]; exists ν.
 Qed.
 
 (* -------------------------------------------------------------------- *)
 Lemma prhl_sem P c1 c2 c'1 c'2 Q :
-     (forall m, P m -> ssem c1 m.1 = ssem c'1 m.1)
-  -> (forall m, P m -> ssem c2 m.2 = ssem c'2 m.2)
+     (forall m, P m -> ssem_ ps c1 m.1 = ssem_ ps c'1 m.1)
+  -> (forall m, P m -> ssem_ ps c2 m.2 = ssem_ ps c'2 m.2)
   -> prhl P c1  c2  Q
   -> prhl P c'1 c'2 Q.
 Proof.
@@ -140,7 +145,7 @@ Qed.
 Lemma prhl_lepr P c1 c2 (E1 E2 : assn) m:
      P m
   -> prhl P c1 c2 [pred m | E1 m.1 ==> E2 m.2]
-  -> \P_[ssem c1 m.1] E1 <= \P_[ssem c2 m.2] E2.
+  -> \P_[ssem_ ps c1 m.1] E1 <= \P_[ssem_ ps c2 m.2] E2.
 Proof.
 case: m => /= m1 m2 Pm h; case/h: Pm => {h} /= ν [<- <-] h.
 by rewrite !pr_dmargin le_in_pr //= => m /h /implyP.
@@ -150,7 +155,7 @@ Qed.
 Lemma prhl_eqpr P c1 c2 (E1 E2 : assn) m:
      P m
   -> prhl P c1 c2 [pred m | E1 m.1 == E2 m.2]
-  -> \P_[ssem c1 m.1] E1 = \P_[ssem c2 m.2] E2.
+  -> \P_[ssem_ ps c1 m.1] E1 = \P_[ssem_ ps c2 m.2] E2.
 Proof.
 case: m => [m1 m2] Pm h; rewrite (rwP eqP) eq_le (@prhl_lepr P) //=.
 + apply/prhl_conseq: h => // {m1 m2 Pm} -[m1 m2] /=.
@@ -271,9 +276,7 @@ Qed.
 Lemma prhl_while I e1 e2 c1 c2 :
      (forall m : rmem, I m -> `[{ e1#'1 =b e2#'2 }] m)
   -> (prhl (I /\ `[{ e1#'1 && e2#'2 }])%A c1 c2 I)
-  -> 
-
-  prhl
+  ->  prhl
     I
       (While e1 Do c1)
       (While e2 Do c2)
@@ -317,10 +320,11 @@ exists (dlim ν).
   case: {-}_ / idP => /= [p|]; first case/and3P: {+}p.
   * by rewrite !ssemE => _ -> _; case: prhlw.
   rewrite !ssemE -eqe Im' /= andbb => /negP/negbTE => ->/=.
-  by case: {+}m' => a b; apply/iscoupling_dunit.  
+  by case: {+}m' => a b; apply/iscoupling_dunit.
 + apply/range_dlim => n; apply/(range_dlet (rg_νn n)) => m' Im'.
   case: ifPn => [he1|hNe1]; first by apply/range_dnull.
   apply/range_dunit=> /=; rewrite Im' /= !ssemE.
   by move: (hs _ Im'); rewrite !ssemE => /eqP <-; rewrite hNe1.
 Qed.
 
+End PRHL.

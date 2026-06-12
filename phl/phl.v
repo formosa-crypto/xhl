@@ -24,6 +24,7 @@ Local Open Scope mem_scope.
 Implicit Types P Q S I : assn.
 Implicit Types c       : cmd.
 Implicit Types d       : R.
+Implicit Types ps     : ident -> (@cmd_ ident cmem ident).
 
 (* -------------------------------------------------------------------- *)
 Variant bd := Le | Ge | Eq.
@@ -47,9 +48,12 @@ Notation "'>=" := Ge (at level 0) : bd_scope.
 
 Bind Scope bd_scope with bd.
 
+Section PHL.
+Context ps.
+
 (* -------------------------------------------------------------------- *)
 Definition phl P c Q r d :=
-  forall m : cmem, P m -> r (\P_[ssem c m] Q) d.
+  forall m : cmem, P m -> r (\P_[ssem_ ps c m] Q) d.
 
 Arguments phl _%_assn _%_syn_scope _%_assn _%_bd_scope _%_ring_scope.
 
@@ -122,7 +126,7 @@ Proof. by move=> m _ /=; apply/le1_pr. Qed.
 
 (* -------------------------------------------------------------------- *)
 (* ----------------  This would go in distr.v  ------------------------ *)
-Lemma has_esp_pr P Q c1 c2 m: \E?_[ssem c1 m] (fun x : cmem => \P_[ssem c2 x] Q).
+Lemma has_esp_pr P Q c1 c2 m: \E?_[ssem_ ps c1 m] (fun x : cmem => \P_[ssem_ ps c2 x] Q).
 Proof.
   apply bounded_has_exp.
   exists 1. move => ?; rewrite ger0_norm.
@@ -202,4 +206,89 @@ Proof.
 move=> hT hF m Pm; case/boolP: (`[{e}] m) => em.
 - by rewrite !ssemE em hT //= Pm.
 - by rewrite !ssemE (negbTE em) hF //= Pm.
+Qed.
+
+End PHL.
+
+(* -------------------------------------------------------------------- *)
+
+(** Definition of a procedure contract **)
+
+Definition clause : Type := assn * assn * R.
+
+Definition get_pre (an:clause) :=
+  let (an,_) := an in
+  let (pre,_) := an in
+  pre.
+
+Definition get_post (an:clause) :=
+  let (an,_) := an in
+  let (_,post) := an in
+  post.
+
+Definition get_r (an:clause) :=
+  let (_,r) := an in
+  r.
+
+Definition phi : Type := ident -> clause.
+
+(** Hoare triple for a com with procedure context **)
+
+Definition hoare_triple_ctx (cl : phi) ps (P: assn) (Q: assn) (r:R) (c: cmd) :=
+  (forall p, phl ps (get_pre (cl p)) (call p) (get_post (cl p)) Le (get_r (cl p))) ->
+  phl ps P c Q Le r.
+
+(** Hoare triple for a procedure with procedure context **)
+
+Definition hoare_triple_proc_ctx (cl : phi) (ps_init: ident -> (@cmd_ ident cmem ident)):=
+  forall p ps, hoare_triple_ctx cl ps
+            (get_pre (cl p))
+            (get_post (cl p))
+            (get_r (cl p))
+            (ps_init p).
+
+From xhl.hl Require hl.
+
+Lemma sum_dlim_r_r (f: nat -> {distr cmem /R}) [E : pred cmem]  [r : R]:
+  (forall (n : nat), psum (fun x : cmem => ((E x)%:R * f n x)) <= r) ->
+  (psum (fun x : cmem => ((E x)%:R * (\dlim_(n) (f n) ) x)) <= r).
+Proof.
+Admitted.
+
+Lemma recursive_proc ps' cl' :
+  (forall p, 0 <= (get_r (cl' p))) ->
+  hoare_triple_proc_ctx cl' ps' ->
+  (forall p, phl ps' (get_pre (cl' p))
+          (call p)
+          (get_post (cl' p))
+          Le
+          (get_r (cl' p))).
+Proof.
+  move => H h p s hP.
+  rewrite -hl.test1.
+  rewrite /pr /= sum_dlim_r_r //.
+  move => n.
+  revert hP; revert p; revert s.
+  elim : n => [| n Hn].
+  + move => ???. rewrite hl.ssem_false_ps.
+    under eq_psum do  rewrite dnullE mulr0.
+    by rewrite psum0.
+  move => s p hP.
+  rewrite (hl.inline2_split n 1).
+  apply: h => // p0 s0 hP0.
+  by apply: Hn.
+Qed.
+
+(** Modular Hoare Triple Verification **)
+
+Theorem recursion_hoare_triple :
+  forall P Q c cl ps (r:R),
+    (forall p, 0 <= (get_r (cl p))) ->
+    hoare_triple_proc_ctx cl ps  ->
+    hoare_triple_ctx cl ps P Q r c ->
+    phl ps P c Q Le r.
+Proof.
+  move => ?????? Hcl H H0.
+  apply H0.
+  by apply: recursive_proc.
 Qed.

@@ -8,9 +8,6 @@ From mathcomp.experimental_reals  Require Import realseq realsum distr edistr.
 From mathcomp    Require  finmap.
 From xhl.pwhile Require Import notations inhabited pwhile psemantic range.
 
-
-From xhl.hl Require Import hl.
-
 Import GRing.Theory Order.Theory Num.Theory.
 
 Local Open Scope syn_scope.
@@ -22,16 +19,19 @@ Local Open Scope ereal_dual_scope.
 
 (* -------------------------------------------------------------------- *)
 
-(* f and g are cmem -> R, but should be cmem -> R+oo*)
+Section EHL.
+Context {ps: ident -> (@cmd_ ident cmem ident)}.
 
-Definition ehl f c g :=
-  forall m : cmem, (espe (ssem c m) g <= f m)%E.
+Definition psi := ident -> (@cmd_ ident cmem ident).
 
-(* -------------------------------------------------------------------- *)
+Definition cond := cmem -> \bar pwhile.R.
 
-Section Ehl.
+Implicit Types  (f g h : cond).
 
-  Implicit Types  (f g h : cmem -> \bar pwhile.R).
+Definition ehl_ (ps:psi) f c g :=
+  forall m : cmem, (espe (ssem_ ps c m) g <= f m)%E.
+
+Notation ehl   := (ehl_ ps).
 
   (* -------------------------------------------------------------------- *)
 
@@ -60,20 +60,16 @@ Section Ehl.
 
   Lemma ehl_seq_m (m:cmem) f g h c1 c2:
     (forall m : cmem, 0 <= g m)%E ->
-    (espe (ssem c1 m) h <= f m)%E ->
-    (forall m : cmem, espe (ssem c2 m) g <= h m)%E ->
-    (espe(\dlet_(m' <- ssem c1 m) ssem c2 m') g <= f m)%E.
+    (espe (ssem ps c1 m) h <= f m)%E ->
+    (forall m : cmem, espe (ssem ps c2 m) g <= h m)%E ->
+    (espe(\dlet_(m' <- ssem ps c1 m) ssem ps c2 m') g <= f m)%E.
   Proof.
     move => Hg h1 h2.
     rewrite exp_dlet //.
-    apply: (@le_trans _ _ (espe (ssem c1 m) h)); last exact: h1.
+    apply: (@le_trans _ _ (espe (ssem ps c1 m) h)); last exact: h1.
     rewrite /espe; apply: esum.le_sum.
     - move => x; apply: mule_ge0; last by apply: lee_tofin; apply: ge0_mu.
-      apply: sum_pos => x'; apply: mule_ge0; first exact: Hg.
-      by apply: lee_tofin; apply: ge0_mu.
-    - move => x; apply: mule_ge0; last by apply: lee_tofin; apply: ge0_mu.
-      apply: (@le_trans _ _ (espe (ssem c2 x) g)); last exact: h2.
-      apply: sum_pos => x'; apply: mule_ge0; first exact: Hg.
+      apply: sum_ge0 => x'; apply: mule_ge0; first exact: Hg.
       by apply: lee_tofin; apply: ge0_mu.
     - move => x; apply: lee_wpmul2r.
       + by apply: lee_tofin; apply: ge0_mu.
@@ -120,7 +116,7 @@ Section Ehl.
 
   Definition ehll P f c g :=
     forall m : cmem,
-      ((espe (ssem c m) g) <= lift (P m) f m)%E.
+      ((espe (ssem ps c m) g) <= lift (P m) f m)%E.
 
   Lemma ehl_if f (e : bexpr) c1 c2 g :
     ehll (esem e) f c1 g ->
@@ -138,15 +134,17 @@ Section Ehl.
 
   (* -------------------------------------------------------------------- *)
 
+  From xhl.hl Require Import hl.
+
   Lemma range_while e (c:cmd):
-    forall m,  range (`[{~~e}]) (ssem_ (While e Do c) m).
+    forall m,  range (`[{~~e}]) (ssem_ ps (While e Do c) m).
   Proof.
     move => m.
-    by apply (@hl_while _ _ xpredT e c).
+    by apply (@hl_while _ _ _ ps xpredT e c).
   Qed.
 
   Lemma pr_while_e e (c:cmd):
-    forall m, \P_[ssem_ (While e Do c) m] (`[{e}]) = 0%R.
+    forall m, \P_[ssem_ ps (While e Do c) m] (`[{e}]) = 0%R.
   Proof.
     move => m.
     have := (@range_while e c m).
@@ -161,7 +159,7 @@ Section Ehl.
   if (\P_[mu] P == 0)%R then (espe mu g) else +oo%E.
 
   Definition ehlr P f c g :=
-    forall m : cmem, ((lift' (ssem c m) P g) <= f m)%E.
+    forall m : cmem, ((lift' (ssem ps c m) P g) <= f m)%E.
 
   Lemma ehl_while (e : bexpr) c f :
     (forall m, 0 <= f m)%E ->
@@ -170,7 +168,7 @@ Section Ehl.
   Proof.
     move => Hf Hi m.
     rewrite /lift'.
-    case_eq (\P_[ssem (While e Do c) m] (`[{e}]) == 0%R);last first.
+    case_eq (\P_[ssem_ ps (While e Do c) m] (`[{e}]) == 0%R);last first.
     + by rewrite (pr_while_e e c m) eq_refl.
     move => h.
     rewrite ssemE.
@@ -212,6 +210,92 @@ Section Ehl.
 
   (* -------------------------------------------------------------------- *)
 
+
+(** Definition of a procedure contract **)
+
+Definition clause : Type := cond * cond.
+
+Definition get_pre (an:clause) :=
+  let (pre,_) := an in
+  pre.
+
+Definition get_post (an:clause) :=
+  let (_,post) := an in
+  post.
+
+Definition phi : Type := ident -> clause.
+
+(** Hoare triple for a com with procedure context **)
+
+Definition hoare_triple_ctx (cl : phi) ps (P: cond) (Q: cond) (c: cmd) :=
+  (forall p, ehl_ ps (get_pre (cl p)) (call p) (get_post (cl p))) ->
+  ehl_ ps P c Q.
+
+(** Hoare triple for a procedure with procedure context **)
+
+Definition hoare_triple_proc_ctx (cl : phi) (ps_init: ident -> (@cmd_ ident cmem ident)):=
+  forall p ps, hoare_triple_ctx cl ps
+            (get_pre (cl p))
+            (get_post (cl p))
+            (ps_init p).
+
+From xhl.hl Require hl.
+
+Lemma recursive_proc ps' cl' :
+  (forall p m, 0 <= (get_pre (cl' p)) m)%E ->
+  (forall p m, 0 <= (get_post (cl' p)) m)%E ->
+  hoare_triple_proc_ctx cl' ps' ->
+  (forall p, ehl_ ps' (get_pre (cl' p))
+          (call p)
+          (get_post (cl' p))).
+Proof.
+  move => Hpre Hpost h p s.
+  rewrite /espe  esum_sum';last first.
+    - move => x; rewrite mule_ge0 //.
+      rewrite lee_tofin //.
+   rewrite !test8.
+   apply esum_dlim_r.
+    + move => ????.
+     apply mono_ssem_aux.
+     by apply homo_ubnf.
+    + exact: (Hpost p).
+  move => n.
+  (*This should be a lemma*)
+  rewrite ssem_ubnf_dnull ubnf_ssem (test9 _ _ _ _ ps') test5.
+  revert p; revert s.
+  elim : n => [| n Hn].
+  + move => ??. rewrite hl.ssem_false_ps.
+    under eq_esum do  rewrite dnullE mule0.
+    by rewrite esum1.
+  move => s p.
+  rewrite (hl.inline2_split n 1) //=.
+  rewrite -esum_sum';last first.
+  + move => x; rewrite mule_ge0 //.
+      rewrite lee_tofin //.
+  apply: h => // p0 s0.
+  rewrite /espe esum_sum';last first.
+  + move => x; rewrite mule_ge0 //.
+      rewrite lee_tofin //.
+  by apply: Hn.
+Qed.
+
+(** Modular Hoare Triple Verification **)
+
+Theorem recursion_hoare_triple :
+  forall P Q c cl ps,
+    (forall p m, 0 <= (get_pre (cl p)) m)%E ->
+    (forall p m, 0 <= (get_post (cl p)) m)%E ->
+    hoare_triple_proc_ctx cl ps  ->
+    hoare_triple_ctx cl ps P Q c ->
+    ehl_ ps P c Q .
+Proof.
+  move => ????? Hpre Hpost H H0.
+  apply H0.
+  by apply: recursive_proc.
+Qed.
+
+  (* -------------------------------------------------------------------- *)
+
   From xhl.prhl Require Import prhl.
 
   Lemma espe_coupling (ν : Distr (cmem * cmem)) g g' :
@@ -230,8 +314,6 @@ Section Ehl.
     rewrite /espe; apply: esum.le_sum.
     - move => p; apply: mule_ge0; first exact: Hg.
       by apply: lee_tofin; apply: ge0_mu.
-    - move => p; apply: mule_ge0; first exact: Hg'.
-      by apply: lee_tofin; apply: ge0_mu.
     - move => p.
       case/boolP: (p \in dinsupp ν) => [hp | /dinsuppPn hp].
       + apply: lee_wpmul2r; first by apply: lee_tofin; apply: ge0_mu.
@@ -243,7 +325,7 @@ Section Ehl.
     (forall m : cmem, 0 <= g m)%E ->
     (forall m : cmem, 0 <= g' m)%E ->
     ehl f' d g' ->
-    prhl P d c Q ->
+    @prhl ps P d c Q ->
     (forall m, exists m', f' m' <= f m /\ P (m',m))%E ->
     (forall m' m, Q (m',m) -> g m <= g' m')%E ->
     ehl f c g.
@@ -262,4 +344,4 @@ Section Ehl.
     exact: Hle.
   Qed.
 
-End Ehl.
+End EHL.

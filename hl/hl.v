@@ -337,11 +337,6 @@ Proof.
       by rewrite addSnnS.
 Qed.
 
-Lemma dlim_dlim_com {T: choiceType} (f : nat -> nat -> {distr T / R}) :
-  \dlim_(n) (\dlim_(m) f n m) =  \dlim_(m) (\dlim_(n) f n m).
-Proof.
-  Admitted.
-
 Lemma dlim_whilen n e c0 (ps':psi) s:
   ssem_aux (ubnf ps' n) (While e Do c0) s =
     \dlim_(n0) ssem_aux (ubnf ps' n) (whilen e c0 n0) s.
@@ -351,6 +346,27 @@ apply: eq_dlim => n0.
 move: s; elim: n0 => [|n0 IHn0] s //=.
 case: (`[{e}] s) => //=.
 apply: eq_in_dlet; [by move=> s' _; rewrite IHn0 | by []].
+Qed.
+
+
+Lemma le_whilen_aux (l : (Y * mem) -> {distr mem / R}) n e c m m' :
+  ssem_aux l (whilen e c n) m m' <= ssem_aux l (whilen e c n.+1) m m'.
+Proof.
+elim: n m m' => /= [|n ih] m m'.
+  by rewrite dnullE ge0_mu.
+case: (esem e m) => //.
+apply/le_in_dlet.
+by move=> {m'} m _ m'; apply/ih.
+Qed.
+
+Lemma hmono_whilen (l  : (Y * mem) -> {distr mem / R})
+  e c m n p :
+  (n <= p)%N ->
+  ssem_aux l (whilen e c n) m <=1  ssem_aux l (whilen e c p) m.
+Proof.
+elim: p n => [|p ih] n; first by rewrite leqn0 => /eqP->.
+rewrite leq_eqVlt => /orP[/eqP->//|]; rewrite ltnS => le_np m'.
+by apply/(le_trans (ih _ le_np m'))/le_whilen_aux.
 Qed.
 
 Lemma test8 (ps' : psi) c s:
@@ -369,6 +385,8 @@ Proof.
     rewrite semE.
     symmetry; under eq_dlim do rewrite dlim_whilen.
     rewrite dlim_dlim_com.
+    + by move => *; rewrite mono_ssem_aux // => *; rewrite homo_ubnf.
+    + by move => k *; rewrite hmono_whilen .
     apply eq_dlim => n.
     move : s.
     elim n.
@@ -653,6 +671,19 @@ Fixpoint mod (c : cmd) : pred { t : IhbType.type & vars t } :=
   | If _ then c1 else c2 => [predU mod c1 & mod c2]
   | While _ Do c         => mod c
   | call n => pred0
+end.
+
+Fixpoint nocall (c:cmd) : Prop :=
+  match c with
+  | abort    => True
+  | skip     => True
+  | x <<- _  => True
+  | x <$- _  => True
+  | c1 ;; c2 => nocall c1 /\ nocall c2
+
+  | If _ then c1 else c2 => nocall c1 /\ nocall c2
+  | While _ Do c         => nocall c
+  | call n => False
   end.
 
 (* -------------------------------------------------------------------- *)
@@ -671,29 +702,31 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 Lemma mod_spec c m ps :
+  nocall c ->
    hl_ ps [pred m' | m == m'] c
        [pred m' | `[<eqon (predC (mod c)) m m'>] ].
-Proof. elim: c m.
-+ by move=> m; apply hl_abort.
-+ move=> m; pose P := [pred m' | m == m'].
+Proof.
+  elim: c m.
++ by move=> m hcall ; apply hl_abort.
++ move=>  m hcall; pose P := [pred m' | m == m'].
   apply (hl_conseq (P2 := P) (Q2 := P))=> //; last exact/hl_skip.
   by move=> m' /eqP ->; apply/asboolT.
-+ move=> t x e m; set Q := (Q in hl_ ps _ _ Q).
++ move=> t x e m hcall; set Q := (Q in hl_ ps _ _ Q).
   pose R := [pred m' | Q m'.[x <- `[{e}] m']].
   apply (hl_conseq (P2 := R) (Q2 := Q))=> //; last exact/hl_assign.
   move=> m' /eqP <-; apply/asboolP=> -[u y] /asboolP /=.
   move/eq_vars=> neq; rewrite mget_neq //.
   by case: eqP neq; intuition.
-+ move=> t x d m; set Q := (Q in hl_ ps _ _ Q).
++ move=> t x d m hcall; set Q := (Q in hl_ ps _ _ Q).
   pose R := forall_in `[{d}] (fun v m => Q m.[x <- v]).
   apply (hl_conseq (P2 := R) (Q2 := Q)) => //; last exact/hl_random.
   move=> m' /= /eqP <-; apply/asboolP => z.
   move=> zQ; apply/asboolP => -[u y] /asboolP /eq_vars /= neq.
   by rewrite mget_neq //; case: eqP neq; intuition.
-+ move=> e c1 ih1 c2 ih2 m; apply hl_if.
++ move=> e c1 ih1 c2 ih2 m /= [hcall1 hcall2]; apply hl_if.
   * pose P := [pred m' | m == m'].
     pose Q := [pred m' | `[<eqon (predC (mod c1)) m m'>]].
-    apply (hl_conseq (P2 := P) (Q2 := Q)); last exact/ih1.
+    apply (hl_conseq (P2 := P) (Q2 := Q)); last exact /ih1.
     - by move=> m' /= /andP [/eqP <-].
     move=> m' /asboolP eq_m_m'; apply/asboolP=> z.
     by case/norP => [cz1 cz2]; rewrite eq_m_m'.
@@ -703,7 +736,7 @@ Proof. elim: c m.
     - by move=> m' /= /andP [/eqP <-].
     move=> m' /asboolP eq_m_m'; apply/asboolP=> z.
     by case/norP => [cz1 cz2]; rewrite eq_m_m'.
-+ move=> e c ihc m.
++ move=> e c ihc m /= hcall.
   pose P := ([pred m' | `[< eqon (~ mod c)%A m m' >]])%A.
   pose Q := ([pred m' | `[< eqon (~ mod c)%A m m' >]] /\ `[{~~ e}])%A.
   apply (hl_conseq (P2 := P) (Q2 := Q)).
@@ -714,30 +747,29 @@ Proof. elim: c m.
   + move=> x /asboolP eq_m1_x; apply/asboolP=> z Hz.
     by rewrite Hm1 // eq_m1_x.
   by apply (ihc m1)=> //=.
-+ move=> c1 ih1 c2 ih2 m; eapply hl_seq; first by apply (ih1 m).
++ move=> c1 ih1 c2 ih2 m /= [hcall1 hcall2] ; eapply hl_seq; first by apply (ih1 m).
   move=> m1 /asboolP Hm1.
   apply: (@range_weaken _ [pred m' | `[< eqon (~ mod c2)%A m1 m' >]]).
   + move=> x /asboolP Hx; apply/asboolP=> z /=.
     by case/norP => [/= zc1 zc2]; rewrite Hm1 // Hx.
     by apply (ih2 m1) => /=.
-+ admit.
-    Admitted.
-(* Qed. *)
++ by move => ?? /=.
+Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma modll c mu m ps : lossless predT c ->
+Lemma modll c mu m ps :   nocall c -> lossless predT c ->
   \P_[mu]         [pred m' | `[<eqon (predC (mod c)) m m'>] ] =
   \P_[dssem ps c mu] [pred m' | `[<eqon (predC (mod c)) m m'>] ].
 Proof.
-move=> ll; rewrite pr_dlet pr_exp; apply/eq_exp => m' _.
+move=> hcall ll; rewrite pr_dlet pr_exp; apply/eq_exp => m' _.
 apply/esym; rewrite !inE; case/boolP: (X in (_ X)%:R) => /= /asboolP h.
 + pose P := [pred m' | `[< eqon (~ mod c)%A m m' >]]; suff: hl_ ps P c P.
   - by move=> Hr; rewrite (hl_ll Hr) ?ll //; apply/asboolP.
   move=> m''; rewrite !inE => /asboolP eqm''.
   apply: (range_weaken (P1 := [pred m' | `[< eqon (~ mod c)%A m'' m' >]])).
   + by move=> m3 /asboolP eqm3; apply/asboolP; rewrite eqm''.
-  by apply/mod_spec; rewrite inE.
+  by apply/mod_spec => //=; rewrite inE.
 + rewrite (eq_in_pr (B := pred0)) ?pr_pred0 // => m''.
-  move/mod_spec=> /(_ _ (eqxx _)) => /asboolP eq_m'_m''.
+  move/mod_spec=> /(_ _ hcall (eqxx _)) => /asboolP eq_m'_m''.
   by apply/asboolPn => eq_m_m''; apply/h; rewrite eq_m'_m''.
 Qed.

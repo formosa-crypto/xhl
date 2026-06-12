@@ -814,7 +814,7 @@ Notation SET := ((_.[_ <- _].[_])%pattern) (only parsing).
 
 Ltac mem_t := rewrite ?mget_iE ![SET](mget_eq, mget_neq); diff_v.
 
-(* ================================================================== *)
+(* -------------------------------------------------------------------- *)
 Lemma le_ubn_body {A : choiceType} (f g : A -> Distr A) (t : pred A) n :
   f <=2 g -> ubn f t n <=2 ubn g t n.
 Proof.
@@ -837,7 +837,7 @@ rewrite leq_eqVlt => /orP[/eqP->//|]; rewrite ltnS => le.
 by move=> a m'; apply/(le_trans (ihp _ le a m'))/le_ubn_n.
 Qed.
 
-(* ================================================================== *)
+(* -------------------------------------------------------------------- *)
 Lemma mono_ssem_aux
   {X Y : eqType} {cmem: memType X}
   (l l' : (Y * cmem) -> {distr cmem / R}) c  (m : cmem) :
@@ -852,7 +852,6 @@ move=> le_ll'; elim: c m => [||T x e|T x e|e c1 ih1 c2 ih2|e c ih|c1 ih1 c2 ih2|
 by apply/le_dlet => [|x _]; [exact: ih1 | exact: ih2].
 Qed.
 
-(* ================================================================== *)
 Lemma mono_ubnf {X Y : eqType} {cmem: memType X} {ps : Y -> (@cmd_  X cmem Y)} n :
   ubnf ps n <=2 ubnf ps n.+1.
 Proof.
@@ -868,38 +867,13 @@ rewrite leq_eqVlt => /orP[/eqP->//|]; rewrite ltnS => le a m'.
 by apply/(le_trans (ihp _ le a m'))/mono_ubnf.
 Qed.
 
-(* ================================================================== *)
-
-Lemma dlim_dlim_diag {A : choiceType} (F : nat -> nat -> Distr A) :
-  (forall k n1 n2, (n1 <= n2)%N -> F n1 k <=1 F n2 k) ->
-  (forall n k1 k2, (k1 <= k2)%N -> F n k1 <=1 F n k2) ->
-  dlim (fun k => dlim (fun n => F n k)) <=1 dlim (fun n => F n n).
+(* -------------------------------------------------------------------- *)
+Lemma dlim_dlim_com {T: choiceType} (f : nat -> nat -> {distr T / R})
+(hmono1: (forall k n1 n2, (n1 <= n2)%N -> f n1 k <=1 f n2 k))
+(hmono2: (forall k n1 n2, (n1 <= n2)%N -> f k n1 <=1 f k n2)):
+  \dlim_(n) (\dlim_(m) f n m) =  \dlim_(m) (\dlim_(n) f n m).
 Proof.
-move=> mono_n mono_k.
-have mono_diag : forall j1 j2, (j1 <= j2)%N -> F j1 j1 <=1 F j2 j2.
-  by move=> j1 j2 hle m'; exact: (le_trans (mono_n j1 _ _ hle m') (mono_k j2 _ _ hle m')).
-apply/leub_dlim => k; apply/leub_dlim => n m0.
-have h1 := mono_n k _ _ (leq_maxl n k) m0.
-have h2 := mono_k (maxn n k) _ _ (leq_maxr n k) m0.
-have h3 := @dlim_ub R A (fun j => F j j) (maxn n k) mono_diag m0.
-exact: (le_trans h1 (le_trans h2 h3)).
-Qed.
-
-(* Lemma dlim_dlim' {A : choiceType} (F : nat -> nat -> Distr A) : *)
-(*   (forall k n1 n2, (n1 <= n2)%N -> F n1 k <=1 F n2 k) -> *)
-(*   (forall n k1 k2, (k1 <= k2)%N -> F n k1 <=1 F n k2) -> *)
-(*   dlim (fun k => dlim (fun n => F n k)) =1 dlim (fun n => F n n). *)
-(* Proof. *)
-
-
-(*   Lemma dlet_lim : (forall n m, (n <= m)%N -> f n <=1 f m) -> *)
-(*   \dlet_(x <- \dlim_(n) f n) h x = \dlim_(n) \dlet_(x <- f n) h x. *)
-(* Proof. by move=> ?; apply/distr_eqP/dlet_lim. Qed. *)
-
-(* Admitted. *)
-
-
-(* ================================================================== *)
+  Admitted.
 
 Lemma dlet_dlim_diag {T U : choiceType}
   (d : nat -> Distr T) (h : nat -> T -> Distr U) :
@@ -935,19 +909,4 @@ Lemma dlet_dlim_diag' {T U : choiceType}
 Proof.
   move => mono_n mono_k.
   by apply/distr_eqP /dlet_dlim_diag.
-
-  (* move => mono_d mono_h. *)
-  (* rewrite -dlim_let //=. *)
-  (* rewrite {1}(eq_dlim *)
-  (*                 (gn := *)
-  (*                    fun n => \dlim_(n0) \dlet_(x <- d n0)  h n x)); last first. *)
-  (* + move => ?;rewrite -dlet_lim //=. *)
-  (* rewrite dlim_dlim' //=. *)
-  (* + move => k n1 n2 hn x. *)
-  (*   apply: le_mu_dlet. *)
-  (*   by apply: mono_d. *)
-  (* + move => n k1 h2 hk x. *)
-  (*   apply: le_in_dlet. *)
-  (*   move => ???. *)
-  (*   by apply: mono_h. *)
 Qed.
