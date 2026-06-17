@@ -212,6 +212,8 @@ End PHL.
 
 (* -------------------------------------------------------------------- *)
 
+From xhl.hl Require hl.
+
 (** Definition of a procedure contract **)
 
 Definition clause : Type := assn * assn * R.
@@ -232,32 +234,35 @@ Definition get_r (an:clause) :=
 
 Definition phi : Type := ident -> clause.
 
+(* -------------------------------------------------------------------- *)
+(* Left *)
+(* -------------------------------------------------------------------- *)
+
 (** Hoare triple for a com with procedure context **)
 
-Definition hoare_triple_ctx (cl : phi) ps (P: assn) (Q: assn) (r:R) (c: cmd) :=
+Definition hoare_triple_ctx_l (cl : phi) ps (P: assn) (Q: assn) (r:R) (c: cmd) :=
   (forall p, phl ps (get_pre (cl p)) (call p) (get_post (cl p)) Le (get_r (cl p))) ->
   phl ps P c Q Le r.
 
 (** Hoare triple for a procedure with procedure context **)
 
-Definition hoare_triple_proc_ctx (cl : phi) (ps_init: ident -> (@cmd_ ident cmem ident)):=
-  forall p ps, hoare_triple_ctx cl ps
+Definition hoare_triple_proc_ctx_l (cl : phi) (ps_init: ident -> (@cmd_ ident cmem ident)):=
+  forall p ps, hoare_triple_ctx_l cl ps
             (get_pre (cl p))
             (get_post (cl p))
             (get_r (cl p))
             (ps_init p).
 
-From xhl.hl Require hl.
-
 Lemma sum_dlim_r_r (f: nat -> {distr cmem /R}) [E : pred cmem]  [r : R]:
+  (forall n m : nat, (n <= m)%N -> forall x : cmem, f n x <= f m x) ->
   (forall (n : nat), psum (fun x : cmem => ((E x)%:R * f n x)) <= r) ->
   (psum (fun x : cmem => ((E x)%:R * (\dlim_(n) (f n) ) x)) <= r).
 Proof.
 Admitted.
 
-Lemma recursive_proc ps' cl' :
+Lemma recursive_proc_l ps' cl' :
   (forall p, 0 <= (get_r (cl' p))) ->
-  hoare_triple_proc_ctx cl' ps' ->
+  hoare_triple_proc_ctx_l cl' ps' ->
   (forall p, phl ps' (get_pre (cl' p))
           (call p)
           (get_post (cl' p))
@@ -265,9 +270,13 @@ Lemma recursive_proc ps' cl' :
           (get_r (cl' p))).
 Proof.
   move => H h p s hP.
-  rewrite -hl.test1.
-  rewrite /pr /= sum_dlim_r_r //.
+   rewrite /pr !hl.test8.
+   apply sum_dlim_r_r.
+    + move => ????.
+     apply mono_ssem_aux.
+     by apply homo_ubnf.
   move => n.
+  rewrite hl.ssem_ubnf_dnull hl.ubnf_ssem (hl.test9 _ _ _ _ ps') hl.test5.
   revert hP; revert p; revert s.
   elim : n => [| n Hn].
   + move => ???. rewrite hl.ssem_false_ps.
@@ -281,14 +290,82 @@ Qed.
 
 (** Modular Hoare Triple Verification **)
 
-Theorem recursion_hoare_triple :
+Theorem recursion_hoare_triple_l :
   forall P Q c cl ps (r:R),
     (forall p, 0 <= (get_r (cl p))) ->
-    hoare_triple_proc_ctx cl ps  ->
-    hoare_triple_ctx cl ps P Q r c ->
+    hoare_triple_proc_ctx_l cl ps  ->
+    hoare_triple_ctx_l cl ps P Q r c ->
     phl ps P c Q Le r.
 Proof.
   move => ?????? Hcl H H0.
   apply H0.
-  by apply: recursive_proc.
+  by apply: recursive_proc_l.
 Qed.
+
+(* -------------------------------------------------------------------- *)
+(* Rigth *)
+(* -------------------------------------------------------------------- *)
+
+(* (** Hoare triple for a com with procedure context **) *)
+
+(* Definition hoare_triple_ctx_r (cl : phi) ps (P: assn) (Q: assn) (r:R) (c: cmd) := *)
+(*   (forall p, phl ps (get_pre (cl p)) (call p) (get_post (cl p)) Ge (get_r (cl p))) -> *)
+(*   phl ps P c Q Ge r. *)
+
+(* (** Hoare triple for a procedure with procedure context **) *)
+
+(* Definition hoare_triple_proc_ctx_r (cl : phi) (ps_init: ident -> (@cmd_ ident cmem ident)):= *)
+(*   forall p ps, hoare_triple_ctx_r cl ps *)
+(*             (get_pre (cl p)) *)
+(*             (get_post (cl p)) *)
+(*             (get_r (cl p)) *)
+(*             (ps_init p). *)
+
+(* Lemma sum_dlim_l_r (f: nat -> {distr cmem /R}) [E : pred cmem]  [r : R]: *)
+(*   (forall n m : nat, (n <= m)%N -> forall x : cmem, f n x <= f m x) -> *)
+(*   (exists n,  r <= psum (fun x : cmem => ((E x)%:R * f n x))) -> *)
+(*   (r <= psum (fun x : cmem => ((E x)%:R * (\dlim_(n) (f n) ) x))). *)
+(* Proof. *)
+(* Admitted. *)
+
+(* (*The program is lossless, then we can bound*) *)
+
+(* Lemma recursive_proc_r ps' cl' : *)
+(*   hoare_triple_proc_ctx_r cl' ps' -> *)
+(*   (forall p, phl ps' (get_pre (cl' p)) *)
+(*           (call p) *)
+(*           (get_post (cl' p)) *)
+(*           Ge *)
+(*           (get_r (cl' p))). *)
+(* Proof. *)
+(*   move => h p s hP //=. *)
+(*   rewrite /pr !hl.test8. *)
+(*    apply sum_dlim_l_r. *)
+(*     + move => ????. *)
+(*      apply mono_ssem_aux. *)
+(*      by apply homo_ubnf. *)
+(*   move => n. *)
+(*   rewrite hl.ssem_ubnf_dnull hl.ubnf_ssem (hl.test9 _ _ _ _ ps') hl.test5. *)
+(*   revert hP; revert p; revert s. *)
+(*   elim : n => [| n Hn]. *)
+(*   + move => ???. rewrite hl.ssem_false_ps. *)
+(*     under eq_psum do  rewrite dnullE mulr0. *)
+(*     by rewrite psum0. *)
+(*   move => s p hP. *)
+(*   rewrite (hl.inline2_split n 1). *)
+(*   apply: h => // p0 s0 hP0. *)
+(*   by apply: Hn. *)
+(* Qed. *)
+
+(* (** Modular Hoare Triple Verification **) *)
+
+(* Theorem recursion_hoare_triple_r : *)
+(*   forall P Q c cl ps (r:R), *)
+(*     hoare_triple_proc_ctx_r cl ps  -> *)
+(*     hoare_triple_ctx_r cl ps P Q r c -> *)
+(*     phl ps P c Q Ge r. *)
+(* Proof. *)
+(*   move => ?????? H H0. *)
+(*   apply H0. *)
+(*   by apply: recursive_proc_r. *)
+(* Qed. *)
