@@ -383,7 +383,7 @@ apply (@le_trans _ _ ((\sum_(i <- undup (unzip1 (unzip1 s))) `| mu12 (i, x) |) *
 + rewrite -ler_pdivrMr; last by rewrite lt0r ge0_mu H.
 	rewrite -mulrA divff // mulr1.
 	rewrite -cpl1 dsndE.
-+ apply ger_big_psum.
+	apply ger_big_psum.
 	+ by apply undup_uniq.
 	by apply summable_snd.
 rewrite mulr_suml.
@@ -602,14 +602,130 @@ apply (@le_trans _ _ (\P_[mu] predT)); last by [].
 by apply subset_pr.
 Qed.
 
-Definition dscalar k mu (bndk: 0 <= k <= (dweight mu)^-1) := locked (mkdistr (isd_mscalar bndk)).
+Variable (k : R) (mu : {distr T / R}).
+Hypothesis (bndk: 0 <= k <= (dweight mu)^-1).
 
-Lemma dscalarE k mu (bndk: 0 <= k <= (dweight mu)^-1) x: (dscalar bndk) x = k * mu x.
+Definition dscalar := locked (mkdistr (isd_mscalar bndk)).
+
+Lemma dscalarE x: dscalar x = k * mu x.
 Proof.
 by unlock dscalar.
 Qed.
 
 End DScalar.
+
+Section DScale.
+
+Context {T : choiceType} (mu : {distr T / R}).
+
+Lemma ge0_mu_leweight : 0 <= (dweight mu)^-1 <= (dweight mu)^-1.
+Proof.
+apply /andP.
+split.
++ by rewrite invr_ge0 ge0_pr.
+by apply le_refl.
+Qed.
+
+Definition dscale := dscalar ge0_mu_leweight. 
+
+End DScale.
+
+
+Section DCond.
+
+Context {T : choiceType} (P : pred T) (mu : {distr T / R}).
+
+Definition dcond := dscale (drestr P mu).
+
+End DCond.
+
+Lemma eq_pair (T S : eqType) (x : T) (y : S) u v : (x, y) == (u, v) = (x == u) && (y == v).
+Proof.
+have [] := eqVneq (x, y) (u, v).
++ rewrite pair_equal_spec=> - [] -> ->.
+  by rewrite !eq_refl.
+move=> /eqP/pair_equal_spec/not_andP.
+case.
++ by have [] := eqVneq x u.
+have [] // := eqVneq y v.
+by rewrite andbF.
+Qed.
+
+Section DCondLemma.
+Context {T S : choiceType}.
+
+Lemma resampling (d : {distr T / R}) (f : T -> S) :
+	\dlet_(x <- d) dunit (x, f x)
+	= \dlet_(y <- \dlet_(x <- d) dunit (f x)) \dlet_(x <- dcond (fun v => f v == y) d) dunit (x, y).
+Proof.
+rewrite dlet_dlet.
+apply distr_eqP.
+move=> [vx vfx].
+rewrite !dletE psum_sum; first last.
++ by move=> x; apply mulr_ge0; apply ge0_mu.
+under [RHS]eq_psum=> x.
+rewrite dlet_unit dletE.
+under eq_psum=> x' do rewrite /GRing.mull_fun dunit1E eq_pair /dcond /dscale dscalarE drestrE.
+rewrite psum_sum; first last.
++ move=> x'.
+	apply mulr_ge0; last by [].
+	apply mulr_ge0; last by case: (f x' == f x).
+	by rewrite invr_ge0 ge0_pr.
+rewrite (@sum_seq1 _ _ _ vx); last first.
++ move=> x'.
+	rewrite [x' == vx]eq_sym.
+	case: (vx == x')=> //=.
+	by rewrite mulr0 eq_refl.
+rewrite eq_refl andTb.
+rewrite /pr /= !mulrA.
+under eq_psum=> x'.
+rewrite mul1r drestrE.
+over.
+rewrite -mulrA [(d x / _) * _]mulrC !mulrA.
+over.
+rewrite (@sum_seq1 _ _ _ vx); last first.
++ move=> y. rewrite dunit1E eq_pair [y == vx]eq_sym.
+	case: (vx == y)=> //=.
+	by rewrite mulr0 eq_refl.
+have [-> | /eqP H] := eqVneq (d vx) 0.
++ rewrite mul0r.
+	apply /Logic.eq_sym/psum_eq0.
+	move=> x.
+	by case: ifPn; rewrite !mul0r.
+rewrite dunit1E eq_pair eq_refl andTb.
+case H1: (f vx == vfx); rewrite (mulr1, mulr0); first last.
+apply /Logic.eq_sym/psum_eq0.
+move=> x.
+move: H1.
+have [-> ->|] := eqVneq (f x) vfx.
++ by rewrite !mul0r.
+by rewrite mulr0 !mul0r.
+move: H1=> /eqP <-.
+pose F := fun x => (if f x == f vx then d x else 0) * d vx / psum (fun x' => if f x' == f vx then d x' else 0).
+rewrite -(@eq_psum _ _ F).
+rewrite /F.
+rewrite !psumZr.
+rewrite -mulrA [d vx / _]mulrC mulrA divff.
++ by rewrite mul1r.
+apply /eqP.
+have [| /eqP //] := eqVneq (psum (fun x : T => if f x == f vx then d x else 0)) 0.
+have H2 : summable (fun x : T => if f x == f vx then d x else 0).
++ apply (@eq_summable _ _ (fun x => (f x == f vx)%:R * d x)).
+	+ move=> x.
+		by case: ifPn; rewrite (mul1r, mul0r).
+	by apply /summable_condl/summable_mu.
+move=> /(eq0_psum H2) /(_ vx).
+by rewrite eq_refl.
+by apply ge0_mu.
+by rewrite invr_ge0 ge0_psum.
+move=> x.
+rewrite /F.
+case: ifPn; last by rewrite mulr0 !mul0r.
+move=> /eqP ->.
+by rewrite eq_refl mulr1 [d x * _]mulrC.
+Qed.
+
+End DCondLemma.
 
 (* -------------------------------------------------------------------- *)
 Fixpoint ubn {A : choiceType} (f : A -> Distr A) (t : pred A) n := fun a =>

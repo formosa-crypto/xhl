@@ -30,7 +30,7 @@ unlock cmem.
 move=> [m1] [m2] H.
 congr (CoreMem).
 extensionality T.
-extensionality x.
+apply funext=> x.
 by move: (H T (Var T x)).
 Qed.
 
@@ -81,36 +81,36 @@ End Disjoint.
 
 
 (* -------------------------------------------------------------------- *)
-Section PreCouplings.
+Section PartialCouplings.
 Context {A B : choiceType} (v1 : Distr A) (v2 : Distr B)
   (f1: A -> Distr A) (f2: B -> Distr B).
 
-Definition isprecoupling (ν : Distr (A * B)) :=
+Definition ispartialcoupling (ν : Distr (A * B)) :=
   \dlet_(m' <- dfst ν) (f1 m') = v1
   /\ \dlet_(m' <- dsnd ν) (f2 m') = v2.
 
-End PreCouplings.
+End PartialCouplings.
 
-Section PreCouplingsTheory.
+Section PartialCouplingsTheory.
 
-Lemma isprecoupling_eq {A B : choiceType} (u1 u2 u1' u2' : Distr _) (ν : Distr (A * B)) (f1 f2 : _ -> Distr _) :
-  u1 =1 u1' -> u2 =1 u2' -> isprecoupling u1 u2 f1 f2 ν -> isprecoupling u1' u2' f1 f2 ν.
+Lemma ispartialcoupling_eq {A B : choiceType} (u1 u2 u1' u2' : Distr _) (ν : Distr (A * B)) (f1 f2 : _ -> Distr _) :
+  u1 =1 u1' -> u2 =1 u2' -> ispartialcoupling u1 u2 f1 f2 ν -> ispartialcoupling u1' u2' f1 f2 ν.
 Proof. by do 2! move=> /distr_eqP->. Qed.
 
-Lemma isprecoupling_dnull {A B : choiceType} (f1 f2 : _ -> Distr _):
-	@isprecoupling A B dnull dnull f1 f2 dnull.
+Lemma ispartialcoupling_dnull {A B : choiceType} (f1 f2 : _ -> Distr _):
+	@ispartialcoupling A B dnull dnull f1 f2 dnull.
 Proof.
 by split; rewrite dmarginE !dlet_null.
 Qed.
 
-Lemma isprecoupling_dunit {A B : choiceType} (f1 f2 : _ -> Distr _) m':
-@isprecoupling A B (f1 m'.1) (f2 m'.2) f1 f2 (dunit m').
+Lemma ispartialcoupling_dunit {A B : choiceType} (f1 f2 : _ -> Distr _) m':
+@ispartialcoupling A B (f1 m'.1) (f2 m'.2) f1 f2 (dunit m').
 Proof.
 by split; rewrite dmarginE !dlet_unit.
 Qed.
 
-Lemma isprecoupling_swap {A : choiceType} (u1 u2 : Distr A) (ν : Distr (A * A)) (f1 f2 : _ -> Distr _):
-  isprecoupling u1 u2 f1 f2 ν -> isprecoupling u2 u1 f2 f1 (dswap ν).
+Lemma ispartialcoupling_swap {A : choiceType} (u1 u2 : Distr A) (ν : Distr (A * A)) (f1 f2 : _ -> Distr _):
+  ispartialcoupling u1 u2 f1 f2 ν -> ispartialcoupling u2 u1 f2 f1 (dswap ν).
 Proof.
 case=> <- <-; split.
 + apply eq_in_dlet=> //.
@@ -121,13 +121,13 @@ apply distr_eqP=> m.
 by rewrite dsnd_dswap.
 Qed.
 
-Lemma isprecoupling_dlet {A B C D: choiceType}
+Lemma ispartialcoupling_dlet {A B C D: choiceType}
   (u1 u2 : Distr _) (f1 f2 : _ -> Distr _) (u: Distr (A * B))
   (v1 v2 : _ -> Distr _) (g1 g2 : _ -> Distr _) (v: _ -> Distr (C * D)) :
-  isprecoupling u1 u2 f1 f2 u
+  ispartialcoupling u1 u2 f1 f2 u
   -> (forall x, x \in dinsupp u ->
-    isprecoupling (\dlet_(y <- f1 x.1) (v1 y)) (\dlet_(y <- f2 x.2) (v2 y)) g1 g2 (v x))
-    -> isprecoupling
+    ispartialcoupling (\dlet_(y <- f1 x.1) (v1 y)) (\dlet_(y <- f2 x.2) (v2 y)) g1 g2 (v x))
+    -> ispartialcoupling
       (\dlet_(x <- u1) (v1 x))
       (\dlet_(x <- u2) (v2 x))
       g1 g2
@@ -144,15 +144,15 @@ apply: eq_in_dlet => // y /hC [_ +].
 by rewrite dlet_dmargin dlet_unit.
 Qed.
 
-Lemma isprecoupling_dlim {A B: choiceType}
+Lemma ispartialcoupling_dlim {A B: choiceType}
   (μ1 μ2 : nat -> Distr _) (f1 f2 : _ -> Distr _) (ν : nat -> Distr (A * B)) :
 
-     (forall n, isprecoupling (μ1 n) (μ2 n) f1 f2 (ν n))
+     (forall n, ispartialcoupling (μ1 n) (μ2 n) f1 f2 (ν n))
   -> (forall n m, (n <= m)%N -> ν n <=1 ν m)
-  -> isprecoupling (dlim μ1) (dlim μ2) f1 f2 (dlim ν).
+  -> ispartialcoupling (dlim μ1) (dlim μ2) f1 f2 (dlim ν).
 Proof.
 move=> hC mono.
-rewrite /isprecoupling !dmarginE !dlet_lim //.
+rewrite /ispartialcoupling !dmarginE !dlet_lim //.
 + move=> n m /mono H x.
   rewrite -!dmarginE.
   rewrite !dfstE.
@@ -170,7 +170,7 @@ rewrite /isprecoupling !dmarginE !dlet_lim //.
 by split; apply/eq_dlim => n; case: (hC n); rewrite -dmarginE.
 Qed.
 
-End PreCouplingsTheory.
+End PartialCouplingsTheory.
 
 Section Variables.
 
@@ -589,7 +589,7 @@ End Swapping.
 (*
 Section Prod.
 
-Definition edprod {T S : IhbType.type} := @cst_ ident cmem _ (fun d1 d2 => dprod d1 d2).
+Definition edprod {T S : choiceType} := @cst_ ident cmem _ (fun (d1 : { distr T / R}) (d2 : {distr S / R}) => dprod d1 d2).
 
 Lemma sem_dprod {T S : IhbType.type} (x : vars T) (y : vars S) v d1 d2:
 	(x <$- d1 ;; y <$- d2 ;; v <<- app2_ (pair %:S) ` x ` y) =C (v <$- app2_ edprod d1 d2 ;; x <<- app_ (fst %:S) ` v ;; y <<- app_ (snd %:S) ` v).
@@ -600,6 +600,7 @@ apply eq_in_dlet=> //.
 move=> u usupp.
 rewrite dlet_unit ssem_rndE !dlet_dlet.
 apply eq_in_dlet; last first.
+Admitted.
 
 End Prod.
 *)
@@ -614,7 +615,7 @@ Implicit Types c r s t : cmd.
 Definition dprhl P r1 r2 c1 c2 s1 s2 Q :=
   forall m : rmem, P m
 	-> exists2 ν,
-  		isprecoupling
+  		ispartialcoupling
     	(ssem (r1 ;; c1) m.1) (ssem (r2 ;; c2) m.2)
     	(ssem s1) (ssem s2)
     	ν
@@ -624,11 +625,11 @@ Definition dprhl P r1 r2 c1 c2 s1 s2 Q :=
 Lemma dprhlw P r1 r2 c1 c2 s1 s2 Q m :
   dprhl P r1 r2 c1 c2 s1 s2 Q
 	-> P m
-	-> { ν | isprecoupling (ssem (r1 ;; c1) m.1) (ssem (r2 ;; c2) m.2) (ssem s1) (ssem s2) ν & range Q ν }.
+	-> { ν | ispartialcoupling (ssem (r1 ;; c1) m.1) (ssem (r2 ;; c2) m.2) (ssem s1) (ssem s2) ν & range Q ν }.
 Proof.
 move=> h Pm.
-have: exists ν, 
-  isprecoupling (ssem (r1 ;; c1) m.1) (ssem (r2 ;; c2) m.2) (ssem s1) (ssem s2) ν
+have: exists ν,
+  ispartialcoupling (ssem (r1 ;; c1) m.1) (ssem (r2 ;; c2) m.2) (ssem s1) (ssem s2) ν
   /\ range Q ν.
 + by case: (h _ Pm) => ν h1 h2; exists ν; split.
 by case/cid=> ν [h1 h2]; exists ν.
@@ -649,7 +650,7 @@ Proof.
 move=> eq1 eq2 eq3 eq4 eq5 eq6 h m Pm.
 case: (h _ Pm).
 move=> x.
-rewrite !ssemE /isprecoupling !dlet_dmargin eq1 eq2.
+rewrite !ssemE /ispartialcoupling !dlet_dmargin eq1 eq2.
 move=> [hCl hCr hR].
 exists x => //.
 rewrite !dlet_dmargin.
@@ -730,7 +731,7 @@ exists (\dlet_(m <- ν) f m); last first.
   case: {-}_ / idP; first by move=> p; case: dprhlw.
   by move=> _ x /dinsuppP; rewrite dnullE.
 rewrite 2!seqA ssem_seqE [ssem (r2 ;; c2 ;; c2') _]ssem_seqE. 
-apply: isprecoupling_dlet; first exact hC.
+apply: ispartialcoupling_dlet; first exact hC.
 move=> m' hm'; rewrite /f; case: {-}_ / idP => //.
 move=> p; case: dprhlw.
 by rewrite !ssemE.
@@ -797,28 +798,28 @@ exists (dlim ν).
   rewrite -!dlim_let.
   + by move=> x n p Hm; apply/homo_whilen/Hm.
   + by move=> x n p Hm; apply/homo_whilen/Hm.
-  apply/isprecoupling_dlim=> [n|n k le_nk]; last first.
+  apply/ispartialcoupling_dlim=> [n|n k le_nk]; last first.
   * move=> m'; rewrite -[k](subnK le_nk); elim: (_ - _)%N => //.
     by move=> n' ihn'; rewrite addSn; apply/(le_trans ihn').
   under eq_in_dlet => [i _|] do [rewrite !whilen_iterc !ssemE|].
   under [\dlet_(x <- ssem r2 m.2) _]eq_in_dlet => [i _|] do [rewrite !whilen_iterc !ssemE|].
   rewrite -!dlet_dlet.
-  apply/(@isprecoupling_dlet _ _ _ _ _ _ (ssem r1) (ssem r2)) => /=; last first.
+  apply/(@ispartialcoupling_dlet _ _ _ _ _ _ (ssem r1) (ssem r2)) => /=; last first.
   * move=> m' Im'.
     rewrite -!ssem_seqE.
     move: Hdisj1 Hdisj2=> /(disjoint_cond abort skip) -> /(disjoint_cond abort skip) ->.
     rewrite !seq_skip_r !seq_abort_r !ssemE.
 		move/rg_νn/hs: Im'.
     rewrite !ssemE => /eqP <-; case: ifPn => _.
-    - by apply/isprecoupling_dnull.
-    - by case: m' => a b; apply/isprecoupling_dunit.
+    - by apply/ispartialcoupling_dnull.
+    - by case: m' => a b; apply/ispartialcoupling_dunit.
   elim: n => /= [|n ihn].
   * rewrite !iterc0 -!ssem_seqE !seq_skip_r.
-    by case: {+}m => a b; apply/isprecoupling_dunit.
+    by case: {+}m => a b; apply/ispartialcoupling_dunit.
   under eq_in_dlet => [i _|] do [rewrite itercSr !ssemE |].
   under [\dlet_(x <- ssem r2 _) _]eq_in_dlet => [i _|] do [rewrite itercSr !ssemE |].
   rewrite -!dlet_dlet.
-  apply/(@isprecoupling_dlet _ _ _ _ _ _ (ssem r1) (ssem r2))=> //= m' /rg_νn Im'; move/hs: (Im').
+  apply/(@ispartialcoupling_dlet _ _ _ _ _ _ (ssem r1) (ssem r2))=> //= m' /rg_νn Im'; move/hs: (Im').
   rewrite !ssemE => /eqP eqe.
   rewrite -!ssem_seqE.
     move: Hdisj1 Hdisj2=> /(disjoint_cond c1 skip) -> /(disjoint_cond c2 skip) ->.
@@ -827,7 +828,7 @@ exists (dlim ν).
   * by rewrite !ssemE => _ -> _; case: dprhlw.
   rewrite !ssemE -eqe Im' /= andbb => /negP/negbTE => ->/=.
   rewrite -!ssem_seqE !seq_skip_r.
-  by case: {+}m' => a b; apply/isprecoupling_dunit.  
+  by case: {+}m' => a b; apply/ispartialcoupling_dunit.  
 + apply/range_dlim => n; apply/(range_dlet (rg_νn n)) => m' Im'.
   case: ifPn => [he1|hNe1]; first by apply/range_dnull.
   apply/range_dunit=> /=; rewrite Im' /= !ssemE.
@@ -952,6 +953,43 @@ Lemma dprhl_whileL I e1 c1 r1 r2:
 			r1 r2
     (I /\ `[{ ~~ e1#'1}])%A.
 Proof.
+set J := (I /\ _)%A => Hdisj Hweight h.
+pose v1 m := if @idP (J m) is ReflectT Rm then tag (dprhlw h Rm) else dunit m.
+pose vn := fix νn n m {struct n} :=
+  if n is n.+1 then \dlet_(m' <- νn n m) v1 m' else dunit m.
+pose ve n m := \dlet_(m' <- vn n m) if esem e1 m'.1 then dnull else dunit m'.
+move=> m Im; pose v n := ve n m.
+have rg_νn: forall n, range I (vn n m).
++ elim=> [|n ih] /=; first by apply/range_dunit.
+  apply/(range_dlet ih) => {Im v ih} m Im; rewrite /v1.
+  case: {-}_ / idP; first by move=> p; case: dprhlw.
+  by move=> _; apply/range_dunit.
+have mono_v n : v n <=1 v n.+1.
++ move=> /= m'; rewrite /v /ve dlet_dlet -/(vn _ _).
+  apply/le_dlet => //= {}m' Im' m''.
+  case: ifPn => [he1|hNe1]; first by apply/lef_dnull.
+  rewrite dunit1E; case: eqP => /= [<-|_]; last by apply/ge0_mu.
+  have /distr_eqP ->: v1 m' =1 dunit m'.
+  * rewrite /v1; case: {-}_ / idP => // p; move: {-}p.
+    by rewrite /J /= ssemE (negbTE hNe1) andbF.
+  by rewrite dlet_unit (negbTE hNe1) dunit1E eqxx.
+exists (dlim v).
++ rewrite seq_skip_r.
+	split; rewrite dmarginE dlet_dlet; under eq_in_dlet=> [y _|] do [rewrite dlet_unit|].
+	+ admit.
+	have -> : \dlet_(i <- \dlim_(n) v n) ssem r2 i.2 = \dlet_(i <- \dlim_(n) v n) ssem r2 m.2.
+	+ apply eq_in_dlet=> //.
+		move=> m'.
+		admit.
+	apply distr_eqP=> m'.
+	rewrite dletC.
+	suff -> : \P_[\dlim_(n) v n] predT = 1 by rewrite mul1r.
+	move: (Hweight m Im)=> <-.
+	rewrite !pr_predT ssemE.
+  admit.
+apply/range_dlim => n; apply/(range_dlet (rg_νn n)) => m' Im'.
+case: ifPn => [he1|hNe1]; first by apply/range_dnull.
+by apply/range_dunit=> /=; rewrite Im' /= !ssemE.
 Admitted.
 
 (* -------------------------------------------------------------------- *)
@@ -1021,14 +1059,14 @@ by apply/range_weaken/hQ: hR.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma dprhl_case P e r1 r2 c1 c2 s1 s2 Q :
-     dprhl (P /\   `[{e}])%A r1 r2 c1 c2 s1 s2 Q
-  -> dprhl (P /\ ~ `[{e}])%A r1 r2 c1 c2 s1 s2 Q
+Lemma dprhl_case P A r1 r2 c1 c2 s1 s2 Q :
+     dprhl (P /\   A)%A r1 r2 c1 c2 s1 s2 Q
+  -> dprhl (P /\ ~ A)%A r1 r2 c1 c2 s1 s2 Q
   -> dprhl P r1 r2 c1 c2 s1 s2 Q.
 Proof.
-move=> he hNe m Pm. case/boolP: (`[{e}] m) => [em | Nem].
-+ by apply/he; rewrite -(rwP andP).
-+ by apply/hNe; rewrite -(rwP andP).
+move=> hA hNA m Pm; case/boolP: (A m) => [Am | NAm].
++ by apply/hA; rewrite -(rwP andP).
++ by apply/hNA; rewrite -(rwP andP).
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -1092,7 +1130,7 @@ Proof.
 move: P Q c1 c2 r1 r2 s1 s2 => [:hG] P Q c1 c2 r1 r2 s1 s2; split; last first.
 + move: P Q c1 c2 r1 r2 s1 s2; abstract: hG => P Q c1 c2 r1 r2 s1 s2 h -[m1 m2] Pm.
   case: (h (m2, m1))=> //= ν [hC1 hC2] hR; exists (dswap ν) => /=.
-  * by apply/isprecoupling_swap.
+  * by apply/ispartialcoupling_swap.
   * by move/range_pswap: hR; apply/range_weaken; case.
 + by move=> h; apply/hG ; apply/dprhl_conseq: h; case.
 Qed.
@@ -1117,12 +1155,13 @@ Proof.
 move=> H12 H23 [m1 m3] /= /asboolP [m2 [HP12 HP23]].
 move: (H12 (m1, m2) HP12)=> [/= v12 [pc12l pc12r] rng12].
 move: (H23 (m2, m3) HP23)=> [/= v23 [pc23l pc23r] rng23].
-move: pc12r pc23l.
-under eq_in_dlet=> [x _|] do [rewrite ssemE|].
-rewrite dlet_dunit_id=> pc12r.
-under eq_in_dlet=> [x _|] do [rewrite ssemE|].
-rewrite dlet_dunit_id=> pc23l.
-exists (dmargin (fun v => (v.1.1, v.2)) (dglue pc12r pc23l)).
+move: pc12r pc23l=> <- dletEq.
+have eqr: dfst v23 = dsnd v12.
++ move: dletEq.
+	under eq_in_dlet=> [x _|] do [rewrite ssem_skipE|].
+	under [RHS]eq_in_dlet=> [x _|] do [rewrite ssem_skipE|].
+	by rewrite !dlet_dunit_id.
+exists (dmargin (fun v => (v.1.1, v.2)) (dglue Logic.eq_refl eqr)).
 + split.
 	+ by rewrite -proj_glue1 pc12l.
 	by rewrite -proj_glue2 pc23r.
