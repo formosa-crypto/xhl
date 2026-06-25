@@ -50,7 +50,7 @@ Notation "`[ 'forall' x 'in' mu | m => Q ]" :=
   (@forall_in _ mu%A (fun x m => Q)): assn.
 
 (* -------------------------------------------------------------------- *)
-(* Pratical Hoare triple                                                           *)
+(* Pratical Hoare triple                                                *)
 (* -------------------------------------------------------------------- *)
 
 Definition khl_ (ps: psi) (P : assn) (c : cmd) (Q : assn2) :=
@@ -61,17 +61,36 @@ Arguments khl_ ps P%_A c%_S Q%_A.
 Notation khl   := (khl_ ps).
 
 Lemma khl_hl P c Q :
-  khl P c Q <-> (forall s0, P s0 -> hl (fun s => s == s0) c (Q s0)).
+  khl P c Q <-> (forall s0, hl (xpredI P (fun s => s == s0)) c (Q s0)).
 Proof.
   split.
-  + by move=> h s0 ?? /eqP ?; subst s0; apply h.
-  by  move => h s hP;apply: (h s hP).
+  + by move=> h s0 ? /andP [] ? /eqP ?; subst s0; apply h.
+    move => h s hP.
+    apply: (h s).
+    by apply/andP.
 Qed.
 
 Lemma hl_khl P c Q :
   khl P c (fun _ => Q) <-> hl P c Q.
 Proof.
   by split; move => h s hP; apply h.
+Qed.
+
+Lemma khl_khl P c Q :
+  khl xpredT c (fun s0 s =>  P s0 ==> Q s0 s) <-> khl P c Q.
+Proof.
+  split.
+  + move => h s HP.
+  have := (h s isT).
+  rewrite /range => H m He.
+  revert HP.
+  apply /implyP.
+  by apply H.
+  + move => h s HP.
+  have := (h s).
+  rewrite /range => H m He.
+  apply /implyP => ?.
+  by apply: H.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -645,6 +664,54 @@ Lemma hl_ll (P Q : assn) (c:cmd) m:
 Proof.
  by move=> Hhl /Hhl HP <-; rewrite !pr_exp;apply/eq_exp => x /HP ->.
 Qed.
+
+Definition ctxt := assn -> Y  -> assn2 -> Prop.
+
+Definition addspecs (G : ctxt) (cl : phi) : ctxt :=
+  fun P f Q =>
+    G P f Q \/ [/\ P = get_pre (cl f) & Q = get_post (cl f)].
+
+Inductive derivable : ctxt -> assn -> cmd -> assn -> Prop :=
+  | H_Skip : forall P G,
+      derivable G P skip P
+  | H_Abort : forall P Q G,
+      derivable G P abort Q
+  | H_Asgn : forall {T : IhbType.type} x (e:expr_ X mem T) (Q : assn) G,
+      derivable G [pred m | Q m.[x <- `[{e}]%A m]] (x <<- e) Q
+  | H_Random : forall {T : IhbType.type} x (d:expr_ X mem (Distr T)) (Q : assn) G,
+      derivable G `[forall v in `[{d}] | m => Q m.[x <- v]]%A (x <$- d) Q
+  | H_Seq : forall P c Q d R G,
+      derivable G Q d R -> derivable G P c Q -> derivable G P (c;;d) R
+  | H_If : forall (Pr Po : assn) (e:expr_ X mem bool) (c1 c2:cmd) G,
+      derivable G (Pr /\ `[{e}])%A   c1 Po ->
+      derivable G (Pr /\ `[{~~e}])%A c2 Po ->
+      derivable G Pr (If e then c1 else c2)%S Po
+  | H_While : forall (I : assn) (e:expr_ X mem bool) (c:cmd) G,
+      derivable G (I /\ `[{e}])%A c I ->
+      derivable G I (While e Do c) (I /\ `[{~~e}])%A
+  | H_Consequence : forall (P2 Q2 P1 Q1 : assn)(c : cmd) G,
+      (forall m, P1 m -> P2 m) ->
+      (forall m, Q2 m -> Q1 m) ->
+      derivable G P2 c Q2 -> derivable G P1 c Q1
+  | H_khl : forall P Q c G,
+     derivable2 G P c (fun _ => Q) -> derivable G P c Q
+  with derivable2 : ctxt -> assn -> cmd -> assn2 -> Prop :=
+   | H_hl: forall P Q c G,
+       (forall s0, derivable G (xpredI P (fun s => s == s0)) c (Q s0)) ->
+       derivable2 G P c Q
+   | H_call : forall P Q G f,
+       G P f Q ->
+       derivable2 G P (call f) Q
+   | H_rec : forall P Q c cl G,
+       (forall p', derivable2 (addspecs G cl) (get_pre (cl p')) (ps p') (get_post (cl p'))) ->
+       derivable2 (addspecs G cl) P c Q ->
+       derivable2 G P c Q.
+
+Theorem hoare_complete: forall P c Q,
+  khl_ ps P c Q -> derivable2 (fun _ _ _ => False) P c Q.
+Proof.
+Admitted.
+
 End Hl.
 
 (* -------------------------------------------------------------------- *)
