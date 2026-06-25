@@ -705,10 +705,98 @@ Inductive derivable : ctxt -> assn -> cmd -> assn -> Prop :=
    | H_rec : forall P Q c cl G,
        (forall p', derivable2 (addspecs G cl) (get_pre (cl p')) (ps p') (get_post (cl p'))) ->
        derivable2 (addspecs G cl) P c Q ->
-       derivable2 G P c Q.
+       derivable2 G P c Q
+   | H_adapt : forall (P1 P2 : assn) (Q1 Q2 : assn2) c G,
+       (forall m, P1 m -> P2 m) ->
+       (forall m0, P1 m0 -> forall m, Q2 m0 m -> Q1 m0 m) ->
+       derivable2 G P2 c Q2 -> derivable2 G P1 c Q1.
+
+(* Most-general (relational) procedure contract: pre = predT, post relates the
+   initial memory to the support of the procedure body's semantics. *)
+Definition cl_mgt : phi :=
+  fun f => (xpredT, (fun s0 s => s \in dinsupp (ssem_ ps (ps f) s0))).
+
+Definition Gmgt : ctxt := addspecs (fun _ _ _ => False) cl_mgt.
+
+Lemma in_dinsupp_dunit (T : choiceType) (t : T) :
+  t \in dinsupp (dunit t : {distr T / R}).
+Proof. by rewrite in_dinsupp dunit1E eqxx oner_neq0. Qed.
+
+Lemma rel_complete_d (c : cmd) (P Q : assn) :
+  hl_ ps P c Q -> derivable Gmgt P c Q.
+Proof.
+elim: c P Q => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2 | f ] P Q Hhl.
+- (* abort *) exact: H_Abort.
+- (* skip *)
+  apply: (H_Consequence (P2 := P) (Q2 := P)) => //.
+  + move=> m Pm; have H := Hhl m Pm; rewrite ssem_skipE in H.
+    by apply: (H m); exact: in_dinsupp_dunit.
+  + exact: H_Skip.
+- (* assign *)
+  apply: (H_Consequence (P2 := [pred m | Q m.[x <- `[{e}]%A m]]) (Q2 := Q)).
+  + move=> m Pm /=; have H := Hhl m Pm; rewrite ssem_assnE in H.
+    by apply: (H (m.[x <- `[{e}]%A m])); exact: in_dinsupp_dunit.
+  + by [].
+  + exact: H_Asgn.
+- (* random *)
+  apply: (H_Consequence
+            (P2 := `[forall v in `[{d}] | m => Q m.[x <- v]]%A) (Q2 := Q)).
+  + move=> m Pm; apply/asboolP => v vd; have H := Hhl m Pm; rewrite ssem_rndE in H.
+    apply: (H (m.[x <- v])); apply: dlet_dinsupp; first exact: vd.
+    exact: in_dinsupp_dunit.
+  + by [].
+  + exact: H_Random.
+- (* if *)
+  apply: H_If.
+  + apply: ih1 => m /andP[Pm em]; have H := Hhl m Pm.
+    by rewrite ssem_ifE em in H.
+  + apply: ih2 => m /andP[Pm em]; have H := Hhl m Pm.
+    have em' : esem e m = false by apply/negbTE; exact: em.
+    by rewrite ssem_ifE em' in H.
+- (* while *)
+  pose I : assn := [pred s | `[< range Q (ssem_ ps (While e Do c0) s) >]].
+  apply: (H_Consequence (P2 := I) (Q2 := (I /\ `[{~~e}])%A)).
+  + by move=> m Pm; apply/asboolP; exact: (Hhl m Pm).
+  + move=> s /andP[/asboolP HIs es].
+    have es' : ~~ esem e s by exact: es.
+    by apply: (HIs s); rewrite ssem_while0 //; exact: in_dinsupp_dunit.
+  + apply: H_While; apply: ih0 => s /andP[/asboolP HIs es] s' s'in.
+    apply/asboolP => t tin.
+    have es' : esem e s by exact: es.
+    apply: (HIs t); rewrite ssem_whileS // ssem_seqE.
+    by apply: dlet_dinsupp; [exact: s'in | exact: tin].
+- (* seq *)
+  pose R : assn := [pred s' | `[< exists2 m, P m & s' \in dinsupp (ssem_ ps c1 m) >]].
+  apply: (H_Seq (Q := R)).
+  + apply: ih2 => s' /asboolP[m Pm s'in] y yin.
+    have H := Hhl m Pm; rewrite ssem_seqE in H.
+    by apply: (H y); apply: dlet_dinsupp; [exact: s'in | exact: yin].
+  + apply: ih1 => m Pm s' s'in; apply/asboolP; by exists m.
+- (* call *)
+  apply: H_khl.
+  apply: (H_adapt (P2 := get_pre (cl_mgt f)) (Q2 := get_post (cl_mgt f))) => //.
+  + move=> m0 Pm0 m hm; have H := Hhl m0 Pm0; rewrite ssem_call_eq in H.
+    exact: (H m hm).
+  + by apply: H_call; right.
+Qed.
+
+Lemma rel_complete (c : cmd) (P : assn) (Q : assn2) :
+  khl_ ps P c Q -> derivable2 Gmgt P c Q.
+Proof.
+move=> /khl_hl h; apply: H_hl => s0; exact: (rel_complete_d (h s0)).
+Qed.
 
 Theorem hoare_complete: forall P c Q,
   khl_ ps P c Q -> derivable2 (fun _ _ _ => False) P c Q.
+Proof.
+move=> P c Q Hvalid.
+apply: (H_rec (cl := cl_mgt) (G := fun _ _ _ => False)).
+- by move=> p'; apply: rel_complete => m _ s hs.
+- exact: rel_complete Hvalid.
+Qed.
+
+Theorem hoare_sound: forall P c Q G,
+derivable2 G P c Q ->  khl_ ps P c Q.
 Proof.
 Admitted.
 
