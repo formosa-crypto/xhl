@@ -795,10 +795,180 @@ apply: (H_rec (cl := cl_mgt) (G := fun _ _ _ => False)).
 - exact: rel_complete Hvalid.
 Qed.
 
-Theorem hoare_sound: forall P c Q G,
-derivable2 G P c Q ->  khl_ ps P c Q.
+(* A context is valid (w.r.t. the actual semantics ps) when every assumed
+   procedure-call triple it contains actually holds. *)
+Definition valid_ctxt (G : ctxt) :=
+  forall P0 f Q0, G P0 f Q0 -> khl_ ps P0 (call f) Q0.
+
+(* If [mu] is pointwise below [nu] then [range] transfers from [nu] to [mu]
+   (smaller support). *)
+Lemma range_le (P : pred mem) (mu nu : Distr mem) :
+  mu <=1 nu -> range P nu -> range P mu.
 Proof.
-Admitted.
+move=> le HP x; rewrite !in_dinsupp => xn0; apply: HP.
+have h0 : (0 < mu x)%R by rewrite lt0r xn0 ge0_mu.
+have h1 : (0 < nu x)%R by apply: lt_le_trans h0 (le x).
+by move: h1; rewrite lt0r => /andP[].
+Qed.
+
+(* Hoare triples relative to an explicit call-interpretation [l] (as used by
+   [ssem_aux]).  The structural rules below mirror the [hl_*] rules, but for
+   [ssem_aux l] instead of [ssem_ ps]; their proofs are the same since they only
+   use the (definitional) equations of [ssem_aux] and the [range] lemmas. *)
+Definition ahl (l : Y * mem -> Distr mem) (P : assn) (c : cmd) (Q : assn) :=
+  forall m, P m -> range Q (ssem_aux l c m).
+Definition akhl (l : Y * mem -> Distr mem) (P : assn) (c : cmd) (Q : assn2) :=
+  forall m, P m -> range (Q m) (ssem_aux l c m).
+
+Arguments ahl l P%_A c%_S Q%_A.
+Arguments akhl l P%_A c%_S Q%_A.
+
+Lemma ahl_skip l (P : assn) : ahl l P skip P.
+Proof. by move=> m hm /=; apply: range_dunit. Qed.
+
+Lemma ahl_abort l (P Q : assn) : ahl l P abort Q.
+Proof. by move=> m hm /=; apply: range_dnull. Qed.
+
+Lemma ahl_assign l {T : IhbType.type} x (e : expr_ X mem T) (Q : assn) :
+  ahl l [pred m | Q m.[x <- `[{e}]%A m]] (x <<- e) Q.
+Proof. by move=> m hm /=; apply: range_dunit. Qed.
+
+Lemma ahl_random l {T : IhbType.type} x (d : expr_ X mem (Distr T)) (Q : assn) :
+  ahl l `[forall v in `[{d}] | m => Q m.[x <- v]] (x <$- d) Q.
+Proof.
+move=> m /asboolP /= h /=.
+apply (@range_dlet _ _ [pred v | Q m.[x <- v]]) => v /=.
+  by apply h. by apply range_dunit.
+Qed.
+
+Lemma ahl_seq l (R Pr Po : assn) (c1 c2 : cmd) :
+  ahl l Pr c1 R -> ahl l R c2 Po -> ahl l Pr (c1;;c2) Po.
+Proof. by move=> H1 H2 m /H1 Hm /=; apply/(range_dlet Hm H2). Qed.
+
+Lemma ahl_if l (Pr Po : assn) (e : expr_ X mem bool) (c1 c2 : cmd) :
+  ahl l (Pr /\ `[{e}]) c1 Po -> ahl l (Pr /\ `[{~~e}]) c2 Po ->
+  ahl l Pr (If e then c1 else c2)%S Po.
+Proof.
+by move=> H1 H2 m Hm /=; case: ifPn => He; [apply H1 | apply H2] => /=; rewrite Hm.
+Qed.
+
+Lemma ahl_while l (I : assn) (e : expr_ X mem bool) (c : cmd) :
+  ahl l (I /\ `[{e}]) c I -> ahl l I (While e Do c) (I /\ `[{~~e}]).
+Proof.
+move=> Hc m Hm /=; apply/range_dlim => k.
+elim: k m Hm => [|k IHk] m Hm /=; first by apply: range_dnull.
+case: ifPn => He.
++ apply: (range_dlet (PA := I)).
+  - by apply: Hc => /=; rewrite Hm.
+  - by move=> m' Im'; apply: IHk.
++ by apply: range_dunit => /=; rewrite Hm.
+Qed.
+
+Lemma ahl_conseq l (P2 Q2 P1 Q1 : assn) (c : cmd) :
+  (forall m, P1 m -> P2 m) -> (forall m, Q2 m -> Q1 m) ->
+  ahl l P2 c Q2 -> ahl l P1 c Q1.
+Proof. by move=> HP HQ H2 m /HP /H2 Hr; apply: (range_weaken HQ Hr). Qed.
+
+Lemma akhl_hl l P c Q :
+  akhl l P c Q <-> (forall s0, ahl l (xpredI P (fun s => s == s0)) c (Q s0)).
+Proof.
+split.
++ by move=> h s0 ? /andP [] ? /eqP ?; subst s0; apply h.
+move => h s hP; apply: (h s); by apply/andP.
+Qed.
+
+Lemma ahl_khl l P c Q : akhl l P c (fun _ => Q) <-> ahl l P c Q.
+Proof. by split; move => h s hP; apply h. Qed.
+
+(* Context valid at approximation level [n]. *)
+Definition valid_ctxt_n n (G : ctxt) :=
+  forall P0 f Q0, G P0 f Q0 -> akhl (ubnf ps n) P0 (call f) Q0.
+
+Lemma valid_ctxt_n_dn {n G} : valid_ctxt_n n.+1 G -> valid_ctxt_n n G.
+Proof.
+move=> H P0 f Q0 HG m pf; apply: (range_le _ (H P0 f Q0 HG m pf)).
+exact: (mono_ubnf n (f, m)).
+Qed.
+
+Lemma valid_ctxt_to_n {G} : valid_ctxt G -> forall n, valid_ctxt_n n G.
+Proof.
+move=> Hv n P0 f Q0 HG m pf.
+have Hlim := Hv P0 f Q0 HG m pf; rewrite ssem_callE in Hlim.
+apply: (range_le (nu := \dlim_(k) ubnf ps k (f, m))) => //.
+by apply: dlim_ub => k1 k2 le; exact: (homo_ubnf le (f, m)).
+Qed.
+
+Scheme derivable_min := Minimality for derivable Sort Prop
+  with derivable2_min := Minimality for derivable2 Sort Prop.
+Combined Scheme derivable_mut from derivable_min, derivable2_min.
+
+(* Soundness at every finite approximation level [n].  The recursion rule
+   ([H_rec]) is discharged by an inner induction on [n]: under the approximant
+   [ubnf ps n] every (possibly nested) procedure is consistently the section
+   body unfolded to depth [n], so the contracts assumed by the rule are
+   established level-by-level. *)
+Lemma soundness_n :
+  (forall G P c Q, derivable G P c Q ->
+     forall n, valid_ctxt_n n G -> ahl (ubnf ps n) P c Q) /\
+  (forall G P c Q, derivable2 G P c Q ->
+     forall n, valid_ctxt_n n G -> akhl (ubnf ps n) P c Q).
+Proof.
+apply: derivable_mut.
+- (* H_Skip *) by move=> P G n _; exact: ahl_skip.
+- (* H_Abort *) by move=> P Q G n _; exact: ahl_abort.
+- (* H_Asgn *) by move=> T x e Q G n _; exact: ahl_assign.
+- (* H_Random *) by move=> T x d Q G n _; exact: ahl_random.
+- (* H_Seq *)
+  by move=> P c Q d R G _ IHd _ IHc n Hv; apply: (ahl_seq (IHc n Hv) (IHd n Hv)).
+- (* H_If *)
+  by move=> Pr Po e c1 c2 G _ IH1 _ IH2 n Hv;
+     apply: ahl_if; [exact: IH1 | exact: IH2].
+- (* H_While *) by move=> I e c G _ IH n Hv; apply: ahl_while; exact: IH.
+- (* H_Consequence *)
+  by move=> P2 Q2 P1 Q1 c G HP HQ _ IH n Hv; apply: (ahl_conseq HP HQ (IH n Hv)).
+- (* H_khl *) by move=> P Q c G _ IH n Hv; apply/ahl_khl; exact: IH.
+- (* H_hl *) by move=> P Q c G _ IH n Hv; apply/akhl_hl=> s0; exact: (IH s0 n Hv).
+- (* H_call *) by move=> P Q G f HG n Hv; exact: Hv HG.
+- (* H_rec *)
+  move=> P Q c cl G _ IH_body _ IH_c n Hv; apply: (IH_c n).
+  have cl_calls : forall k, valid_ctxt_n k G ->
+      forall f, akhl (ubnf ps k) (get_pre (cl f)) (call f) (get_post (cl f)).
+  { elim => [|k IHk] Hvk f m pf; first by apply: range_dnull.
+    have Hvk' := valid_ctxt_n_dn Hvk.
+    apply: (IH_body f k _ m pf).
+    by move=> P0 g Q0 [HG | [-> ->]]; [exact: Hvk' HG | exact: IHk Hvk' g]. }
+  by move=> P0 f Q0 [HG | [-> ->]]; [exact: Hv HG | exact: cl_calls n Hv f].
+- (* H_adapt *)
+  move=> P1 P2 Q1 Q2 c G Hpre Hpost _ IH n Hv m P1m.
+  apply: (range_weaken _ (IH n Hv m (Hpre m P1m))).
+  by move=> s; exact: (Hpost m P1m s).
+Qed.
+
+(* Soundness for the actual semantics, obtained as the limit of the
+   approximations via [test8] (ssem = dlim of [ssem_aux (ubnf ps n)]). *)
+Lemma soundness :
+  (forall G P c Q, derivable G P c Q -> valid_ctxt G -> hl_ ps P c Q) /\
+  (forall G P c Q, derivable2 G P c Q -> valid_ctxt G -> khl_ ps P c Q).
+Proof.
+split.
+- move=> G P c Q Hd Hv m Pm; rewrite test8; apply: range_dlim => n.
+  have Hvn : valid_ctxt_n n G := @valid_ctxt_to_n G Hv n.
+  have Hahl := (proj1 soundness_n _ _ _ _ Hd n Hvn).
+  exact: (Hahl m Pm).
+- move=> G P c Q Hd Hv m Pm; rewrite test8; apply: range_dlim => n.
+  have Hvn : valid_ctxt_n n G := @valid_ctxt_to_n G Hv n.
+  have Hakhl := (proj2 soundness_n _ _ _ _ Hd n Hvn).
+  exact: (Hakhl m Pm).
+Qed.
+
+Theorem hoare_sound G P c Q :
+  valid_ctxt G -> derivable2 G P c Q -> khl_ ps P c Q.
+Proof. by move=> Hv Hd; exact: (proj2 soundness _ _ _ _ Hd Hv). Qed.
+
+(* Empty context: [valid_ctxt (fun _ _ _ => False)] holds trivially. *)
+Corollary hoare_sound0 P c Q :
+  derivable2 (fun _ _ _ => False) P c Q -> khl_ ps P c Q.
+Proof. by apply: hoare_sound. Qed.
 
 End Hl.
 
