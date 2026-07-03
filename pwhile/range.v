@@ -12,7 +12,7 @@ Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 Unset SsrOldRewriteGoalsOrder.
 
-Import GRing.Theory Num.Theory.
+Import GRing.Theory Num.Theory Order.Theory.
 
 Local Open Scope ring_scope.
 Local Open Scope syn_scope.
@@ -32,6 +32,15 @@ Proof. by move=> x /dinsuppP; rewrite dnullE. Qed.
 Lemma range_dunit (P: pred A) m : P m -> range P (dunit m).
 Proof. by move=> Pm m' /in_dunit ->. Qed.
 
+Lemma range_le (P : pred A) (mu nu : Distr A) :
+  mu <=1 nu -> range P nu -> range P mu.
+Proof.
+move=> le HP x; rewrite !in_dinsupp => xn0; apply: HP.
+have h0 : (0 < mu x)%R by rewrite lt0r xn0 ge0_mu.
+have h1 : (0 < nu x)%R by apply: lt_le_trans h0 (le x).
+by move: h1; rewrite lt0r => /andP[].
+Qed.
+
 Lemma range_dlet (PA : pred A) (PB : pred B) mu f :
     range PA mu -> (forall m, PA m -> range PB (f m))
   -> range PB (\dlet_(m <- mu) f m).
@@ -50,7 +59,7 @@ Qed.
 Lemma range_dlim P (mu : nat -> Distr A):
   (forall n, range P (mu n)) -> range P (dlim mu).
 Proof. by move=> h m /dinsupp_dlim[k] /h. Qed.
- 
+
 Lemma range_weaken (P1 P2 : pred A) mu:
   (forall x, P1 x -> P2 x) ->
   range P1 mu -> range P2 mu.
@@ -65,10 +74,10 @@ Qed.
 
 Lemma pr_range (mu : Distr A) (E : pred A) :
   \P_[mu] (~ E)%A = 0 <-> range E mu.
-Proof. 
-  split.
-  + by move=> /pr_eq0 h x; apply/contraLR => /h /dinsuppPn. 
-  rewrite /range -(pr_pred0 mu)=> Hin;apply eq_in_pr=> x /Hin.
-  by rewrite /mem /= /in_mem /= => ->.   (* TODO: simplify this *)
+Proof.
+split.
++ by move=> /pr_eq0 h x; apply/contraLR => /h /dinsuppPn.
+rewrite /range -(pr_pred0 mu)=> Hin;apply eq_in_pr=> x /Hin.
+by rewrite /mem /= /in_mem /= => ->.   (* TODO: simplify this *)
 Qed.
 End Range.
