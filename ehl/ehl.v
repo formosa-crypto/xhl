@@ -37,10 +37,10 @@ Notation ehl   := (ehl_ ps).
 (* Pratical Hoare triple                                                *)
 (* -------------------------------------------------------------------- *)
 
-Definition cond2 := cmem -> cmem -> \bar pwhile.R.
+Definition cond2 := cmem -> {distr cmem / R} -> cmem -> \bar pwhile.R.
 
 Definition kehl_ (ps:psi) f c (g: cond2) :=
-  forall m : cmem, (espe (ssem_ ps c m) (g m) <= f m)%E.
+  forall m : cmem, (espe (ssem_ ps c m) (g m (ssem_ ps c m)) <= f m)%E.
 
 Notation kehl   := (kehl_ ps).
 
@@ -48,7 +48,7 @@ Definition bound {T : choiceType} (g : T -> \bar R) m0 m :=
   if (m == m0) then (g m) else +oo%E.
 
 Lemma kehl_ehl P c Q :
-  kehl P c Q <-> (forall s0, ehl (bound P s0) c (Q s0)).
+  kehl P c Q <-> (forall s0, ehl (bound P s0) c (Q s0 (ssem_ ps c s0))).
 Proof.
   rewrite /bound; split.
   + move=> h m0 m.
@@ -61,20 +61,19 @@ Proof.
 Qed.
 
 Lemma hl_khl P c Q :
-  kehl P c (fun _ => Q) <-> ehl P c Q.
+  kehl P c (fun _ _ => Q) <-> ehl P c Q.
 Proof.
   by split; move => h m; apply h.
 Qed.
 
 Lemma kehl_conseq c f f' (g g' : cond2):
   kehl f' c g' ->
-  (forall m d,  espe d (g' m) <= f' m -> espe d (g m) <= f m)%E ->
+  (forall m d,  espe d (g' m d) <= f' m -> espe d (g m d) <= f m)%E ->
   kehl f c g.
 Proof.
   move => h' hc m.
   by apply hc.
 Qed.
-
 
 (* -------------------------------------------------------------------- *)
 
@@ -227,7 +226,7 @@ Definition phi : Type := ident -> clause.
 
 Definition empty_precondition : cond := (fun _ => -oo)%E.
 
-Definition empty_postcondition :  cond2 := (fun _ _ => -oo)%E.
+Definition empty_postcondition :  cond2 := (fun _ _ _ => -oo)%E.
 
 Definition empty_clause : clause := (empty_precondition, empty_postcondition).
 
@@ -249,58 +248,58 @@ Definition hoare_triple_proc_ctx (cl : phi) (ps_init: ident -> (@cmd_ ident cmem
 
 From xhl.hl Require hl.
 
-Lemma recursive_proc ps' cl' :
-  (forall p m, 0 <= (get_pre (cl' p)) m)%E ->
-  (forall p m m', 0 <= (get_post (cl' p)) m m')%E ->
-  hoare_triple_proc_ctx cl' ps' ->
-  (forall p, kehl_ ps' (get_pre (cl' p))
-          (call p)
-          (get_post (cl' p))).
-Proof.
-  move => Hpre Hpost h p s.
-  rewrite /espe  esum_sum';last first.
-    - move => x; rewrite mule_ge0 //.
-      rewrite lee_tofin //.
-   rewrite !hl.test8.
-   apply esum_dlim_r.
-    + move => ????.
-     apply mono_ssem_aux.
-     by apply homo_ubnf.
-    + exact: (Hpost p).
-  move => n.
-  (*This should be a lemma*)
-  rewrite hl.ssem_ubnf_dnull hl.ubnf_ssem (hl.test9 _ _ _ _ ps') hl.test5.
-  revert p; revert s.
-  elim : n => [| n Hn].
-  + move => ??. rewrite hl.ssem_false_ps.
-    under eq_esum do  rewrite dnullE mule0.
-    by rewrite esum1.
-  move => s p.
-  rewrite (hl.inline2_split n 1) //=.
-  rewrite -esum_sum';last first.
-  + move => x; rewrite mule_ge0 //.
-      rewrite lee_tofin //.
-  apply: h => // p0 s0.
-  rewrite /espe esum_sum';last first.
-  + move => x; rewrite mule_ge0 //.
-      rewrite lee_tofin //.
-  by apply: Hn.
-Qed.
+(* Lemma recursive_proc ps' cl' : *)
+(*   (forall p m, 0 <= (get_pre (cl' p)) m)%E -> *)
+(*   (forall p m d m', 0 <= (get_post (cl' p)) m d m')%E -> *)
+(*   hoare_triple_proc_ctx cl' ps' -> *)
+(*   (forall p, kehl_ ps' (get_pre (cl' p)) *)
+(*           (call p) *)
+(*           (get_post (cl' p))). *)
+(* Proof. *)
+(*   move => Hpre Hpost h p s. *)
+(*   rewrite /espe  esum_sum';last first. *)
+(*     - move => x; rewrite mule_ge0 //. *)
+(*       rewrite lee_tofin //. *)
+(*    rewrite !hl.test8. *)
+(*    apply esum_dlim_r. *)
+(*     + move => ????. *)
+(*      apply mono_ssem_aux. *)
+(*      by apply homo_ubnf. *)
+(*     + exact: (Hpost p). *)
+(*   move => n. *)
+(*   (*This should be a lemma*) *)
+(*   rewrite hl.ssem_ubnf_dnull hl.ubnf_ssem (hl.test9 _ _ _ _ ps') hl.test5. *)
+(*   revert p; revert s. *)
+(*   elim : n => [| n Hn]. *)
+(*   + move => ??. rewrite hl.ssem_false_ps. *)
+(*     under eq_esum do  rewrite dnullE mule0. *)
+(*     by rewrite esum1. *)
+(*   move => s p. *)
+(*   rewrite (hl.inline2_split n 1) //=. *)
+(*   rewrite -esum_sum';last first. *)
+(*   + move => x; rewrite mule_ge0 //. *)
+(*       rewrite lee_tofin //. *)
+(*   apply h.  => // p0 s0. *)
+(*   rewrite /espe esum_sum';last first. *)
+(*   + move => x; rewrite mule_ge0 //. *)
+(*       rewrite lee_tofin //. *)
+(*   by apply: Hn. *)
+(* Qed. *)
 
-(** Modular Hoare Triple Verification **)
+(* (** Modular Hoare Triple Verification **) *)
 
-Theorem recursion_hoare_triple :
-  forall P Q c cl ps,
-    (forall p m, 0 <= (get_pre (cl p)) m)%E ->
-    (forall p m m', 0 <= (get_post (cl p)) m m')%E ->
-    hoare_triple_proc_ctx cl ps  ->
-    hoare_triple_ctx cl ps P Q c ->
-    kehl_ ps P c Q .
-Proof.
-  move => ????? Hpre Hpost H H0.
-  apply H0.
-  by apply: recursive_proc.
-Qed.
+(* Theorem recursion_hoare_triple : *)
+(*   forall P Q c cl ps, *)
+(*     (forall p m, 0 <= (get_pre (cl p)) m)%E -> *)
+(*     (forall p m m', 0 <= (get_post (cl p)) m m')%E -> *)
+(*     hoare_triple_proc_ctx cl ps  -> *)
+(*     hoare_triple_ctx cl ps P Q c -> *)
+(*     kehl_ ps P c Q . *)
+(* Proof. *)
+(*   move => ????? Hpre Hpost H H0. *)
+(*   apply H0. *)
+(*   by apply: recursive_proc. *)
+(* Qed. *)
 
 (* -------------------------------------------------------------------- *)
 
@@ -383,10 +382,10 @@ Inductive derivable : phi -> cond -> cmd -> cond -> Prop :=
       (forall m mu,  espe mu g' <= f' m -> espe mu g <= f m)%E ->
       derivable cl f c g
   | H_khl : forall P Q c cl,
-     derivable2 cl P c (fun _ => Q) -> derivable cl P c Q
+     derivable2 cl P c (fun _ _ => Q) -> derivable cl P c Q
   with derivable2 : phi -> cond -> cmd -> cond2 -> Prop :=
    | H_hl: forall P Q c cl,
-       (forall s0, derivable cl (bound P s0) c (Q s0)) ->
+       (forall s0, derivable cl (bound P s0) c (Q s0 (ssem_ ps c s0))) ->
        derivable2 cl P c Q
    | H_call : forall cl (f: ident),
        derivable2 cl (get_pre (cl f)) (call f) (get_post (cl f))
@@ -396,13 +395,18 @@ Inductive derivable : phi -> cond -> cmd -> cond -> Prop :=
        derivable2 cl' P c Q
    | H_adapt : forall (P1 P2 : cond) (Q1 Q2 : cond2) c cl,
        derivable2 cl P2 c Q2 ->
-       (forall m mu,  espe mu (Q2 m) <= P2 m -> espe mu (Q1 m) <= P1 m)%E ->
+       (forall m mu,  espe mu (Q2 m mu) <= P2 m -> espe mu (Q1 m mu) <= P1 m)%E ->
        derivable2 cl P1 c Q1.
 
 Parameter C : cond2.
 
 Definition cl_mgt : phi :=
-  fun (f:ident) => ((fun _ => +oo)%E, (fun s0 s => ((ssem_ ps (ps f) s0) s)%:E) (* C *)).
+  fun (f:ident) => ((fun _ => 0)%E,
+                  (fun s0 (d:{distr cmem / R}) s =>
+                     if (d s != 0)%R then
+                       ((d s - ((ssem_ ps (ps f) s0) s)) * (d s)^-1)%:E
+                    else 0%E)
+                ).
 
 From xhl.hl Require hl.
 
@@ -498,19 +502,32 @@ elim: c f g => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2 
     simpl in h.
     rewrite /espe.
     rewrite /espe in h.
-Qed.
+    rewrite -sube_le0.
+    Admitted.
+(*     GRing.mulVf *)
+(* Qed. *)
 
-Lemma rel_complete (c : cmd) (P : assn) (Q : assn2) :
-  khl_ ps P c Q -> derivable2 cl_mgt P c Q.
+Lemma rel_complete (c : cmd) (P : cond) (Q : cond2) :
+  (forall m,  (0 <= P m)%E) ->
+  (forall m mu m', (0 <= Q m mu m')%E) ->
+  kehl_ ps P c Q -> derivable2 cl_mgt P c Q.
 Proof.
-move=> /khl_hl h; apply: H_hl => s0; exact: (rel_complete_d (h s0)).
+  move=> h1 h2 /kehl_ehl h; apply: H_hl => s0. apply rel_complete_d => //.
+  by move => m; rewrite /bound; case (m == s0).
 Qed.
 
 
 Theorem hoare_complete: forall P c Q,
+    (forall m,  (0 <= P m)%E) ->
+    (forall m mu m', (0 <= Q m mu m')%E) ->
   kehl_ ps P c Q -> derivable2 empty_phi P c Q.
 Proof.
+move=> P c Q H1 H2 Hvalid.
+apply: (H_rec _ _ _ cl_mgt); last first.
+- by apply rel_complete.
+- move=> p'; apply: rel_complete=> m //=.
 Admitted.
+
 
 
 Theorem khoare_sound0 P c Q : derivable2 empty_phi P c Q -> kehl_ ps P c Q.
