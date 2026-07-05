@@ -1,5 +1,6 @@
 (* -------------------------------------------------------------------- *)
 (* (* ----------------- *) Require Import Setoid Morphisms. *)
+From HB Require Import structures.
 From mathcomp Require Import all_boot all_order all_algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals constructive_ereal.
@@ -224,29 +225,21 @@ Definition get_post (an:clause) :=
 
 Definition phi : Type := ident -> clause.
 
-Definition empty_precondition : cond := (fun _ => -oo)%E.
+(* (** Hoare triple for a com with procedure context **) *)
 
-Definition empty_postcondition :  cond2 := (fun _ _ _ => -oo)%E.
+(* Definition hoare_triple_ctx (cl : phi) ps (P: cond) (Q: cond2) (c: cmd) := *)
+(*   (forall p, kehl_ ps (get_pre (cl p)) (call p) (get_post (cl p))) -> *)
+(*   kehl_ ps P c Q. *)
 
-Definition empty_clause : clause := (empty_precondition, empty_postcondition).
+(* (** Hoare triple for a procedure with procedure context **) *)
 
-Definition empty_phi: phi := fun _ => empty_clause.
+(* Definition hoare_triple_proc_ctx (cl : phi) (ps_init: ident -> (@cmd_ ident cmem ident)):= *)
+(*   forall p ps, hoare_triple_ctx cl ps *)
+(*             (get_pre (cl p)) *)
+(*             (get_post (cl p)) *)
+(*             (ps_init p). *)
 
-(** Hoare triple for a com with procedure context **)
-
-Definition hoare_triple_ctx (cl : phi) ps (P: cond) (Q: cond2) (c: cmd) :=
-  (forall p, kehl_ ps (get_pre (cl p)) (call p) (get_post (cl p))) ->
-  kehl_ ps P c Q.
-
-(** Hoare triple for a procedure with procedure context **)
-
-Definition hoare_triple_proc_ctx (cl : phi) (ps_init: ident -> (@cmd_ ident cmem ident)):=
-  forall p ps, hoare_triple_ctx cl ps
-            (get_pre (cl p))
-            (get_post (cl p))
-            (ps_init p).
-
-From xhl.hl Require hl.
+(* From xhl.hl Require hl. *)
 
 (* Lemma recursive_proc ps' cl' : *)
 (*   (forall p m, 0 <= (get_pre (cl' p)) m)%E -> *)
@@ -351,7 +344,34 @@ Proof.
     exact: Hle.
 Qed.
 
+End EHL.
+
+Definition cl_mono (cl: ident -> clause) :=
+      forall (f: ident) (mu mu' : {distr cmem / R}),
+        (forall (x0 : cmem), mu x0 <= mu' x0) ->
+        (forall x x' : cmem, (snd (cl f)) x mu x' <= (snd (cl f)) x mu' x')%E.
+
+Definition cl_pre_pos (cl: ident -> clause) :=
+  forall (f: ident), (forall x , 0 <= (get_pre (cl f)) x )%E.
+
+Definition cl_post_pos (cl: ident -> clause) :=
+  forall (f: ident), (forall x mu x', 0 <= (get_post (cl f)) x mu x')%E.
+
+HB.mixin Record isPhi (cl : ident -> clause) :=
+  {
+    post_mono : cl_mono cl;
+    pre_pos : cl_pre_pos cl;
+    post_pos : cl_post_pos cl;
+  }.
+
+HB.structure Definition Phi :=  {f of @isPhi f}.
+
+Notation "'phi'" := (@Phi.type) (at level 0, format "'phi'"): type_scope.
+
 (* -------------------------------------------------------------------- *)
+
+Section EHL.
+Context {ps: ident -> (@cmd_ ident cmem ident)}.
 
 Inductive derivable : phi -> cond -> cmd -> cond -> Prop :=
   | H_Skip : forall f cl,
@@ -398,15 +418,65 @@ Inductive derivable : phi -> cond -> cmd -> cond -> Prop :=
        (forall m mu,  espe mu (Q2 m mu) <= P2 m -> espe mu (Q1 m mu) <= P1 m)%E ->
        derivable2 cl P1 c Q1.
 
-Parameter C : cond2.
+Definition empty_precondition : cond := (fun _ => +oo)%E.
 
-Definition cl_mgt : phi :=
+Definition empty_postcondition :  cond2 := (fun _ _ _ => 0)%E.
+
+Definition empty_clause : clause := (empty_precondition, empty_postcondition).
+
+Definition cl_empty: ident -> clause := fun _ => empty_clause.
+
+Lemma post_mono_cl_empty : cl_mono cl_empty.
+Proof.
+  by [].
+Qed.
+
+Lemma pre_pos_cl_empty : cl_pre_pos cl_empty.
+Proof.
+  move => f m //=.
+  exact: leey.
+Qed.
+
+Lemma post_pos_cl_empty : cl_post_pos cl_empty.
+Proof.
+  by [].
+Qed.
+
+HB.instance Definition _ :=
+  @isPhi.Build cl_empty  post_mono_cl_empty  pre_pos_cl_empty post_pos_cl_empty.
+
+Definition cl_mgt : ident -> clause :=
   fun (f:ident) => ((fun _ => 0)%E,
                   (fun s0 (d:{distr cmem / R}) s =>
-                     if (d s != 0)%R then
-                       ((d s - ((ssem_ ps (ps f) s0) s)) * (d s)^-1)%:E
-                    else 0%E)
+                     if (d s <= (ssem_ ps (ps f) s0) s)%R then 0%E else +oo%E)
                 ).
+
+Lemma post_mono_cl_mgt : cl_mono cl_mgt.
+Proof.
+  move => f mu mu' H x x'.
+  rewrite /cl_mgt //=.
+  case_eq  ((mu x' <= ssem_ ps (ps f) x x')%R).
+  case  ((mu' x' <= ssem_ ps (ps f) x x')%R) => //=.
+  case_eq  ((mu' x' <= ssem_ ps (ps f) x x')%R) => //=.
+  move =>  H1  H2.
+  have : (mu x' <= ssem_ ps (ps f) x x') = true.
+  + by apply: (le_trans (H x')).
+  by rewrite H2.
+Qed.
+
+Lemma pre_pos_cl_mgt : cl_pre_pos cl_mgt.
+Proof.
+  by [].
+Qed.
+
+Lemma post_pos_cl_mgt : cl_post_pos cl_mgt.
+Proof.
+  move => f x mu x' //=.
+  by case: (mu x' <= ssem_ ps (ps f) x x')%R.
+Qed.
+
+HB.instance Definition _ :=
+  @isPhi.Build cl_mgt  post_mono_cl_mgt  pre_pos_cl_mgt post_pos_cl_mgt.
 
 From xhl.hl Require hl.
 
@@ -462,7 +532,7 @@ elim: c f g => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2 
   + apply: H_While => //.
     apply ih0 => //.
     + by move => m; rewrite /lift; case (`[{e}] m).
-    rewrite /ehl /lift.
+    rewrite /lift.
     move => m; case_eq (`[{e}] m) => He; last first. exact : leey.
     subst I => /=.
     by rewrite -exp_dlet // ssem_whileS // ssem_seqE.
@@ -496,16 +566,40 @@ elim: c f g => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2 
   apply: (H_adapt _ (get_pre (cl_mgt f)) _ (get_post (cl_mgt f))).
   + by apply: H_call; right.
   + move=> m0 mu h.
-    move: (Hhl m0).
-    rewrite hl.ssem_call_eq.
-    apply: le_trans.
-    simpl in h.
-    rewrite /espe.
-    rewrite /espe in h.
-    rewrite -sube_le0.
-    Admitted.
-(*     GRing.mulVf *)
-(* Qed. *)
+    have Hpos : forall s,
+        (0 <= (if (mu s <= (ssem_ ps (ps f) m0) s)%R then 0%E else +oo%E)
+                * (mu s)%:E)%E.
+    { move=> s; apply: mule_ge0; last exact: (lee_tofin (ge0_mu _ s)).
+      by case: ifP => _; [exact: lexx | exact: leey]. }
+    have Hsum0 :
+        (esum.sum (fun s => (if (mu s <= (ssem_ ps (ps f) m0) s)%R then 0%E else +oo%E)
+                         * (mu s)%:E) = 0)%E.
+    { apply/eqP; rewrite eq_le; apply/andP; split; last first.
+      - by apply: sum_ge0; exact: Hpos.
+      rewrite /espe /cl_mgt /get_pre /get_post /= in h.
+      exact: h. }
+    have Hesum :
+        (\esum_(i in (@classical_sets.setT cmem))
+           ((if (mu i <= (ssem_ ps (ps f) m0) i)%R then 0%E else +oo%E)
+              * (mu i)%:E) = 0)%E.
+    { rewrite -esum_sum'; last exact: Hpos.
+      exact: Hsum0. }
+    have Hzero := @esum_eq0P _ _ _ _ (fun x _ => Hpos x) Hesum.
+    have Hdom : forall s, (mu s <= (ssem_ ps (ps f) m0) s)%R.
+    { move=> s; rewrite leNgt; apply/negP => Hgt.
+      have Hmu : (0 < (mu s)%:E)%E.
+        by rewrite lte_fin; exact: (le_lt_trans (ge0_mu _ s) Hgt).
+      move: (Hzero s Logic.I); rewrite (lt_geF Hgt) => Habs.
+      have Hgt0 : (0 < +oo * (mu s)%:E)%E
+        by apply: mule_gt0; [exact: lt0y | exact: Hmu].
+      by rewrite Habs ltxx in Hgt0. }
+    move: (Hhl m0); rewrite hl.ssem_call_eq; apply: le_trans.
+    rewrite /espe; apply: esum.le_sum.
+    - move=> s; apply: mule_ge0; first exact: Hg.
+      exact: (lee_tofin (ge0_mu _ s)).
+    - move=> s; apply: (lee_wpmul2l (Hg s)).
+      exact: (lee_tofin (Hdom s)).
+Qed.
 
 Lemma rel_complete (c : cmd) (P : cond) (Q : cond2) :
   (forall m,  (0 <= P m)%E) ->
@@ -516,23 +610,322 @@ Proof.
   by move => m; rewrite /bound; case (m == s0).
 Qed.
 
-
 Theorem hoare_complete: forall P c Q,
-    (forall m,  (0 <= P m)%E) ->
-    (forall m mu m', (0 <= Q m mu m')%E) ->
-  kehl_ ps P c Q -> derivable2 empty_phi P c Q.
+  (forall m,  (0 <= P m)%E) ->
+  (forall m mu m', (0 <= Q m mu m')%E) ->
+  kehl_ ps P c Q -> derivable2 cl_empty P c Q.
 Proof.
 move=> P c Q H1 H2 Hvalid.
 apply: (H_rec _ _ _ cl_mgt); last first.
 - by apply rel_complete.
-- move=> p'; apply: rel_complete=> m //=.
+- move=> p'; apply: rel_complete.
+  + by move=> m; rewrite /get_pre /cl_mgt /=.
+  + move=> m mu m'; rewrite /get_post /cl_mgt /=.
+    by case: ifP => _; [exact: lexx | exact: leey].
+  + move=> m.
+    have -> : get_post (cl_mgt p') m (ssem_ ps (ps p') m) = (fun _ => 0%E).
+      by apply/funext => s; rewrite /get_post /cl_mgt /= lexx.
+    by rewrite /get_pre /cl_mgt /= exp0.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+(* Soundness                                                            *)
+(* -------------------------------------------------------------------- *)
+Definition aehl (l : (ident * cmem) -> {distr cmem / R})
+    (f : cond) (c : cmd) (g : cond) :=
+  forall m : cmem, (espe (ssem_aux l c m) g <= f m)%E.
+
+Definition akehl (l : ident * cmem -> {distr cmem/R})
+  (f : cond) (c : cmd) (g : cond2) :=
+  forall m : cmem, (espe (ssem_aux l c m) (g m (ssem_aux l c m)) <= f m)%E.
+
+Lemma aehl_skip l f g :
+  (forall m, (g m <= f m)%E) -> aehl l f skip g.
+Proof. by move => h m /=; rewrite exp_dunit. Qed.
+
+Lemma aehl_abort l f g :
+  (forall m, (0 <= f m)%E) -> aehl l f abort g.
+Proof.
+move => h m /=.
+rewrite /espe (@esum.eq_sum _ _ _ (fun _ => 0%E)).
+- by rewrite esum.sum0.
+- by move => x; rewrite dnullE mule0.
+Qed.
+
+Lemma aehl_assgn l {T : IhbType.type} f x (e : expr T) :
+  aehl l (fun m => f m.[x <- `[{e}] m]) (x <<- e) f.
+Proof. by move => m /=; rewrite exp_dunit. Qed.
+
+Lemma aehl_rnd l {T : IhbType.type} f x (e : dexpr T) :
+  let g m := espe (\dlet_(v <- `[{e}] m) (dunit m.[x <- v])) f in
+  aehl l g (x <$- e) f.
+Proof. by move => g m /=. Qed.
+
+Lemma aehl_seq l f g h c1 c2:
+  (forall m, (0 <= g m)%E) ->
+  aehl l f c1 h -> aehl l h c2 g -> aehl l f (c1 ;; c2) g.
+Proof.
+move => Hg h1 h2 m /=.
+rewrite exp_dlet //.
+apply: (@le_trans _ _ (espe (ssem_aux l c1 m) h)); last exact: h1.
+rewrite /espe; apply: esum.le_sum.
+- move => x; apply: mule_ge0; last by apply: lee_tofin; apply: ge0_mu.
+  apply: sum_ge0 => x'; apply: mule_ge0; first exact: Hg.
+  by apply: lee_tofin; apply: ge0_mu.
+- move => x; apply: lee_wpmul2r.
+  + by apply: lee_tofin; apply: ge0_mu.
+  + exact: h2.
+Qed.
+
+Lemma aehl_if l f (e : bexpr) c1 c2 g :
+  aehl l (lift (esem e) f) c1 g ->
+  aehl l (lift (fun m => negb (esem e m)) f) c2 g ->
+  aehl l f (If e then c1 else c2) g.
+Proof.
+move => Hc1 Hc2 m /=.
+case h: (`[{e}] m).
+- by move : (Hc1 m); rewrite /lift h /=.
+- by move : (Hc2 m); rewrite /lift h /=.
+Qed.
+
+Lemma aehl_conseq l c f g f' g':
+  aehl l f' c g' ->
+  (forall m d,  espe d g' <= f' m -> espe d g <= f m)%E ->
+  aehl l f c g.
+Proof. by move => h' hc m; apply hc. Qed.
+
+Lemma ssem_aux_whileE l (e : bexpr) (c : @cmd_ ident cmem ident) m :
+  ssem_aux l (While e Do c) m = \dlim_(n) ssem_aux l (whilen e c n) m.
+Proof.
+rewrite /=; apply: eq_dlim => n0; move: m; elim: n0 => [|n0 IHn0] s //=.
+case: (`[{e}] s) => //=.
+by apply: eq_in_dlet => [s' _|//]; rewrite IHn0.
+Qed.
+
+Lemma aehl_while l (e : bexpr) c f :
+  (forall m, 0 <= f m)%E ->
+  aehl l (lift (esem e) f) c f ->
+  aehl l f (While e Do c) (lift (fun m => negb (esem e m)) f).
+Proof.
+move => Hf.
+have Hpos : forall m : cmem, (0%R <= (if ~~ `[{e}] m then f m else +oo))%E.
++ by move => m; case (`[{e}] m) => //=.
+rewrite /lift => Hi m.
+rewrite ssem_aux_whileE /espe esum_sum'; last first.
+- by move => x; rewrite mule_ge0 // lee_tofin.
+apply: (esum_dlim_r (hl.hmono_whilen l e c m)) => //.
+move => n; rewrite -esum_sum'; last first.
+- by move => x; rewrite mule_ge0 // lee_tofin.
+move : m.
+elim : n.
++ by apply aehl_abort.
++ move => n Hi'.
+  apply aehl_if => //=.
+  + by apply: (aehl_seq _ _ _ f).
+  + by apply aehl_skip.
+Qed.
+
+Lemma akehl_aehl l P c Q :
+  akehl l P c Q <-> (forall s0, aehl l (bound P s0) c (Q s0 (ssem_aux l c s0))).
+Proof.
+  rewrite /bound; split.
+  + move=> h m0 m.
+    case_eq (m == m0).
+    - by move => /eqP <-.
+    - move => _. exact : leey.
+  + move => h m.
+    have // := (h m m).
+    by rewrite eq_refl.
+Qed.
+
+Lemma aehl_akehl l P c Q : akehl l P c (fun _ _ => Q) <-> aehl l P c Q.
+Proof.
+  by split; move => h m; apply h.
+Qed.
+
+Definition valid_cl cl :=
+  forall (f:ident), kehl_ ps (get_pre (cl f)) (call f) (get_post (cl f)).
+
+Definition valid_cl_n n cl :=
+  forall  (f:ident), akehl (ubnf ps n) (get_pre (cl f)) (call f) (get_post (cl f)).
+
+Lemma valid_cl_n_dn n (cl: phi) :
+    valid_cl_n n.+1 cl -> valid_cl_n n cl.
+Proof.
+move=> H f m.
+move : (H f m).
+rewrite /espe.
+apply: le_trans.
+apply: esum.le_sum.
++ move =>x.
+  rewrite mule_ge0 //=  ?lee_tofin //=.
+  exact: post_pos.
+move => x.
+rewrite lee_pmul //= ?lee_tofin //.
++ exact: post_pos.
++ apply: (post_mono f) => x'.
+  by apply: ( homo_ubnf (n:=n) (p:=n.+1)).
++ by apply: ( homo_ubnf (n:=n) (p:=n.+1)).
+Qed.
+
+Lemma valid_cl_to_n (cl: phi) :
+  (* positive_post_cl cl -> *)
+  (* mono_post cl -> *)
+  valid_cl cl -> forall n, valid_cl_n n cl.
+Proof.
+move=> Hv n f m.
+move: (Hv f m).
+rewrite ssem_callE.
+apply: le_trans.
+rewrite /espe.
+apply: esum.le_sum.
++ move =>x.
+  rewrite mule_ge0 //= ?lee_tofin //=.
+  exact: post_pos.
+move => x.
+rewrite lee_pmul //= ?lee_tofin //.
++ exact: post_pos.
++ apply: (post_mono f) => x'.
+  apply: dlim_ub => ????.  exact: homo_ubnf.
++ apply: dlim_ub => ????.  exact: homo_ubnf.
+Qed.
+
+Lemma cl_calls (cl cl': phi):
+  (forall (f : ident) (n : nat), valid_cl_n n cl ->
+        akehl (ubnf ps n) (get_pre (cl f)) (ps f) (get_post (cl f))) ->
+  (forall (f : ident) (n : nat),
+      valid_cl_n n cl' ->
+      (* positive_pre_cl cl -> *)
+      (* positive_post_cl cl' -> *)
+      (* mono_post cl' -> *)
+      akehl (ubnf ps n) (get_pre (cl f)) (call f) (get_post (cl f))).
+Proof.
+move => IH_body f n.
+elim: n f => [|k IHk] f Hvk (* Hpre_pos Hpost_pos Hmono *) m.
++ rewrite /espe //=.
+  under esum.eq_sum do rewrite dnullE  mule0.
+  rewrite esum.sum0.
+ exact: pre_pos.
+apply: (IH_body f k _ m).
+move=> g.
+apply: IHk => //.
+by apply: valid_cl_n_dn.
+Qed.
+
+Scheme derivable_min := Minimality for derivable Sort Prop
+  with derivable2_min := Minimality for derivable2 Sort Prop.
+Combined Scheme derivable_mut from derivable_min, derivable2_min.
+
+Lemma soundness_n :
+  (forall (cl: phi) P c Q, derivable cl P c Q ->
+     forall n, valid_cl_n n cl -> aehl (ubnf ps n) P c Q) /\
+  (forall (cl: phi) P c Q, derivable2 cl P c Q ->
+     forall n, valid_cl_n n cl -> akehl (ubnf ps n) P c Q).
+Proof.
+apply: derivable_mut.
+- (* H_Skip *) by move=> *; exact: aehl_skip.
+- (* H_Abort *) by move=> *; exact: aehl_abort.
+- (* H_Asgn *) by move=> *; exact: aehl_assgn.
+- (* H_Random *) by move=> *; exact: aehl_rnd.
+- (* H_Seq *)
+  move=> f c d g h cl Hg ? IHd ? IHc n Hv.
+  by apply: (aehl_seq _ _ _ _ _ _ Hg (IHc n Hv) (IHd n Hv)).
+- (* H_If *)
+  move => f g e c1 c2 cl ? IH1 ? IH2 n Hv.
+  by apply: aehl_if;[exact: IH1 | exact: IH2].
+- (* H_While *)
+  move => f e c cl m ? IH n Hv; apply: aehl_while => //;  exact: IH.
+- (* H_Consequence *)
+  move => f' g' f g c cl ? HI H n Hv.
+  apply: aehl_conseq. apply: HI => //. apply H.
+- (* H_khl *)
+  by move => P Q c cl ? IH n Hv; rewrite -aehl_akehl; exact: IH.
+- (* H_hl *)
+  move=> P Q c cl ? IH n Hv. rewrite akehl_aehl=> s0.
+  move => m.
+  move :(IH s0 n Hv m).
+  apply: le_trans. admit.
+- (* H_call *) by move=> cl f n Hv; exact: Hv.
+- (* H_rec *)
+  move=> P Q c cl cl' _ IH_body _ IH_c n Hv; apply: (IH_c n).
+  move=> f; apply (cl_calls _ cl') => //=.
+- (* H_adapt *)
+  move=> P1 P2 Q1 Q2 c cl ? HI H n Hv m.
+  exact :(H m (ssem_aux (ubnf ps n) c m) (HI n Hv m)).
+Admitted.
+
+Theorem hoare_sound (cl:phi) P c Q :
+  (forall m, (0 <= P m)%E) ->
+  (forall m, (0 <= Q m)%E) ->
+  valid_cl cl -> derivable cl P c Q -> ehl_ ps P c Q.
+Proof.
+  move => HP HQ Hv Hd m.
+  rewrite /espe  esum_sum';last first.
+  - move => x; rewrite mule_ge0 //.
+    rewrite lee_tofin //.
+  rewrite hl.test8.
+  apply: esum_dlim_r => //.
+  + move => ????.
+     apply mono_ssem_aux.
+     by apply homo_ubnf.
+  move => n.
+  have Hvn : valid_cl_n n cl := @valid_cl_to_n cl Hv n.
+  have Hahl := (proj1 soundness_n  _ _ _ _ Hd n Hvn).
+  rewrite -esum_sum';last first.
+  + move => x; rewrite mule_ge0 //.
+     rewrite lee_tofin //.
+  exact: (Hahl m).
+Qed.
+
+Corollary hoare_sound0 P c Q :
+  (forall m, (0 <= P m)%E) ->
+  (forall m, (0 <= Q m)%E) ->
+  derivable cl_empty P c Q -> ehl_ ps P c Q.
+Proof.
+  move => HP HQ HD.
+  apply: (hoare_sound cl_empty) => //.
+  rewrite /valid_cl /kehl_ => //=.
+  move => *.
+  rewrite /empty_precondition.
+  exact: leey.
+Qed.
+
+Theorem khoare_sound (cl:phi) P c Q :
+  (forall m, (0 <= P m)%E) ->
+  (forall m mu m', (0 <= Q m mu m')%E) ->
+  valid_cl cl -> derivable2 cl P c Q -> kehl_ ps P c Q.
+Proof.
+  move => HP HQ Hv Hd m.
+  rewrite /espe  esum_sum';last first.
+  - move => x; rewrite mule_ge0 //.
+    rewrite lee_tofin //.
+  rewrite hl.test8.
+  apply: esum_dlim_r => //.
+  + move => ????.
+     apply mono_ssem_aux.
+     by apply homo_ubnf.
+     move => n.
+  have Hvn : valid_cl_n n cl := @valid_cl_to_n cl Hv n.
+  have Hahl := (proj2 soundness_n  _ _ _ _ Hd n Hvn).
+  rewrite -esum_sum';last first.
+  + move => x; rewrite mule_ge0 //.
+    rewrite lee_tofin //.
+  have := (Hahl m).
 Admitted.
 
 
-
-Theorem khoare_sound0 P c Q : derivable2 empty_phi P c Q -> kehl_ ps P c Q.
+Corollary khoare_sound0 P c Q :
+  (forall m,  (0 <= P m)%E) ->
+  (forall m mu m', (0 <= Q m mu m')%E) ->
+  derivable2 cl_empty P c Q -> kehl_ ps P c Q.
 Proof.
-  Admitted.
+  move => HP HQ HD.
+  apply: (khoare_sound cl_empty) => //.
+  rewrite /valid_cl /kehl_ => //=.
+  move => *.
+  rewrite /empty_precondition.
+  exact: leey.
+Qed.
 
 
 End EHL.
