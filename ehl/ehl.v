@@ -51,41 +51,33 @@ Definition bound {T : choiceType} (g : T -> \bar R) m0 m :=
 Lemma kehl_ehl P c Q :
   kehl P c Q <-> (forall s0, ehl (bound P s0) c (fun s => Q s0 ((ssem_ ps c s0 s)%:E) s)).
 Proof.
-  rewrite /bound; split.
-  + move=> h m0 m.
-    case_eq (m == m0).
-    - by move => /eqP <-.
-    - move => _. exact : leey.
-  + move => h m.
-    have // := (h m m).
-    by rewrite eq_refl.
+rewrite /bound; split.
++ move=> h m0 m.
+  case_eq (m == m0).
+  - by move => /eqP <-.
+  - move => _. exact : leey.
++ move => h m.
+  have // := (h m m).
+  by rewrite eq_refl.
 Qed.
 
 Lemma hl_khl P c Q :
   kehl P c (fun _ _ => Q) <-> ehl P c Q.
-Proof.
-  by split; move => h m; apply h.
-Qed.
+Proof.  by split; move => h m; apply h. Qed.
 
 Lemma kehl_conseq c f f' (g g' : cond2):
   kehl f' c g' ->
   (forall m d,  espe d (fun m' => g' m ((d m')%:E) m') <= f' m ->
            espe d (fun m' => g m ((d m')%:E) m') <= f m)%E ->
   kehl f c g.
-Proof.
-  move => h' hc m.
-  by apply hc.
-Qed.
+Proof. by move => h' hc m; apply hc. Qed.
 
 (* -------------------------------------------------------------------- *)
 
 Lemma ehl_skip f g :
   (forall m, (g m <= f m)%E) ->
   ehl f skip g.
-Proof.
-  move => h m.
-  by rewrite ssemE exp_dunit.
-Qed.
+Proof. by move => h m; rewrite ssemE exp_dunit. Qed.
 
 (* -------------------------------------------------------------------- *)
 
@@ -93,11 +85,11 @@ Lemma ehl_abort f g :
   (forall m, (0 <= f m)%E) ->
   ehl f abort g.
 Proof.
-  move => h m.
-  rewrite ssem_abortE /espe.
-  rewrite (@esum.eq_sum _ _ _ (fun _ => 0)).
-  - by rewrite esum.sum0.
-  - by move => x; rewrite dnullE mule0.
+move => h m.
+rewrite ssem_abortE /espe.
+rewrite (@esum.eq_sum _ _ _ (fun _ => 0)).
+- by rewrite esum.sum0.
+- by move => x; rewrite dnullE mule0.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -108,35 +100,32 @@ Lemma ehl_seq_m (m:cmem) f g h c1 c2:
   (forall m : cmem, espe (ssem ps c2 m) g <= h m)%E ->
   (espe(\dlet_(m' <- ssem ps c1 m) ssem ps c2 m') g <= f m)%E.
 Proof.
-  move => Hg h1 h2.
-  rewrite exp_dlet //.
-  apply: (@le_trans _ _ (espe (ssem ps c1 m) h)); last exact: h1.
-  rewrite /espe; apply: esum.le_sum.
-  - move => x; apply: mule_ge0; last by apply: lee_tofin; apply: ge0_mu.
-    apply: sum_ge0 => x'; apply: mule_ge0; first exact: Hg.
-    by apply: lee_tofin; apply: ge0_mu.
-  - move => x; apply: lee_wpmul2r.
-    + by apply: lee_tofin; apply: ge0_mu.
-    + exact: h2.
+move => Hg h1 h2.
+rewrite exp_dlet //.
+apply: (@le_trans _ _ (espe (ssem ps c1 m) h)); last exact: h1.
+rewrite /espe; apply: esum.le_sum.
+- move => x; apply: mule_ge0; last by apply: lee_tofin; apply: ge0_mu.
+  apply: sum_ge0 => x'; apply: mule_ge0; first exact: Hg.
+  by apply: lee_tofin; apply: ge0_mu.
+- move => x; apply: lee_wpmul2r.
+  + by apply: lee_tofin; apply: ge0_mu.
+  + exact: h2.
 Qed.
 
 Lemma ehl_seq f g h c1 c2:
   (forall m, (0 <= g m)%E) ->
   ehl f c1 h -> ehl h c2 g -> ehl f (c1 ;; c2) g.
 Proof.
-  move => Hg h1 h2 m.
-  rewrite ssemE.
-  by apply: (ehl_seq_m m _ _ h).
+move => Hg h1 h2 m.
+rewrite ssemE.
+by apply: (ehl_seq_m m _ _ h).
 Qed.
 
 (* -------------------------------------------------------------------- *)
 
 Lemma ehl_assgn {T : IhbType.type} f x (e : expr T) :
   ehl (fun m => f m.[x <- `[{e}] m]) (x <<- e) f.
-Proof.
-  move => m.
-  by rewrite ssemE exp_dunit.
-Qed.
+Proof. by  move => m; rewrite ssemE exp_dunit. Qed.
 
 (* -------------------------------------------------------------------- *)
 
@@ -145,10 +134,7 @@ Lemma ehl_rnd {T : IhbType.type} f x (e : dexpr T) :
     espe (\dlet_(v <- `[{e}] m) (dunit m.[x <- v])) f
   in
   ehl g (x <$- e) f.
-Proof.
-  move => g m.
-  by rewrite ssemE.
-Qed.
+Proof. by move => g m; rewrite ssemE. Qed.
 
 (* -------------------------------------------------------------------- *)
 
@@ -163,13 +149,13 @@ Lemma ehl_if f (e : bexpr) c1 c2 g :
   ehl (lift (fun m => negb (esem e m)) f) c2 g ->
   ehl f (If e then c1 else c2) g.
 Proof.
-  move => Hc1 Hc2 m.
-  rewrite ssemE.
-  case h: (`[{e}] m).
-  - move : (Hc1 m).
-    by rewrite /lift h /=.
-    move : (Hc2 m).
-    by  rewrite /lift h /=.
+move => Hc1 Hc2 m.
+rewrite ssemE.
+case h: (`[{e}] m).
+- move : (Hc1 m).
+  by rewrite /lift h /=.
+  move : (Hc2 m).
+  by  rewrite /lift h /=.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -205,10 +191,7 @@ Lemma ehl_conseq c f g f' g':
   ehl f' c g' ->
   (forall m d,  espe d g' <= f' m -> espe d g <= f m)%E ->
   ehl f c g.
-Proof.
-  move => h' hc m.
-  by apply hc.
-Qed.
+Proof. move => h' hc m. by apply hc. Qed.
 
 (* -------------------------------------------------------------------- *)
 
@@ -305,21 +288,21 @@ Lemma espe_coupling (ν : Distr (cmem * cmem)) g g' :
   (forall p, p \in dinsupp ν -> (g p.2 <= g' p.1)%E) ->
   (espe (dsnd ν) g <= espe (dfst ν) g')%E.
 Proof.
-  move => Hg Hg' Hpw.
-  rewrite exp_dlet //.
-  rewrite (_ : (fun p => espe (dunit p.2) g) = (fun p => g p.2));
-    last by apply/funext => p; rewrite exp_dunit.
-  rewrite [espe (dfst ν) g']exp_dlet //.
-  rewrite (_ : (fun p => espe (dunit p.1) g') = (fun p => g' p.1));
-    last by apply/funext => p; rewrite exp_dunit.
-  rewrite /espe; apply: esum.le_sum.
-  - move => p; apply: mule_ge0; first exact: Hg.
-    by apply: lee_tofin; apply: ge0_mu.
-  - move => p.
-    case/boolP: (p \in dinsupp ν) => [hp | /dinsuppPn hp].
-    + apply: lee_wpmul2r; first by apply: lee_tofin; apply: ge0_mu.
-      exact: Hpw _ hp.
-    + by rewrite hp !mule0.
+move => Hg Hg' Hpw.
+rewrite exp_dlet //.
+rewrite (_ : (fun p => espe (dunit p.2) g) = (fun p => g p.2));
+  last by apply/funext => p; rewrite exp_dunit.
+rewrite [espe (dfst ν) g']exp_dlet //.
+rewrite (_ : (fun p => espe (dunit p.1) g') = (fun p => g' p.1));
+  last by apply/funext => p; rewrite exp_dunit.
+rewrite /espe; apply: esum.le_sum.
+- move => p; apply: mule_ge0; first exact: Hg.
+  by apply: lee_tofin; apply: ge0_mu.
+- move => p.
+  case/boolP: (p \in dinsupp ν) => [hp | /dinsuppPn hp].
+  + apply: lee_wpmul2r; first by apply: lee_tofin; apply: ge0_mu.
+    exact: Hpw _ hp.
+  + by rewrite hp !mule0.
 Qed.
 
 Lemma ehl_prhl c d f g f' g' P Q:
@@ -331,18 +314,18 @@ Lemma ehl_prhl c d f g f' g' P Q:
   (forall m' m, Q (m',m) -> g m <= g' m')%E ->
   ehl f c g.
 Proof.
-  move => Hg Hg' He Hr H1 H2 m.
-  have [m' Hm'] := H1 m.
-  have [Hle HP] := Hm'.
-  have [ν [Hfst Hsnd] Hrange] := prhlw Hr HP.
-  rewrite -Hsnd.
-  have Hpw : forall p, p \in dinsupp ν -> (g p.2 <= g' p.1)%E.
-  { by move => [m1 m2] /Hrange /H2. }
-  apply: (@le_trans _ _ (espe (dfst ν) g')).
-  - exact: (espe_coupling ν g g' Hg Hg' Hpw).
-    rewrite Hfst.
-    apply: (@le_trans _ _ (f' m')); first exact: (He m').
-    exact: Hle.
+move => Hg Hg' He Hr H1 H2 m.
+have [m' Hm'] := H1 m.
+have [Hle HP] := Hm'.
+have [ν [Hfst Hsnd] Hrange] := prhlw Hr HP.
+rewrite -Hsnd.
+have Hpw : forall p, p \in dinsupp ν -> (g p.2 <= g' p.1)%E.
+{ by move => [m1 m2] /Hrange /H2. }
+apply: (@le_trans _ _ (espe (dfst ν) g')).
+- exact: (espe_coupling ν g g' Hg Hg' Hpw).
+  rewrite Hfst.
+  apply: (@le_trans _ _ (f' m')); first exact: (He m').
+  exact: Hle.
 Qed.
 
 End EHL.
@@ -433,20 +416,13 @@ Definition empty_clause : clause := (empty_precondition, empty_postcondition).
 Definition cl_empty: ident -> clause := fun _ => empty_clause.
 
 Lemma post_mono_cl_empty : cl_mono cl_empty.
-Proof.
-  by rewrite /cl_mono / cond2_mono.
-Qed.
+Proof. by rewrite /cl_mono / cond2_mono. Qed.
 
 Lemma pre_pos_cl_empty : cl_pre_pos cl_empty.
-Proof.
-  move => f m //=.
-  exact: leey.
-Qed.
+Proof. by move => f m //=; exact: leey. Qed.
 
 Lemma post_pos_cl_empty : cl_post_pos cl_empty.
-Proof.
-  by [].
-Qed.
+Proof.  by []. Qed.
 
 HB.instance Definition _ :=
   @isPhi.Build cl_empty  post_mono_cl_empty pre_pos_cl_empty post_pos_cl_empty.
@@ -459,21 +435,19 @@ Definition cl_mgt : ident -> clause :=
 
 Lemma post_mono_cl_mgt : cl_mono cl_mgt.
 Proof.
-  move => f mu mu' H x x'.
-  rewrite /cl_mgt //=.
-  case_eq  (EFin(mu x') <= (ssem_ ps (ps f) x x')%:E)%E.
-  case  (EFin(mu' x') <= (ssem_ ps (ps f) x x')%:E)%E => //=.
-  case_eq (EFin(mu' x') <= (ssem_ ps (ps f) x x')%:E)%E => //=.
-  move =>  H1  H2.
-  have : (EFin(mu x') <= (ssem_ ps (ps f) x x')%:E)%E = true.
-  + by apply: (le_trans (H x')).
-  by rewrite H2.
+move => f mu mu' H x x'.
+rewrite /cl_mgt //=.
+case_eq  (EFin(mu x') <= (ssem_ ps (ps f) x x')%:E)%E.
+case  (EFin(mu' x') <= (ssem_ ps (ps f) x x')%:E)%E => //=.
+case_eq (EFin(mu' x') <= (ssem_ ps (ps f) x x')%:E)%E => //=.
+move =>  H1  H2.
+have : (EFin(mu x') <= (ssem_ ps (ps f) x x')%:E)%E = true.
++ by apply: (le_trans (H x')).
+by rewrite H2.
 Qed.
 
 Lemma pre_pos_cl_mgt : cl_pre_pos cl_mgt.
-Proof.
-  by [].
-Qed.
+Proof. by []. Qed.
 
 Lemma post_pos_cl_mgt : cl_post_pos cl_mgt.
 Proof.
@@ -483,6 +457,15 @@ Qed.
 
 HB.instance Definition _ :=
   @isPhi.Build cl_mgt  post_mono_cl_mgt  pre_pos_cl_mgt post_pos_cl_mgt.
+
+Lemma cl_mgt_pos (mu: {distr cmem/R}) m0 (f: ident):
+  forall s,(0 <= (if (EFin (mu s) <= EFin ((ssem_ ps (ps f) m0) s))%E
+            then 0%E else +oo%E) * (mu s)%:E)%E.
+Proof.
+move => s;apply: mule_ge0.
++ by case: ifP => _; [exact: lexx | exact: leey].
+exact: (lee_tofin (ge0_mu _ s)).
+Qed.
 
 From xhl.hl Require hl.
 
@@ -496,37 +479,30 @@ elim: c f g => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2 
 - (* skip *)
   apply: (H_Consequence Q Q) => //.
   + exact: H_Skip.
-  + move=> m mu H1.
-    apply:  (le_trans H1).
+  + move=> m mu H1; apply:  (le_trans H1).
     by move : (Hhl m); rewrite ssem_skipE exp_dunit.
 - (* assign *)
   apply: (H_Consequence (fun m => Q m.[x <- `[{e}] m]) Q).
     + exact: H_Asgn.
-    + move=> m mu H1.
-      apply:  (le_trans H1).
+    + move=> m mu H1; apply:  (le_trans H1).
       by move : (Hhl m); rewrite ssem_assnE exp_dunit.
 - (* random *)
   apply: (H_Consequence
             (fun m => espe (\dlet_(v <- `[{d}] m) (dunit m.[x <- v])) Q) Q).
   + exact: H_Random.
-  + move=> m mu H1.
-    apply: (le_trans H1).
+  + move=> m mu H1; apply: (le_trans H1).
     by move : (Hhl m); rewrite ssem_rndE.
 - (* if *)
   apply: H_If.
   + rewrite /lift.
     apply: ih1 => m //.
     + by case (`[{e}] m).
-    + move: (Hhl m).
-      rewrite ssem_ifE.
-      case (`[{e}] m) => // _.
+    + move: (Hhl m); rewrite ssem_ifE; case (`[{e}] m) => // _.
       exact : leey.
   + rewrite /lift.
     apply: ih2 => m //.
     + by case (~~ `[{e}] m).
-    +  move: (Hhl m).
-      rewrite ssem_ifE.
-      case (`[{e}] m) => //= _.
+    + move: (Hhl m); rewrite ssem_ifE; case (`[{e}] m) => //= _.
       exact : leey.
 - (* while *)
   pose I : cond := fun m => espe (ssem_ ps (While e Do c0) m) Q .
@@ -542,12 +518,10 @@ elim: c f g => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2 
     move => m; case_eq (`[{e}] m) => He; last first. exact : leey.
     subst I => /=.
     by rewrite -exp_dlet // ssem_whileS // ssem_seqE.
-  + move => m mu H1.
-    move : (Hhl m).
+  + move => m mu H1;  move : (Hhl m).
     apply: le_trans.
     move : H1; subst I => //=.
-    apply: le_trans.
-    apply esum.le_sum.
+    apply: le_trans; apply esum.le_sum.
     + by move => x; rewrite mule_ge0 //= lee_tofin.
     move => x; rewrite /lift.
     case_eq ( ~~ `[{e}] x) => ? //=.
@@ -565,42 +539,25 @@ elim: c f g => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2 
   apply: (H_Seq _ _ _ _ R) => //=.
   + apply ih2 => //=.
   + apply ih1 => //=.
-    move => m.
-    by move : (Hhl m);  rewrite ssem_seqE exp_dlet.
+    by move => m; move : (Hhl m);  rewrite ssem_seqE exp_dlet.
 - (* call *)
   apply: H_khl.
   apply: (H_adapt _ (get_pre (cl_mgt f)) _ (get_post (cl_mgt f))).
   + by apply: H_call; right.
   + move=> m0 mu h.
-    simpl in h.
-    have Hpos : forall s,
-        (0 <= (if (EFin (mu s) <= EFin ((ssem_ ps (ps f) m0) s))%E then 0%E else +oo%E)
-                * (mu s)%:E)%E.
-    { move=> s; apply: mule_ge0; last exact: (lee_tofin (ge0_mu _ s)).
-      by case: ifP => _; [exact: lexx | exact: leey]. }
-    have Hsum0 :
-      (esum.sum (fun s => (if (EFin (mu s) <= EFin ((ssem_ ps (ps f) m0) s))%E
-                        then 0%E else +oo%E)
-                         * (mu s)%:E) = 0)%E.
-    { apply/eqP; rewrite eq_le; apply/andP; split; last first.
-      - by apply: sum_ge0; exact: Hpos.
-      rewrite /espe /cl_mgt /get_pre /get_post /= in h.
-      exact: h. }
     have Hesum :
         (\esum_(i in (@classical_sets.setT cmem))
            ((if (EFin (mu i) <= EFin ((ssem_ ps (ps f) m0) i))%E then 0%E else +oo%E)
               * (mu i)%:E) = 0)%E.
-    { rewrite -esum_sum'; last exact: Hpos.
-      exact: Hsum0. }
-    have Hzero := @esum_eq0P _ _ _ _ (fun x _ => Hpos x) Hesum.
+    { rewrite -esum_sum'; last first. exact: (cl_mgt_pos).
+      apply/eqP; rewrite eq_le; apply/andP; split; first  exact: h.
+      apply: sum_ge0; exact: cl_mgt_pos. }
     have Hdom : forall s, (EFin (mu s) <= EFin ((ssem_ ps (ps f) m0) s))%E.
     { move=> s; rewrite leNgt; apply/negP => Hgt.
       have Hmu : (0 < (mu s)%:E)%E.
-        by rewrite lte_fin; exact: (le_lt_trans (ge0_mu _ s) Hgt).
-      move: (Hzero s Logic.I); rewrite (lt_geF Hgt) => Habs.
-      have Hgt0 : (0 < +oo * (mu s)%:E)%E
-        by apply: mule_gt0; [exact: lt0y | exact: Hmu].
-      by rewrite Habs ltxx in Hgt0. }
+      by rewrite lte_fin; exact: (le_lt_trans (ge0_mu _ s) Hgt).
+      have := @esum_eq0P _ _ _ _ (fun x _ => (cl_mgt_pos mu m0 f x)) Hesum s I.
+      by rewrite (lt_geF Hgt) gt0_mulye. }
     move: (Hhl m0); rewrite hl.ssem_call_eq; apply: le_trans.
     rewrite /espe; apply: esum.le_sum.
     - move=> s; apply: mule_ge0; first exact: Hg.
@@ -615,8 +572,8 @@ Lemma rel_complete (c : cmd) (P : cond) (Q : cond2) :
   cond2_mono Q ->
   kehl_ ps P c Q -> derivable2 cl_mgt P c Q.
 Proof.
-  move=> h1 h2 h3 /kehl_ehl h; apply: H_hl => //= s0. apply rel_complete_d => //.
-  by move => m; rewrite /bound; case (m == s0).
+move=> h1 h2 h3 /kehl_ehl h; apply: H_hl => //= s0. apply rel_complete_d => //.
+by move => m; rewrite /bound; case (m == s0).
 Qed.
 
 Theorem hoare_complete: forall P c (Q: cmem -> cmem -> \bar R),
@@ -630,15 +587,7 @@ apply: (H_rec _ _ _ cl_mgt); last first.
 - move=> p'; apply: rel_complete => //.
   + move=> m mu m'; rewrite /get_post /cl_mgt /=.
     by case: ifP => _; [exact: lexx | exact: leey].
-  + rewrite /cond2_mono /get_post //=.
-    move => mu mu' hmono x x'.
-    case_eq  (EFin(mu x') <= (ssem_ ps (ps p') x x')%:E)%E.
-    case  (EFin(mu' x') <= (ssem_ ps (ps p') x x')%:E)%E => //=.
-    case_eq (EFin(mu' x') <= (ssem_ ps (ps p') x x')%:E)%E => //=.
-    move => H1 H2.
-    have : (EFin(mu x') <= (ssem_ ps (ps p') x x')%:E)%E = true.
-     + by apply: (le_trans (hmono x')).
-    by rewrite H2.
+  + exact: (@post_mono cl_mgt).
   + move=> m.
     rewrite /get_pre /cl_mgt /= /espe.
     under esum.eq_sum do rewrite lexx mul0e.
@@ -745,20 +694,18 @@ Qed.
 Lemma akehl_aehl l P c Q :
   akehl l P c Q <-> (forall s0, aehl l (bound P s0) c (fun s => Q s0 ((ssem_aux l c s0 s)%:E) s)).
 Proof.
-  rewrite /bound; split.
-  + move=> h m0 m.
-    case_eq (m == m0).
-    - by move => /eqP <-.
-    - move => _. exact : leey.
-  + move => h m.
-    have // := (h m m).
-    by rewrite eq_refl.
+rewrite /bound; split.
++ move=> h m0 m.
+  case_eq (m == m0).
+  - by move => /eqP <-.
+  - move => _. exact : leey.
++ move => h m.
+  have // := (h m m).
+  by rewrite eq_refl.
 Qed.
 
 Lemma aehl_akehl l P c Q : akehl l P c (fun _ _ => Q) <-> aehl l P c Q.
-Proof.
-  by split; move => h m; apply h.
-Qed.
+Proof. by split; move => h m; apply h. Qed.
 
 Definition valid_cl cl :=
   forall (f:ident), kehl_ ps (get_pre (cl f)) (call f) (get_post (cl f)).
@@ -769,16 +716,12 @@ Definition valid_cl_n n cl :=
 Lemma valid_cl_n_dn n (cl: phi) :
     valid_cl_n n.+1 cl -> valid_cl_n n cl.
 Proof.
-move=> H f m.
-move : (H f m).
-rewrite /espe.
-apply: le_trans.
-apply: esum.le_sum.
+move=> H f m; move : (H f m).
+rewrite /espe; apply: le_trans; apply: esum.le_sum.
 + move =>x.
   rewrite mule_ge0 //=  ?lee_tofin //=.
   exact: post_pos.
-move => x.
-rewrite lee_pmul //= ?lee_tofin //.
+move => x; rewrite lee_pmul //= ?lee_tofin //.
 + exact: post_pos.
 + apply: (post_mono f) => x'.
   by apply: (homo_ubnf (n:=n) (p:=n.+1)).
@@ -788,17 +731,11 @@ Qed.
 Lemma valid_cl_to_n (cl: phi) :
   valid_cl cl -> forall n, valid_cl_n n cl.
 Proof.
-move=> Hv n f m.
-move: (Hv f m).
-rewrite ssem_callE.
-apply: le_trans.
-rewrite /espe.
-apply: esum.le_sum.
-+ move =>x.
-  rewrite mule_ge0 //= ?lee_tofin //=.
+move=> Hv n f m; move: (Hv f m).
+rewrite ssem_callE; apply: le_trans; rewrite /espe; apply: esum.le_sum.
++ move =>x; rewrite mule_ge0 //= ?lee_tofin //=.
   exact: post_pos.
-move => x.
-rewrite lee_pmul //= ?lee_tofin //.
+move => x; rewrite lee_pmul //= ?lee_tofin //.
 + exact: post_pos.
 + apply: (post_mono f) => x'.
   apply: dlim_ub => ????.  exact: homo_ubnf.
@@ -819,8 +756,7 @@ elim: n f => [|k IHk] f Hvk m.
   rewrite esum.sum0.
  exact: pre_pos.
 apply: (IH_body f k _ m).
-move=> g.
-apply: IHk => //.
+move=> g; apply: IHk => //.
 by apply: valid_cl_n_dn.
 Qed.
 
@@ -882,22 +818,22 @@ Theorem hoare_sound (cl:phi) P c Q :
   (forall m, (0 <= Q m)%E) ->
   valid_cl cl -> derivable cl P c Q -> ehl_ ps P c Q.
 Proof.
-  move => HP HQ Hv Hd m.
-  rewrite /espe  esum_sum';last first.
-  - move => x; rewrite mule_ge0 //.
-    rewrite lee_tofin //.
-  rewrite hl.test8.
-  apply: esum_dlim_r => //.
-  + move => ????.
-     apply mono_ssem_aux.
-     by apply homo_ubnf.
-  move => n.
-  have Hvn : valid_cl_n n cl := @valid_cl_to_n cl Hv n.
-  have Hahl := (proj1 soundness_n  _ _ _ _ Hd n Hvn).
-  rewrite -esum_sum';last first.
-  + move => x; rewrite mule_ge0 //.
-     rewrite lee_tofin //.
-  exact: (Hahl m).
+move => HP HQ Hv Hd m.
+rewrite /espe  esum_sum';last first.
+- move => x; rewrite mule_ge0 //.
+  by rewrite lee_tofin.
+rewrite hl.test8.
+apply: esum_dlim_r => //.
++ move => ????.
+  apply mono_ssem_aux.
+  by apply homo_ubnf.
+move => n.
+have Hvn : valid_cl_n n cl := @valid_cl_to_n cl Hv n.
+have Hahl := (proj1 soundness_n  _ _ _ _ Hd n Hvn).
+rewrite -esum_sum';last first.
++ move => x; rewrite mule_ge0 //.
+   rewrite lee_tofin //.
+exact: (Hahl m).
 Qed.
 
 Corollary hoare_sound0 P c Q :
@@ -905,12 +841,10 @@ Corollary hoare_sound0 P c Q :
   (forall m, (0 <= Q m)%E) ->
   derivable cl_empty P c Q -> ehl_ ps P c Q.
 Proof.
-  move => HP HQ HD.
-  apply: (hoare_sound cl_empty) => //.
-  rewrite /valid_cl /kehl_ => //=.
-  move => *.
-  rewrite /empty_precondition.
-  exact: leey.
+move => HP HQ HD; apply: (hoare_sound cl_empty) => //.
+rewrite /valid_cl /kehl_ => //= *.
+rewrite /empty_precondition.
+exact: leey.
 Qed.
 
 Theorem khoare_sound (cl:phi) P c (Q: cmem -> cmem -> \bar R) :
@@ -918,27 +852,27 @@ Theorem khoare_sound (cl:phi) P c (Q: cmem -> cmem -> \bar R) :
   (forall m m', (0 <= Q m m')%E) ->
   valid_cl cl -> derivable2 cl P c (fun s0 _ s =>Q s0 s) -> kehl_ ps P c (fun s0 _ s =>Q s0 s).
 Proof.
-  move => HP HQ Hv Hd m.
-  rewrite /espe  esum_sum';last first.
-  - move => x; rewrite mule_ge0 //.
-    rewrite lee_tofin //.
-  rewrite hl.test8.
-  apply: esum_dlim_r => //.
-  + move => ????.
-     apply mono_ssem_aux.
-     by apply homo_ubnf.
-  move => n.
-  have Hvn : valid_cl_n n cl := @valid_cl_to_n cl Hv n.
-  have Hahl := (proj2 soundness_n  _ _ _ _ Hd n Hvn).
-  rewrite -esum_sum';last first.
-  + move => x; rewrite mule_ge0 //.
-    rewrite lee_tofin //.
-  move : (Hahl m).
-  apply: le_trans.
-  rewrite /espe.
-  apply esum.le_sum => //.
-  + move => x; rewrite mule_ge0 //.
-    rewrite lee_tofin //.
+move => HP HQ Hv Hd m.
+rewrite /espe  esum_sum';last first.
+- move => x; rewrite mule_ge0 //.
+  rewrite lee_tofin //.
+rewrite hl.test8.
+apply: esum_dlim_r => //.
++ move => ????.
+   apply mono_ssem_aux.
+   by apply homo_ubnf.
+move => n.
+have Hvn : valid_cl_n n cl := @valid_cl_to_n cl Hv n.
+have Hahl := (proj2 soundness_n  _ _ _ _ Hd n Hvn).
+rewrite -esum_sum';last first.
++ move => x; rewrite mule_ge0 //.
+  rewrite lee_tofin //.
+move : (Hahl m).
+apply: le_trans.
+rewrite /espe.
+apply esum.le_sum => //.
++ move => x; rewrite mule_ge0 //.
+  rewrite lee_tofin //.
 Qed.
 
 Corollary khoare_sound0 P c (Q: cmem -> cmem -> \bar R) :
@@ -946,12 +880,12 @@ Corollary khoare_sound0 P c (Q: cmem -> cmem -> \bar R) :
   (forall m m', (0 <= Q m m')%E) ->
   derivable2 cl_empty P c (fun s0 _ s =>Q s0 s) -> kehl_ ps P c (fun s0 _ s =>Q s0 s).
 Proof.
-  move => HP HQ HD.
-  apply: (khoare_sound cl_empty) => //.
-  rewrite /valid_cl /kehl_ => //=.
-  move => *.
-  rewrite /empty_precondition.
-  exact: leey.
+move => HP HQ HD.
+apply: (khoare_sound cl_empty) => //.
+rewrite /valid_cl /kehl_ => //=.
+move => *.
+rewrite /empty_precondition.
+exact: leey.
 Qed.
 
 End EHL.
