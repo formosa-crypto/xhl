@@ -93,39 +93,6 @@ Section Sound.
 Section Rules.
 Context (ps: psi).
 
-(* Definition ehl_ (ps:psi) f c g := *)
-(*   forall m : cmem, (espe (ssem_ ps c m) g <= f m)%E. *)
-(* (* -------------------------------------------------------------------- *) *)
-(* (* Pratical Hoare triple                                                *) *)
-(* (* -------------------------------------------------------------------- *) *)
-
-(* Definition cond2 := cmem -> \bar pwhile.R -> cmem -> \bar pwhile.R. *)
-
-(* Definition kehl_ (ps:psi) f c (g: cond2) := *)
-(*   forall m : cmem, (espe (ssem_ ps c m) (fun m' => g m ((ssem_ ps c m m')%:E) m') <= f m)%E. *)
-
-(* Notation kehl   := (kehl_ ps). *)
-
-(* Definition bound {T : choiceType} (g : T -> \bar R) m0 m := *)
-(*   if (m == m0) then (g m) else +oo%E. *)
-
-(* Lemma kehl_ehl P c Q : *)
-(*   kehl P c Q <-> (forall s0, ehl (bound P s0) c (fun s => Q s0 ((ssem_ ps c s0 s)%:E) s)). *)
-(* Proof. *)
-(* rewrite /bound; split. *)
-(* + move=> h m0 m. *)
-(*   case_eq (m == m0). *)
-(*   - by move => /eqP <-. *)
-(*   - move => _. exact : leey. *)
-(* + move => h m. *)
-(*   have // := (h m m). *)
-(*   by rewrite eq_refl. *)
-(* Qed. *)
-
-(* Lemma hl_khl P c Q : *)
-(*   kehl P c (fun _ _ => Q) <-> ehl P c Q. *)
-(* Proof.  by split; move => h m; apply h. Qed. *)
-
 Notation ehl   := (ehl_ ps).
 Notation kehl   := (kehl_ ps).
 
@@ -252,22 +219,6 @@ Lemma kehl_conseq c f f' (g g' : cond2):
            espe d (fun m' => g m ((d m')%:E) m') <= f m)%E ->
   kehl f c g.
 Proof. by move => h' hc m; apply hc. Qed.
-
-(* -------------------------------------------------------------------- *)
-
-(* (** Definition of a procedure contract **) *)
-
-(* Definition clause : Type := cond * cond2. *)
-
-(* Definition get_pre (an:clause) := *)
-(*   let (pre,_) := an in *)
-(*   pre. *)
-
-(* Definition get_post (an:clause) := *)
-(*   let (_,post) := an in *)
-(*   post. *)
-
-(* Definition phi : Type := ident -> clause. *)
 
 (* -------------------------------------------------------------------- *)
 
@@ -548,88 +499,54 @@ Proof.
       exact: (lee_tofin (Hdom s)).
 Qed.
 
-(* Lemma rel_complete (c : cmd) (P : cond) (Q: cond2) ps: *)
-(*   (forall m,  (0 <= P m)%E) -> *)
-(*   (forall m mu m', (0 <= Q m mu m')%E) -> *)
-(*   cond2_mono Q -> *)
-(*   kehl_ ps P c Q -> *)
-(*   derivable2 ps (cl_mgt ps) P c Q. *)
-(* Proof. *)
-(*   move=> h1 h2 h3 /kehl_ehl h; apply: H_hl => // s0. apply rel_complete_d => //. *)
-(*   + by rewrite /bound => m; case_eq (m == s0) => //=. *)
-(* Qed. *)
+Lemma rel_complete (c : cmd) (P : cond) (Q: cond2) ps:
+  (forall m,  (0 <= P m)%E) ->
+  (forall m mu m', (0 <= Q m mu m')%E) ->
+  cond2_mono Q ->
+  kehl_ ps P c Q ->
+  (forall ps', derivable2 ps' (cl_mgt ps) P c Q).
+Proof.
+  move=> h1 h2 h3 /kehl_ehl h ps'; apply: H_hl => // s0. apply rel_complete_d => //.
+  + by rewrite /bound => m; case_eq (m == s0) => //=.
+ Admitted.
 
 Theorem khoare_complete: forall P c (Q: mem -> mem -> \bar R) ps cl,
   (forall m,  (0 <= P m)%E) ->
   (forall m m', (0 <= Q m m')%E) ->
   kehl_ ps P c (fun s0 _ s =>Q s0 s) -> derivable2 ps cl P c (fun s0 _ s =>Q s0 s).
 Proof.
- move=> P c Q ps cl h1 h2 Hvalid.
-apply: (H_rec _ _ _ (cl_mgt ps)) ; last first.
- - move => ps0.
-   apply: H_hl => // s0.
-   apply rel_complete_d => //.
-   + by rewrite /bound => m; case_eq (m == s0) => //=.
-   + rewrite /bound => s.
-     case_eq (s == s0).
-     move => /eqP ->.
-     exact: (Hvalid s0).
-     move => _; exact: leey.
- - move=> p' ps0.
-   apply: H_hl => // s.
-   + exact : post_pos_cl_mgt.
-   apply rel_complete_d => //.
-   + admit.
-   + move =>m. exact: post_pos_cl_mgt.
-  + move=> m.
-    rewrite /get_pre /cl_mgt /= /espe.
-    under esum.eq_sum do rewrite lexx.  mul0e.
-    by rewrite esum.sum0.
-
-     
-   + move => m. rewrite /get_post /cl_mgt /=.
-     case: ifP.  => _; [exact: lexx | exact: leey].
-   + move=> m mu m'; rewrite /get_post /cl_mgt /=.
+move=> P c Q ps cl h1 h2 Hvalid.
+apply: (H_rec _ _ _ (cl_mgt ps)); last first.
+- by apply rel_complete.
+- move=> p'; apply: rel_complete => //.
+  + move=> m mu m'; rewrite /get_post /cl_mgt /=.
     by case: ifP => _; [exact: lexx | exact: leey].
-  (* + exact: (post_mono p'). *)
+  + exact: (post_mono p').
   + move=> m.
     rewrite /get_pre /cl_mgt /= /espe.
     under esum.eq_sum do rewrite lexx mul0e.
     by rewrite esum.sum0.
 Qed.
 
-
-Theorem khoare_complete: forall P c Q ps cl,
-  kehl_ ps P c Q -> derivable2 ps cl P c Q.
+Theorem hoare_complete: forall f c g cl ps,
+  (forall m,  (0 <= f m)%E) ->
+  (forall m , (0 <= g m)%E) ->
+  ehl_ ps f c g -> derivable ps cl f c g.
 Proof.
-move=> P c Q ps cl Hvalid.
-apply: (H_rec  (cl:=(cl_mgt ps))).
-- by move=> p' ps'; apply: rel_complete=> m _ s hs.
-- exact: rel_complete Hvalid.
-Qed.
-
-Theorem hoare_complete: forall P c Q ps cl,
-  hl_ ps P c Q -> derivable ps cl P c Q.
-Proof.
-move=> P c Q ps cl Hvalid.
+move=> f c g cl ps H1 H2 Hvalid.
 apply: H_khl.
-apply khoare_complete.
-by apply hl_khl.
+by apply khoare_complete.
 Qed.
 
 End Complete.
 
-End HL.
-
-
-
-Section Misc.
+Section prhl.
 
 From xhl.prhl Require Import prhl.
 
 Notation cmd := (@cmd ident ident cmem).
 
-Lemma espe_coupling (ν : Distr (mem * mem)) g g' :
+Lemma espe_coupling (ν : Distr (cmem * cmem)) (g g':(@ehl_stmt.cond _ cmem)) :
   (forall m, 0 <= g m)%E ->
   (forall m, 0 <= g' m)%E ->
   (forall p, p \in dinsupp ν -> (g p.2 <= g' p.1)%E) ->
@@ -652,14 +569,14 @@ rewrite /espe; apply: esum.le_sum.
   + by rewrite hp !mule0.
 Qed.
 
-Lemma ehl_prhl (c:cmd) d f g f' g' P Q ps:
-  (forall m : mem, 0 <= g m)%E ->
-  (forall m : mem, 0 <= g' m)%E ->
-  ehl f' d g' ->
+Lemma ehl_prhl (c d:cmd) (f g f' g':(@ehl_stmt.cond _ cmem))  P Q (ps: ident -> cmd):
+  (forall m : cmem, 0 <= g m)%E ->
+  (forall m : cmem, 0 <= g' m)%E ->
+  ehl_ ps f' d g' ->
   @prhl ps P d c Q ->
   (forall m, exists m', f' m' <= f m /\ P (m',m))%E ->
   (forall m' m, Q (m',m) -> g m <= g' m')%E ->
-  ehl f c g.
+  ehl_ ps f c g.
 Proof.
 move => Hg Hg' He Hr H1 H2 m.
 have [m' Hm'] := H1 m.
@@ -675,33 +592,6 @@ apply: (@le_trans _ _ (espe (dfst ν) g')).
   exact: Hle.
 Qed.
 
-End EHL.
+End prhl.
 
-
-
-
-Definition cond2_mono (c:  cmem -> \bar pwhile.R -> cmem -> \bar pwhile.R) :=
-      forall (mu mu' : {distr cmem / R}),
-        (forall (x0 : cmem), mu x0 <= mu' x0) ->
-        (forall x x' : cmem, c x ((mu x')%:E) x' <= c x ((mu' x')%:E) x')%E.
-
-Definition cl_mono (cl: ident -> clause) := forall (f: ident), cond2_mono (snd (cl f)).
-
-Definition cl_pre_pos (cl: ident -> clause) :=
-  forall (f: ident), (forall x , 0 <= (get_pre (cl f)) x )%E.
-
-Definition cl_post_pos (cl: ident -> clause) :=
-  forall (f: ident), (forall x mu x', 0 <= (get_post (cl f)) x mu x')%E.
-
-HB.mixin Record isPhi (cl : ident -> clause) :=
-  {
-    post_mono : cl_mono cl;
-    pre_pos : cl_pre_pos cl;
-    post_pos : cl_post_pos cl;
-  }.
-
-HB.structure Definition Phi :=  {f of @isPhi f}.
-
-Notation "'phi'" := (@Phi.type) (at level 0, format "'phi'"): type_scope.
-
-(* -------------------------------------------------------------------- *)
+End ehl.
