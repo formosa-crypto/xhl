@@ -72,14 +72,20 @@ Qed.
 (* Procedire contract                                                   *)
 (* -------------------------------------------------------------------- *)
 
-Definition clause : Type := dassn * dassn2.
+Definition clause : Type := dassn * (nat -> dassn2) * dassn2.
 
-Definition get_pre (an:clause) :=
-  let (pre,post) := an in
+Definition get_pre (an:clause): dassn :=
+  let (pre,_) := an in
+  let (pre,_) := pre in
   pre.
 
-Definition get_post (an:clause) :=
+Definition get_post_inf (an:clause) : dassn2 :=
   let (pre,post) := an in
+  post.
+
+Definition get_post (an:clause): (nat -> dassn2) :=
+  let (pre,_) := an in
+  let (_,post) := pre in
   post.
 
 Definition phi : Type := ident -> clause.
@@ -88,9 +94,12 @@ Definition phi : Type := ident -> clause.
 
 Definition empty_precondition : dassn := xpred0.
 
-Definition empty_postcondition :  dassn2 := (fun _ => xpredT).
+Definition empty_postcondition_inf :  dassn2 := (fun _ => xpredT).
 
-Definition empty_clause : clause := (empty_precondition, empty_postcondition).
+Definition empty_postcondition :  nat -> dassn2 := (fun _ _ => xpredT).
+
+Definition empty_clause : clause :=
+  (empty_precondition, empty_postcondition, empty_postcondition_inf).
 
 Definition empty_phi: phi := fun _ => empty_clause.
 
@@ -239,6 +248,9 @@ Local Notation iwhilen k b c := (iterc k (IfT b then c)).
 (* -------------------------------------------------------------------- *)
 Section Logic.
 
+Definition post_shift (post : nat -> dassn2) n : dassn2 :=
+ if n is n'.+1 then post n' else (fun _ => xpredT).
+
 Inductive sellora : psi -> phi -> dassn -> dassn -> cmd -> Prop :=
 | ESkip P cl ps : sellora ps cl P P skip
 
@@ -324,12 +336,8 @@ with sellora2: psi -> phi -> dassn -> dassn2 -> cmd -> Prop :=
        (forall s0, sellora ps cl (eqmu s0) (fun s => P s0 ==> Q s0 s) c) ->
        sellora2 ps cl P Q c
    | H_call : forall cl f ps,
-       sellora2 ps cl (get_pre (cl f)) (get_post (cl f)) (call f)
-| H_rec : forall P (Q: dassn2) c cl cl' ps',
-       (forall p mu, dnull \in get_post (cl p) mu) ->
-       (forall p mu, tclosed0 (get_post (cl p) mu)) ->
-       (forall p' ps , sellora2 ps cl (get_pre (cl p')) (get_post (cl p')) (ps' p')) ->
-       (forall ps, sellora2 ps cl P Q c) ->
+       sellora2 ps cl (get_pre (cl f)) (get_post_inf (cl f)) (call f)
+   | H_rec : forall P (Q: dassn2) c (* cl *) cl' ps',
        sellora2 ps' cl' P Q c
    | H_adapt : forall (P1 P2 : dassn) (Q1 Q2 : dassn2) c cl ps,
        (forall m, P1 m -> P2 m) ->
@@ -557,38 +565,44 @@ Proof. by move=> hc spc llc mu; apply/spc=> m; apply/modll. Qed.
 (** Hoare triple for a com with procedure context **)
 
 Definition ellora_triple_ctx (cl : phi) (ps: psi) (P: dassn) (Q: dassn2) (c: cmd) :=
-  (forall p, kellora_ ps (get_pre (cl p)) (get_post (cl p)) (call p)) ->
-  kellora_ ps P Q c.
+ (forall p, kellora_ ps (get_pre (cl p)) (get_post_inf (cl p)) (call p)) ->
+       kellora_ ps P Q c.
+
+Definition ellora_triple_ctx_n (cl : phi) (ps: psi) (P: dassn) (Q: dassn2) (c: cmd) n :=
+ (forall p, kellora_ ps (get_pre (cl p)) (post_shift (get_post (cl p)) n) (call p)) ->
+       kellora_ ps P Q c.
 
 (** Hoare triple for a procedure with procedure context **)
 
 Definition ellora_triple_proc_ctx (cl : phi) (ps_init :psi):=
-  forall p ps, ellora_triple_ctx cl ps (get_pre (cl p)) (get_post (cl p)) (ps_init p).
+  forall p ps n, ellora_triple_ctx_n cl ps
+              (get_pre (cl p))
+              (get_post (cl p) n)
+              (ps_init p) n.
 
-Lemma recursive_proc ps' cl' :
-  (* (forall p mu, ellora P (get_post (cl' p)) abort) -> *)
-  (forall p mu, dnull \in get_post (cl' p) mu) ->
-  (forall p mu, tclosed0 (get_post (cl' p) mu)) ->
-  ellora_triple_proc_ctx cl' ps' ->
-  (forall p, kellora_ ps' (get_pre (cl' p)) (get_post (cl' p)) (call p)).
+Lemma recursive_proc  (ps': psi) (cl':phi) :
+  (forall p s, tclosed (fun n => post_shift (get_post (cl' p)) n s)
+                  ((get_post_inf (cl' p)) s)) ->
+    ellora_triple_proc_ctx cl' ps' ->
+  (forall p, kellora_ ps' (get_pre (cl' p)) (get_post_inf (cl' p)) (call p)).
 Proof.
-move=> Hnull Hclosed h.
+move=> Htclosed Hstep.
 (* term-wise identification of the k_inliner and ubnf approximations *)
 have KU : forall n c m, ssem_ (k_inliner_ps1 n ps') c m = ssem_aux (ubnf ps' n) c m.
   by move=> n c m; rewrite ssem_ubnf_dnull ubnf_ssem (test9 _ _ _ _ ps') test5.
-(* each finite approximation satisfies the contract, by induction on the depth *)
+(* each finite approximation satisfies the shifted contract, by induction *)
 have key : forall n p s, s \in get_pre (cl' p) ->
-    dssem (k_inliner_ps1 n ps') (call p) s \in get_post (cl' p) s.
+    dssem (k_inliner_ps1 n ps') (call p) s \in post_shift (get_post (cl' p)) n s.
   elim => [|n IHn] p s hP.
   - have -> : dssem (k_inliner_ps1 0 ps') (call p) s = dnull.
       rewrite /dssem; transitivity (\dlet_(m0 <- s) (dnull : Distr cmem)).
         by apply/eq_in_dlet => // m0 _; rewrite KU /=.
       by apply/distr_eqP => x; rewrite dletC dnullE mulr0.
-    exact: Hnull.
+    by rewrite /post_shift.
   - have -> : dssem (k_inliner_ps1 n.+1 ps') (call p) s
             = dssem (k_inliner_ps1 n ps') (ps' p) s.
       by rewrite /dssem; apply/eq_in_dlet => // m0 _; rewrite (inline2_split n 1).
-    apply: (h p (k_inliner_ps1 n ps')); last exact: hP.
+    apply: (Hstep p (k_inliner_ps1 n ps') n); last exact: hP.
     by move=> p0 s0 hP0; exact: (IHn _ _ hP0).
 move=> p s hP.
 (* monotonicity of the approximation in the depth *)
@@ -605,7 +619,7 @@ have monoD : forall n1 n2, (n1 <= n2)%N ->
 have E : dssem ps' (call p) s = \dlim_(n) dssem (k_inliner_ps1 n ps') (call p) s.
   rewrite /dssem [RHS]dlim_let; first by move=> x n1 n2 le; exact: (mono x n1 n2 le).
   by apply/eq_in_dlet => // m0 _; rewrite test1.
-rewrite E; apply: (Hclosed p s).
+rewrite E; apply: (Htclosed p s).
 - by move=> n; apply: key.
 - move=> x; apply/ncvg_mono_bnd => [n1 n2 le|]; last first.
   + apply/asboolP/nboundedP; exists 2%:R => // n.
@@ -618,142 +632,247 @@ Qed.
 
 Theorem recursion_hoare_triple :
   forall P (Q:dassn2) c cl,
-   (forall p mu, dnull \in get_post (cl p) mu) ->
-   (forall p mu, tclosed0 (get_post (cl p) mu)) ->
+    (forall p s, tclosed (fun n => post_shift (get_post (cl p)) n s)
+                    ((get_post_inf (cl p)) s)) ->
     ellora_triple_proc_ctx cl ps  ->
     ellora_triple_ctx cl ps P Q c ->
     kellora P Q c.
 Proof.
-  move => ?????? H H0.
-  apply H0.
-  by apply: recursive_proc.
+move=> P Q c cl Htcl Hproc Hc.
+by apply: Hc; apply: recursive_proc; [exact: Htcl | exact: Hproc].
 Qed.
 
 End Rules.
 
-(* -------------------------------------------------------------------- *)
-Hint Resolve ellora_skip             : ellora.
-Hint Resolve ellora_abort            : ellora.
-Hint Resolve ellora_seq              : ellora.
-Hint Resolve ellora_conseq           : ellora.
-Hint Resolve ellora_sem              : ellora.
-(* Hint Resolve ellora_and              : ellora. *)
-(* Hint Resolve ellora_or               : ellora. *)
-(* Hint Resolve ellora_sem_condT        : ellora. *)
-(* Hint Resolve ellora_sem_condF        : ellora. *)
-(* Hint Resolve ellora_split            : ellora. *)
-Hint Resolve ellora_cond             : ellora.
-Hint Resolve ellora_semmap           : ellora.
-(* Hint Resolve ellora_while_cond       : ellora. *)
-(* Hint Resolve ellora_while_dclosed    : ellora. *)
-Hint Resolve ellora_while_tclosed    : ellora.
-(* Hint Resolve ellora_while_uclosed    : ellora. *)
-(* Hint Resolve ellora_while_certain    : ellora. *)
-(* Hint Resolve ellora_while_certain_ct : ellora. *)
-(* Hint Resolve ellora_frame            : ellora. *)
+(* (* -------------------------------------------------------------------- *) *)
+(* Hint Resolve ellora_skip             : ellora. *)
+(* Hint Resolve ellora_abort            : ellora. *)
+(* Hint Resolve ellora_seq              : ellora. *)
+(* Hint Resolve ellora_conseq           : ellora. *)
+(* Hint Resolve ellora_sem              : ellora. *)
+(* (* Hint Resolve ellora_and              : ellora. *) *)
+(* (* Hint Resolve ellora_or               : ellora. *) *)
+(* (* Hint Resolve ellora_sem_condT        : ellora. *) *)
+(* (* Hint Resolve ellora_sem_condF        : ellora. *) *)
+(* (* Hint Resolve ellora_split            : ellora. *) *)
+(* Hint Resolve ellora_cond             : ellora. *)
+(* Hint Resolve ellora_semmap           : ellora. *)
+(* (* Hint Resolve ellora_while_cond       : ellora. *) *)
+(* (* Hint Resolve ellora_while_dclosed    : ellora. *) *)
+(* Hint Resolve ellora_while_tclosed    : ellora. *)
+(* (* Hint Resolve ellora_while_uclosed    : ellora. *) *)
+(* (* Hint Resolve ellora_while_certain    : ellora. *) *)
+(* (* Hint Resolve ellora_while_certain_ct : ellora. *) *)
+(* (* Hint Resolve ellora_frame            : ellora. *) *)
 
-Definition valid_cl (cl:phi) (ps:psi) :=
-  forall f, kellora_ ps (get_pre (cl f)) (get_post (cl f)) (call f).
+(* Definition valid_cl (cl:phi) (ps:psi) := *)
+(*   forall f, kellora_ ps (get_pre (cl f)) (get_post (cl f)) (call f). *)
 
-Lemma sound:
-  (forall ps cl (P Q:dassn) c,
-      sellora ps cl P Q c -> valid_cl cl ps -> ellora_ ps P Q c) /\
-    (forall ps cl (P: dassn) (Q: dassn2) c,
-      sellora2 ps cl P Q c -> valid_cl cl ps -> kellora_ ps P Q c).
-Proof.
-apply derivable_mut.
-+ eauto 2 using ellora_cond with ellora.
-+ eauto 2 using ellora_cond with ellora.
-+ move => S P Q c1 c2 cl ps ? Hc1 ? Hc2 Hv.
-  apply: ellora_seq;[exact: Hc1 | exact: Hc2].
-+ move => P' Q' P Q c cl ps HP HQ ? HI Hv m HPre.
-  apply: HQ.
-  apply: (HI Hv).
-  by apply: HP.
-+ eauto 2 using ellora_cond with ellora.
-+ eauto 2 using ellora_cond with ellora.
-+ move => P P' Q Q' e c1 c2 ps ???? Hc1 ? Hc2 Hv.
-  by apply: ellora_cond;[ exact: (Hc1 Hv) | exact: (Hc2 Hv)].
-+ move =>  Q Qinf b c cl ps cl' ? HI ? Ha Hclose Hv.
-  apply: ellora_while_tclosed.
-  + move => n.  by apply: HI.
-  + move => n.  by apply: Ha.
-  + exact: Hclose.
-+ eauto 2 using ellora_cond with ellora.
-+ move => P Q c cl ps ? HI Hv.
-  apply /kellora_ellora.
-  by move => s0; apply HI.
-+ move => cl f ps Hv. exact: (Hv f).
-+ move => P Q c cl cl' ps' Hcl1 Hcl2 IHbody ?? HI Hv.
-  apply: (recursion_hoare_triple (cl:=cl)) => //.
-  rewrite /ellora_triple_ctx.
-  by move => h; apply: HI.
-+ move => P1 p2 Q1 Q2 c cl ps HP HQ ? HI Hv m HPre.
-  have := (HI Hv m (HP m HPre)).
-  exact: HQ.
-Qed.
+(* Lemma sound: *)
+(*   (forall ps cl (P Q:dassn) c, *)
+(*       sellora ps cl P Q c -> valid_cl cl ps -> ellora_ ps P Q c) /\ *)
+(*     (forall ps cl (P: dassn) (Q: dassn2) c, *)
+(*       sellora2 ps cl P Q c -> valid_cl cl ps -> kellora_ ps P Q c). *)
+(* Proof. *)
+(* apply derivable_mut. *)
+(* + eauto 2 using ellora_cond with ellora. *)
+(* + eauto 2 using ellora_cond with ellora. *)
+(* + move => S P Q c1 c2 cl ps ? Hc1 ? Hc2 Hv. *)
+(*   apply: ellora_seq;[exact: Hc1 | exact: Hc2]. *)
+(* + move => P' Q' P Q c cl ps HP HQ ? HI Hv m HPre. *)
+(*   apply: HQ. *)
+(*   apply: (HI Hv). *)
+(*   by apply: HP. *)
+(* + eauto 2 using ellora_cond with ellora. *)
+(* + eauto 2 using ellora_cond with ellora. *)
+(* + move => P P' Q Q' e c1 c2 ps ???? Hc1 ? Hc2 Hv. *)
+(*   by apply: ellora_cond;[ exact: (Hc1 Hv) | exact: (Hc2 Hv)]. *)
+(* + move =>  Q Qinf b c cl ps cl' ? HI ? Ha Hclose Hv. *)
+(*   apply: ellora_while_tclosed. *)
+(*   + move => n.  by apply: HI. *)
+(*   + move => n.  by apply: Ha. *)
+(*   + exact: Hclose. *)
+(* + eauto 2 using ellora_cond with ellora. *)
+(* + move => P Q c cl ps ? HI Hv. *)
+(*   apply /kellora_ellora. *)
+(*   by move => s0; apply HI. *)
+(* + move => cl f ps Hv. exact: (Hv f). *)
+(* + move => P Q c cl cl' ps' Hvalid _ IHc Hv. *)
+(*   exact: (IHc ps' Hvalid). *)
+(* + move => P1 p2 Q1 Q2 c cl ps HP HQ ? HI Hv m HPre. *)
+(*   have := (HI Hv m (HP m HPre)). *)
+(*   exact: HQ. *)
+(* Qed. *)
 
-End Sound.
+(* End Sound. *)
 
-Section Complete.
+(* Section Complete. *)
 
-(* Section help. *)
-(* Context (ps: psi). *)
+(* (* Section help. *) *)
+(* (* Context (ps: psi). *) *)
 
-(* Definition iscomplete (c:cmd):= *)
-(*   (forall mu, sellora ps (eqmu mu) (eqmu (dssem ps c mu)) c). *)
+(* (* Definition iscomplete (c:cmd):= *) *)
+(* (*   (forall mu, sellora ps (eqmu mu) (eqmu (dssem ps c mu)) c). *) *)
 
-(* Local Notation PRE  := (X in sellora ps X _)%pattern. *)
-(* Local Notation POST := (X in sellora ps _ X)%pattern. *)
+(* (* Local Notation PRE  := (X in sellora ps X _)%pattern. *) *)
+(* (* Local Notation POST := (X in sellora ps _ X)%pattern. *) *)
+
+(* (* (* -------------------------------------------------------------------- *) *) *)
+(* (* Lemma cpl_abort : iscomplete abort. *) *)
+(* (* Proof. *) *)
+(* (* move=> mu; apply/(@EConseq (eqmu mu) (□ pred0))=> //. *) *)
+(* (* + move=> nu /asboolP h; apply/asboolP; rewrite dssem_abortE. *) *)
+(* (*   apply/distr_eqP=> m; rewrite dnullE. *) *)
+(* (*   by case: (nu m =P 0)=> // /dinsuppP /h. *) *)
+(* (* by apply/EAbort. *) *)
+(* (* Qed. *) *)
+
+(* (* (* -------------------------------------------------------------------- *) *) *)
+(* (* Lemma cpl_skip : iscomplete skip. *) *)
+(* (* move=> mu; apply/(@EConseq (eqmu mu) (eqmu mu))=> //. *) *)
+(* (* + by move=> nu /asboolP=> ->; apply/asboolP; rewrite dssem_skipE. *) *)
+(* (* by apply/ESkip. *) *)
+(* (* Qed. *) *)
+
+(* (* (* -------------------------------------------------------------------- *) *) *)
+(* (* Lemma cpl_assign {t : IhbType.type} (x : vars t) e : iscomplete (x <<- e). *) *)
+(* (* Proof. *) *)
+(* (* move=> mu ; set Q := POST; apply: (EConseq  _ _ (EAssign Q x e ps)) => //. *) *)
+(* (* by move=> nu /asboolP ->; apply/asboolP. *) *)
+(* (* Qed. *) *)
+
+(* (* (* -------------------------------------------------------------------- *) *) *)
+(* (* Lemma cpl_sample {t : IhbType.type} (x : vars t) d : iscomplete (x <$- d). *) *)
+(* (* Proof. *) *)
+(* (* move=> mu; set Q := POST; apply/(EConseq _ _ (ESample Q x d ps)) => //. *) *)
+(* (* by move=> nu /asboolP ->; apply/asboolP. *) *)
+(* (* Qed. *) *)
+
+(* (* (* -------------------------------------------------------------------- *) *) *)
+(* (* Lemma cpl_seq c1 c2 : iscomplete c1 -> iscomplete c2 -> iscomplete (c1 ;; c2). *) *)
+(* (* Proof. *) *)
+(* (* move=> ih1 ih2 mu; pose S x := `[<x = dssem ps c1 mu>]. *) *)
+(* (* by apply/(@ESeq S); [apply/ih1 | rewrite dssem_seqE; apply/ih2]. *) *)
+(* (* Qed. *) *)
+
+(* (* (* -------------------------------------------------------------------- *) *) *)
+(* (* Lemma cpl_if e c1 c2 : *) *)
+(* (*   iscomplete c1 -> iscomplete c2 -> iscomplete (If e then c1 else c2). *) *)
+(* (* Proof. *) *)
+(* (* move=> ih1 ih2 mu; set P := PRE; set Q := POST. *) *)
+(* (* pose mu1 := (drestr `[{    e }] mu). *) *)
+(* (* pose mu2 := (drestr `[{ ~~ e }] mu). *) *)
+(* (* pose R1 x := `[< x = dssem ps c1 mu1 >]. *) *)
+(* (* pose R2 x := `[< x = dssem ps c2 mu2 >]. *) *)
+(* (* apply/(@EConseq P (R1 ⊕ R2)) => //; first move=> nu /asboolP. *) *)
+(* (* * case=> -[nu1 nu2 /= eqD] [/asboolP eq1 /asboolP eq2]. *) *)
+(* (*   apply/asboolP; apply/distr_eqP=> m; rewrite eqD. *) *)
+(* (*   rewrite !(eq1, eq2) /dssem bsemE. *) *)
+(* (*   rewrite [RHS](dlet_additive (mu1 := mu1) (mu2 := mu2)). *) *)
+(* (*   - by apply/drestrD. *) *)
+(* (*   congr (_ + _); apply/distr.eq_in_dlet => //. *) *)
+(* (*   - by move=> m'; rewrite dinsupp_restr => /andP[_ ->]. *) *)
+(* (*   - move=> m'; rewrite dinsupp_restr => /andP[_ /=]. *) *)
+(* (*     by move/negbTE=> ->. *) *)
+(* (* pose P1 x := `[< x = mu1 >]; pose P2 x := `[< x = mu2 >]. *) *)
+(* (* apply/(@EConseq (P1 ⊕ P2) (R1 ⊕ R2)) => //. *) *)
+(* (* * move=> nu /asboolP ->; apply/asboolP; exists (mu1, mu2) => /=. *) *)
+(* (*   - by apply/drestrD. - by split; apply/asboolP. *) *)
+(* (* apply/(EConseq _ _ (@ECond P1 R1 P2 R2 _ _ _ _ _ _)) => //. *) *)
+(* (* * move=> nu /asboolP[] [nu1 nu2 /= eqD] [eq1 eq2]. *) *)
+(* (*   apply/asboolP; exists (nu1, nu2) => //=. *) *)
+(* (*   split; apply/andP; split=> //; apply/asboolP => /= m. *) *)
+(* (*   - by move/asboolP: eq1=> ->; rewrite dinsupp_restr=> /andP[]. *) *)
+(* (*   - by move/asboolP: eq2=> ->; rewrite dinsupp_restr=> /andP[]. *) *)
+(* (* * apply: (EConseq _ _ (ih1 mu1)) => nu /= => [/andP[]|]. *) *)
+(* (*   - by move/asboolP=> -> h; apply/asboolP/distr_eqP=> m. *) *)
+(* (*   by move/asboolP=> ->; apply/asboolP. *) *)
+(* (* * apply: (EConseq _ _ (ih2 mu2)) => nu /= => [/andP[]|]. *) *)
+(* (*   - by move/asboolP=> -> h; apply/asboolP/distr_eqP=> m. *) *)
+(* (*   by move/asboolP=> ->; apply/asboolP. *) *)
+(* (* Qed. *) *)
+
+(* (* (* -------------------------------------------------------------------- *) *) *)
+(* (* Lemma cpl_while e c : iscomplete c -> iscomplete (While e Do c). *) *)
+(* (* Proof. *) *)
+(* (* move=> cc mu; pose I n := iter n (seqc^~ (IfT e then c)) skip. *) *)
+(* (* pose A n := eqmu (dssem ps (I n) mu). *) *)
+(* (* pose B n := eqmu (dssem ps (I n ;; IfT e then abort) mu). *) *)
+(* (* set Q := POST; apply/(EConseq _ _ (@EWhileTClosed A B Q _ _ _ _ _ _)). *) *)
+(* (* + move=> nu /asboolP ->; apply/asboolP=> /=. *) *)
+(* (*   by rewrite /dssem !bsemE dlet_dunit_id. *) *)
+(* (* + by move=> nu /andP[]. *) *)
+(* (* + move=> n; rewrite /A {2}/I; set D := dssem ps (iter _ _ _) _. *) *)
+(* (*   suff ->: D = dssem ps (IfT e then c) (dssem ps (I n) mu). *) *)
+(* (*   - by apply/cpl_if/cpl_skip=> nu; apply/cc. *) *)
+(* (*   - by rewrite /D iterS dssem_seqE. *) *)
+(* (* + move=> n; rewrite /A /B; set D := dssem ps (_ ;; _) _. *) *)
+(* (*   suff ->: D = dssem ps (IfT e then abort) (dssem ps (I n) mu). *) *)
+(* (*   - by apply/cpl_if/cpl_skip=> nnu; apply/cpl_abort. *) *)
+(* (*   - by rewrite /D dssem_seqE. *) *)
+(* (* + move=> nu Bnu cvg; apply/asboolP. *) *)
+(* (*   pose C n := dssem ps (I n ;; IfT e then abort) mu. *) *)
+(* (*   transitivity (\dlim_(n) C n); first apply/eq_dlim. *) *)
+(* (*   * by move=> n; move/asboolP: (Bnu n) => ->. *) *)
+(* (*   rewrite {}/C /dssem bsemE -dlim_let; first by apply/homo_whilen. *) *)
+(* (*   apply/distr_eqP=> m; rewrite -[in RHS]dlim_bump. *) *)
+(* (*   apply/distr_eqP: m; apply/eq_dlim=> n; apply/eq_in_dlet=> //. *) *)
+(* (*   move=> m _; rewrite whilen_iterc; rewrite !ssemE. *) *)
+(* (*   by apply/eq_in_dlet=> //; rewrite ssem_iterop_iterrev. *) *)
+(* (* Qed. *) *)
+(* (* End help. *) *)
+
+(* (* (* -------------------------------------------------------------------- *) *) *)
+(* (* Hint Resolve cpl_abort  : complete. *) *)
+(* (* Hint Resolve cpl_skip   : complete. *) *)
+(* (* Hint Resolve cpl_assign : complete. *) *)
+(* (* Hint Resolve cpl_sample : complete. *) *)
+(* (* Hint Resolve cpl_if     : complete. *) *)
+(* (* Hint Resolve cpl_while  : complete. *) *)
+(* (* Hint Resolve cpl_seq    : complete. *) *)
 
 (* (* -------------------------------------------------------------------- *) *)
-(* Lemma cpl_abort : iscomplete abort. *)
+(* (* Lemma complete c mu : *) *)
+(* (*   sellora ps (eqmu mu) (eqmu (dssem ps c mu)) c. *) *)
+(* (* Proof. by elim: c mu; auto with complete. Qed. *) *)
+
+(* Definition iscomplete' ps cl (c:cmd) (Q: dmem -> dassn):= *)
+(*   (forall mu, sellora ps cl (eqmu mu) (Q mu) c). *)
+
+(* (* Relative completeness helpers: derive `sellora ps` while pinning the *) *)
+(* (* post-condition to the `ps'` semantics.  Used by the while case, whose *) *)
+(* (* body may not be ps-independent (so `cpl_if`/`cpl_skip`/`cpl_abort`,    *) *)
+(* (* which need full `iscomplete`, do not apply).                           *) *)
+(* Lemma rel_cpl_skip cl (ps ps' : psi) mu : *)
+(*   sellora ps cl (eqmu mu) (eqmu (dssem ps' skip mu)) skip. *)
 (* Proof. *)
-(* move=> mu; apply/(@EConseq (eqmu mu) (□ pred0))=> //. *)
+(* apply/(@EConseq (eqmu mu) (eqmu mu)) => //. *)
+(* + by move=> nu /asboolP ->; apply/asboolP; rewrite dssem_skipE. *)
+(* by apply/ESkip. *)
+(* Qed. *)
+
+(* Lemma rel_cpl_abort cl (ps ps' : psi) mu : *)
+(*   sellora ps cl (eqmu mu) (eqmu (dssem ps' abort mu)) abort. *)
+(* Proof. *)
+(* apply/(@EConseq (eqmu mu) (□ pred0)) => //. *)
 (* + move=> nu /asboolP h; apply/asboolP; rewrite dssem_abortE. *)
 (*   apply/distr_eqP=> m; rewrite dnullE. *)
 (*   by case: (nu m =P 0)=> // /dinsuppP /h. *)
 (* by apply/EAbort. *)
 (* Qed. *)
 
-(* (* -------------------------------------------------------------------- *) *)
-(* Lemma cpl_skip : iscomplete skip. *)
-(* move=> mu; apply/(@EConseq (eqmu mu) (eqmu mu))=> //. *)
-(* + by move=> nu /asboolP=> ->; apply/asboolP; rewrite dssem_skipE. *)
-(* by apply/ESkip. *)
-(* Qed. *)
-
-(* (* -------------------------------------------------------------------- *) *)
-(* Lemma cpl_assign {t : IhbType.type} (x : vars t) e : iscomplete (x <<- e). *)
+(* Lemma rel_cpl_if cl (ps ps' : psi) e c1 c2 : *)
+(*     (forall mu, sellora ps cl (eqmu mu) (eqmu (dssem ps' c1 mu)) c1) *)
+(*  -> (forall mu, sellora ps cl (eqmu mu) (eqmu (dssem ps' c2 mu)) c2) *)
+(*  -> forall mu, sellora ps cl (eqmu mu) *)
+(*         (eqmu (dssem ps' (If e then c1 else c2) mu)) (If e then c1 else c2). *)
 (* Proof. *)
-(* move=> mu ; set Q := POST; apply: (EConseq  _ _ (EAssign Q x e ps)) => //. *)
-(* by move=> nu /asboolP ->; apply/asboolP. *)
-(* Qed. *)
-
-(* (* -------------------------------------------------------------------- *) *)
-(* Lemma cpl_sample {t : IhbType.type} (x : vars t) d : iscomplete (x <$- d). *)
-(* Proof. *)
-(* move=> mu; set Q := POST; apply/(EConseq _ _ (ESample Q x d ps)) => //. *)
-(* by move=> nu /asboolP ->; apply/asboolP. *)
-(* Qed. *)
-
-(* (* -------------------------------------------------------------------- *) *)
-(* Lemma cpl_seq c1 c2 : iscomplete c1 -> iscomplete c2 -> iscomplete (c1 ;; c2). *)
-(* Proof. *)
-(* move=> ih1 ih2 mu; pose S x := `[<x = dssem ps c1 mu>]. *)
-(* by apply/(@ESeq S); [apply/ih1 | rewrite dssem_seqE; apply/ih2]. *)
-(* Qed. *)
-
-(* (* -------------------------------------------------------------------- *) *)
-(* Lemma cpl_if e c1 c2 : *)
-(*   iscomplete c1 -> iscomplete c2 -> iscomplete (If e then c1 else c2). *)
-(* Proof. *)
-(* move=> ih1 ih2 mu; set P := PRE; set Q := POST. *)
+(* move=> ih1 ih2 mu. *)
 (* pose mu1 := (drestr `[{    e }] mu). *)
 (* pose mu2 := (drestr `[{ ~~ e }] mu). *)
-(* pose R1 x := `[< x = dssem ps c1 mu1 >]. *)
-(* pose R2 x := `[< x = dssem ps c2 mu2 >]. *)
-(* apply/(@EConseq P (R1 ⊕ R2)) => //; first move=> nu /asboolP. *)
+(* pose R1 x := `[< x = dssem ps' c1 mu1 >]. *)
+(* pose R2 x := `[< x = dssem ps' c2 mu2 >]. *)
+(* apply/(@EConseq (eqmu mu) (R1 ⊕ R2)) => //; first move=> nu /asboolP. *)
 (* * case=> -[nu1 nu2 /= eqD] [/asboolP eq1 /asboolP eq2]. *)
 (*   apply/asboolP; apply/distr_eqP=> m; rewrite eqD. *)
 (*   rewrite !(eq1, eq2) /dssem bsemE. *)
@@ -767,7 +886,7 @@ Section Complete.
 (* apply/(@EConseq (P1 ⊕ P2) (R1 ⊕ R2)) => //. *)
 (* * move=> nu /asboolP ->; apply/asboolP; exists (mu1, mu2) => /=. *)
 (*   - by apply/drestrD. - by split; apply/asboolP. *)
-(* apply/(EConseq _ _ (@ECond P1 R1 P2 R2 _ _ _ _ _ _)) => //. *)
+(* apply/(EConseq _ _ (@ECond P1 R1 P2 R2 _ _ _ _ _ _ _)) => //. *)
 (* * move=> nu /asboolP[] [nu1 nu2 /= eqD] [eq1 eq2]. *)
 (*   apply/asboolP; exists (nu1, nu2) => //=. *)
 (*   split; apply/andP; split=> //; apply/asboolP => /= m. *)
@@ -781,275 +900,161 @@ Section Complete.
 (*   by move/asboolP=> ->; apply/asboolP. *)
 (* Qed. *)
 
-(* (* -------------------------------------------------------------------- *) *)
-(* Lemma cpl_while e c : iscomplete c -> iscomplete (While e Do c). *)
+(* Definition cl_mgt ps : phi := *)
+(*   fun (f:ident) => (xpredT, (fun mu => eqmu (dssem ps (ps f) mu))). *)
+
+(* Lemma rel_complete_d (c : cmd) P Q ps' : *)
+(*     ellora_ ps' P Q c -> (forall ps, iscomplete' ps (cl_mgt ps') c (fun d d' => P d ==> Q d')). *)
 (* Proof. *)
-(* move=> cc mu; pose I n := iter n (seqc^~ (IfT e then c)) skip. *)
-(* pose A n := eqmu (dssem ps (I n) mu). *)
-(* pose B n := eqmu (dssem ps (I n ;; IfT e then abort) mu). *)
-(* set Q := POST; apply/(EConseq _ _ (@EWhileTClosed A B Q _ _ _ _ _ _)). *)
-(* + move=> nu /asboolP ->; apply/asboolP=> /=. *)
-(*   by rewrite /dssem !bsemE dlet_dunit_id. *)
-(* + by move=> nu /andP[]. *)
-(* + move=> n; rewrite /A {2}/I; set D := dssem ps (iter _ _ _) _. *)
-(*   suff ->: D = dssem ps (IfT e then c) (dssem ps (I n) mu). *)
-(*   - by apply/cpl_if/cpl_skip=> nu; apply/cc. *)
-(*   - by rewrite /D iterS dssem_seqE. *)
-(* + move=> n; rewrite /A /B; set D := dssem ps (_ ;; _) _. *)
-(*   suff ->: D = dssem ps (IfT e then abort) (dssem ps (I n) mu). *)
-(*   - by apply/cpl_if/cpl_skip=> nnu; apply/cpl_abort. *)
-(*   - by rewrite /D dssem_seqE. *)
-(* + move=> nu Bnu cvg; apply/asboolP. *)
-(*   pose C n := dssem ps (I n ;; IfT e then abort) mu. *)
-(*   transitivity (\dlim_(n) C n); first apply/eq_dlim. *)
-(*   * by move=> n; move/asboolP: (Bnu n) => ->. *)
-(*   rewrite {}/C /dssem bsemE -dlim_let; first by apply/homo_whilen. *)
-(*   apply/distr_eqP=> m; rewrite -[in RHS]dlim_bump. *)
-(*   apply/distr_eqP: m; apply/eq_dlim=> n; apply/eq_in_dlet=> //. *)
-(*   move=> m _; rewrite whilen_iterc; rewrite !ssemE. *)
-(*   by apply/eq_in_dlet=> //; rewrite ssem_iterop_iterrev. *)
+(*   elim: c P Q => *)
+(*         [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2 | f ] *)
+(*           P Q  Hhl ps. *)
+(*   + move=> mu. *)
+(*     apply: (@EConseq (eqmu mu) (□ pred0)) => //; last by apply/EAbort. *)
+(*     move=> nu /asboolP h; apply/implyP => Pmu. *)
+(*     have hQ := Hhl mu Pmu; rewrite dssem_abortE in hQ. *)
+(*     suff -> : nu = mnull by exact: hQ. *)
+(*     apply/distr_eqP=> m; rewrite dnullE. *)
+(*     by case: (nu m =P 0)=> // /dinsuppP /h. *)
+(*   + move=> mu. *)
+(*     apply: (@EConseq (eqmu mu) (eqmu mu)) => //; last by apply/ESkip. *)
+(*     move=> nu /asboolP ->; apply/implyP => Pmu. *)
+(*     have hQ := Hhl mu Pmu; rewrite dssem_skipE in hQ; exact: hQ. *)
+(*   + move=> mu. *)
+(*     apply: (EConseq _ _ (EAssign (fun d' => P mu ==> Q d') x e _ ps)) => //. *)
+(*     move=> nu /asboolP ->; rewrite /dassn_map /=; apply/implyP => Pmu. *)
+(*     have E : ssem ps (x <<- e) = ssem ps' (x <<- e). *)
+(*       by apply/funext => m; rewrite !ssem_assnE. *)
+(*     rewrite /dssem E; exact: (Hhl mu Pmu). *)
+(*   + move=> mu. *)
+(*     apply: (EConseq _ _ (ESample (fun d' => P mu ==> Q d') x d _ ps)) => //. *)
+(*     move=> nu /asboolP ->; rewrite /dassn_map /=; apply/implyP => Pmu. *)
+(*     have E : ssem ps (x <$- d) = ssem ps' (x <$- d). *)
+(*       by apply/funext => m; rewrite !ssem_rndE. *)
+(*       rewrite /dssem E; exact: (Hhl mu Pmu). *)
+(*   + move=> mu. *)
+(*     pose mu1 := drestr `[{    e }] mu. *)
+(*     pose mu2 := drestr `[{ ~~ e }] mu. *)
+(*     pose R1 x := `[< x = dssem ps' c1 mu1 >]. *)
+(*     pose R2 x := `[< x = dssem ps' c2 mu2 >]. *)
+(*     apply/(@EConseq (eqmu mu) (R1 ⊕ R2)) => //. *)
+(*     { move=> nu /oplusP[] [nu1 nu2 /= eqD] [/asboolP eq1 /asboolP eq2]. *)
+(*       apply/implyP => Pmu. *)
+(*       have E : nu = dssem ps' (If e then c1 else c2) mu. *)
+(*       { apply/distr_eqP=> m; rewrite eqD !(eq1, eq2) /dssem bsemE. *)
+(*         rewrite [RHS](dlet_additive (mu1 := mu1) (mu2 := mu2)). *)
+(*         - by apply/drestrD. *)
+(*         congr (_ + _); apply/distr.eq_in_dlet => //. *)
+(*         - by move=> m'; rewrite dinsupp_restr => /andP[_ ->]. *)
+(*         - move=> m'; rewrite dinsupp_restr => /andP[_ /=]. *)
+(*           by move/negbTE=> ->. } *)
+(*       by rewrite E; exact: (Hhl mu Pmu). } *)
+(*     pose P1 x := `[< x = mu1 >]; pose P2 x := `[< x = mu2 >]. *)
+(*     apply/(@EConseq (P1 ⊕ P2) (R1 ⊕ R2)) => //. *)
+(*     * move=> nu /asboolP ->; apply/asboolP; exists (mu1, mu2) => /=. *)
+(*       - by apply/drestrD. - by split; apply/asboolP. *)
+(*     apply/(EConseq _ _ (@ECond P1 R1 P2 R2 _ _ _ _ _ _ _)) => //. *)
+(*     * move=> nu /asboolP[] [nu1 nu2 /= eqD] [eq1 eq2]. *)
+(*       apply/asboolP; exists (nu1, nu2) => //=. *)
+(*       split; apply/andP; split=> //; apply/asboolP => /= m. *)
+(*       - by move/asboolP: eq1=> ->; rewrite dinsupp_restr=> /andP[]. *)
+(*       - by move/asboolP: eq2=> ->; rewrite dinsupp_restr=> /andP[]. *)
+(*     * apply: (EConseq _ _ (ih1 (eqmu mu1) (eqmu (dssem ps' c1 mu1)) _ ps mu1)). *)
+(*       - by move=> nu /andP[H1 _]. *)
+(*       - by move=> nu /= /implyP H; apply: H; apply/asboolP. *)
+(*       - by move=> nu /asboolP ->; apply/asboolP. *)
+(*     * apply: (EConseq _ _ (ih2 (eqmu mu2) (eqmu (dssem ps' c2 mu2)) _ ps mu2)). *)
+(*       - by move=> nu /andP[H1 _]. *)
+(*       - by move=> nu /= /implyP H; apply: H; apply/asboolP. *)
+(*       - by move=> nu /asboolP ->; apply/asboolP. *)
+(*   + move=> mu. *)
+(*     have rc0 : forall d, sellora ps (cl_mgt ps') (eqmu d) (eqmu (dssem ps' c0 d)) c0. *)
+(*     { move=> d; apply: (EConseq _ _ (ih0 (eqmu d) (eqmu (dssem ps' c0 d)) _ ps d)). *)
+(*       - by move=> nu /asboolP ->; apply/asboolP. *)
+(*       - by move=> nu /= /implyP H; apply: H; apply/asboolP. *)
+(*       - by move=> nu /asboolP ->; apply/asboolP. } *)
+(*     pose I n := iter n (seqc^~ (IfT e then c0)) skip. *)
+(*     pose A n := eqmu (dssem ps' (I n) mu). *)
+(*     pose B n := eqmu (dssem ps' (I n ;; IfT e then abort) mu). *)
+(*     pose Qinf := eqmu (dssem ps' (While e Do c0) mu). *)
+(*     apply/(EConseq _ _ (@EWhileTClosed A B Qinf _ _ _ _ _ _ _)). *)
+(*     { by move=> nu /asboolP ->; apply/asboolP => /=; *)
+(*         rewrite /dssem !bsemE dlet_dunit_id. } *)
+(*     { move=> nu /andP[/asboolP -> _]; apply/implyP => Pmu. *)
+(*       exact: (Hhl mu Pmu). } *)
+(*     { move=> n; rewrite /A {2}/I; set D := dssem ps' (iter _ _ _) _. *)
+(*       have ->: D = dssem ps' (IfT e then c0) (dssem ps' (I n) mu) *)
+(*         by rewrite /D iterS dssem_seqE. *)
+(*       apply/rel_cpl_if; first exact: rc0. *)
+(*       by move=> d; apply: rel_cpl_skip. } *)
+(*     { move=> n; rewrite /A /B; set D := dssem ps' (_ ;; _) _. *)
+(*       have ->: D = dssem ps' (IfT e then abort) (dssem ps' (I n) mu) *)
+(*         by rewrite /D dssem_seqE. *)
+(*       apply/rel_cpl_if; first by move=> d; apply: rel_cpl_abort. *)
+(*       by move=> d; apply: rel_cpl_skip. } *)
+(*     { move=> nu Bnu cvg; apply/asboolP. *)
+(*       pose C n := dssem ps' (I n ;; IfT e then abort) mu. *)
+(*       transitivity (\dlim_(n) C n); first apply/eq_dlim. *)
+(*       * by move=> n; move/asboolP: (Bnu n) => ->. *)
+(*       rewrite {}/C /dssem bsemE -dlim_let; first by apply/homo_whilen. *)
+(*       apply/distr_eqP=> m; rewrite -[in RHS]dlim_bump. *)
+(*       apply/distr_eqP: m; apply/eq_dlim=> n; apply/eq_in_dlet=> //. *)
+(*       move=> m _; rewrite whilen_iterc; rewrite !ssemE. *)
+(*       by apply/eq_in_dlet=> //; rewrite ssem_iterop_iterrev. } *)
+(*   + move=> mu. *)
+(*     pose d1 := dssem ps' c1 mu. *)
+(*     apply/(@ESeq (eqmu d1)). *)
+(*     - apply: (EConseq _ _ (ih1 (eqmu mu) (eqmu d1) _ ps mu)). *)
+(*       * by move=> nu /asboolP ->; apply/asboolP. *)
+(*       * by move=> nu /= /implyP H; apply: H; apply/asboolP. *)
+(*       * by move=> nu /asboolP ->; apply/asboolP. *)
+(*     - apply: (EConseq _ _ (ih2 (eqmu d1) (eqmu (dssem ps' c2 d1)) _ ps d1)). *)
+(*       * by move=> nu /asboolP ->; apply/asboolP. *)
+(*       * move=> nu /= /implyP H. *)
+(*         have Hd : nu = dssem ps' c2 d1 by apply/asboolP; apply: H; apply/asboolP. *)
+(*         by apply/implyP => Pmu; rewrite Hd /d1 -dssem_seqE; exact: (Hhl mu Pmu). *)
+(*       * by move=> nu /asboolP ->; apply/asboolP. *)
+(*   + move=> mu. *)
+(*     apply: H_khl. *)
+(*     apply: (H_adapt (P2 := get_pre (cl_mgt ps' f)) *)
+(*                     (Q2 := get_post (cl_mgt ps' f))). *)
+(*     - by []. *)
+(*     - move=> m0 /asboolP -> m /asboolP ->. *)
+(*       apply/implyP => Pmu; have hQ := Hhl mu Pmu. *)
+(*       suff -> : dssem ps' (ps' f) mu = dssem ps' (call f) mu by exact: hQ. *)
+(*       by rewrite /dssem; apply/eq_in_dlet => // m1 _; rewrite ssem_call_eq. *)
+(*     - exact: H_call. *)
 (* Qed. *)
-(* End help. *)
 
-(* (* -------------------------------------------------------------------- *) *)
-(* Hint Resolve cpl_abort  : complete. *)
-(* Hint Resolve cpl_skip   : complete. *)
-(* Hint Resolve cpl_assign : complete. *)
-(* Hint Resolve cpl_sample : complete. *)
-(* Hint Resolve cpl_if     : complete. *)
-(* Hint Resolve cpl_while  : complete. *)
-(* Hint Resolve cpl_seq    : complete. *)
+(* Lemma rel_complete (c : cmd) (P : dassn) (Q : dassn2) ps: *)
+(*   kellora_ ps P Q c -> forall ps', sellora2 ps' (cl_mgt ps) P Q c. *)
+(* Proof. *)
+(* move=> /kellora_ellora h ps'. *)
+(* apply: H_hl => s0. *)
+(* apply: (EConseq _ _ (rel_complete_d (h s0) ps' s0)). *)
+(* - by move=> mu Hmu. *)
+(* - by move=> nu /= /implyP H; apply: H; apply/asboolP. *)
+(* Qed. *)
 
-(* -------------------------------------------------------------------- *)
-(* Lemma complete c mu : *)
-(*   sellora ps (eqmu mu) (eqmu (dssem ps c mu)) c. *)
-(* Proof. by elim: c mu; auto with complete. Qed. *)
+(* Theorem kellora_complete: forall P c (Q: dassn2) ps cl, *)
+(*   kellora_ ps P Q c -> sellora2 ps cl P Q c. *)
+(* Proof. *)
+(* move=> P c Q ps cl Hvalid. *)
+(* apply: (H_rec (cl := cl_mgt ps)). *)
+(* - (* valid_cl (cl_mgt ps) ps : a call equals its body (ssem_call_eq), *)
+(*      so it meets the exact most-general contract. *) *)
+(*   move=> f mu _; apply/asboolP. *)
+(*   by rewrite /dssem; apply/eq_in_dlet => // m _; rewrite ssem_call_eq. *)
+(* - exact: rel_complete Hvalid. *)
+(* Qed. *)
 
-Definition iscomplete' ps cl (c:cmd) (Q: dmem -> dassn):=
-  (forall mu, sellora ps cl (eqmu mu) (Q mu) c).
+(* Theorem ellora_complete: forall P c Q ps cl, *)
+(*   ellora_ ps P Q c -> sellora ps cl P Q c. *)
+(* Proof. *)
+(* move=> P c Q ps cl Hvalid. *)
+(* apply: H_khl. *)
+(* apply kellora_complete. *)
+(* by apply ellora_kellora. *)
+(* Qed. *)
 
-(* Relative completeness helpers: derive `sellora ps` while pinning the *)
-(* post-condition to the `ps'` semantics.  Used by the while case, whose *)
-(* body may not be ps-independent (so `cpl_if`/`cpl_skip`/`cpl_abort`,    *)
-(* which need full `iscomplete`, do not apply).                           *)
-Lemma rel_cpl_skip cl (ps ps' : psi) mu :
-  sellora ps cl (eqmu mu) (eqmu (dssem ps' skip mu)) skip.
-Proof.
-apply/(@EConseq (eqmu mu) (eqmu mu)) => //.
-+ by move=> nu /asboolP ->; apply/asboolP; rewrite dssem_skipE.
-by apply/ESkip.
-Qed.
-
-Lemma rel_cpl_abort cl (ps ps' : psi) mu :
-  sellora ps cl (eqmu mu) (eqmu (dssem ps' abort mu)) abort.
-Proof.
-apply/(@EConseq (eqmu mu) (□ pred0)) => //.
-+ move=> nu /asboolP h; apply/asboolP; rewrite dssem_abortE.
-  apply/distr_eqP=> m; rewrite dnullE.
-  by case: (nu m =P 0)=> // /dinsuppP /h.
-by apply/EAbort.
-Qed.
-
-Lemma rel_cpl_if cl (ps ps' : psi) e c1 c2 :
-    (forall mu, sellora ps cl (eqmu mu) (eqmu (dssem ps' c1 mu)) c1)
- -> (forall mu, sellora ps cl (eqmu mu) (eqmu (dssem ps' c2 mu)) c2)
- -> forall mu, sellora ps cl (eqmu mu)
-        (eqmu (dssem ps' (If e then c1 else c2) mu)) (If e then c1 else c2).
-Proof.
-move=> ih1 ih2 mu.
-pose mu1 := (drestr `[{    e }] mu).
-pose mu2 := (drestr `[{ ~~ e }] mu).
-pose R1 x := `[< x = dssem ps' c1 mu1 >].
-pose R2 x := `[< x = dssem ps' c2 mu2 >].
-apply/(@EConseq (eqmu mu) (R1 ⊕ R2)) => //; first move=> nu /asboolP.
-* case=> -[nu1 nu2 /= eqD] [/asboolP eq1 /asboolP eq2].
-  apply/asboolP; apply/distr_eqP=> m; rewrite eqD.
-  rewrite !(eq1, eq2) /dssem bsemE.
-  rewrite [RHS](dlet_additive (mu1 := mu1) (mu2 := mu2)).
-  - by apply/drestrD.
-  congr (_ + _); apply/distr.eq_in_dlet => //.
-  - by move=> m'; rewrite dinsupp_restr => /andP[_ ->].
-  - move=> m'; rewrite dinsupp_restr => /andP[_ /=].
-    by move/negbTE=> ->.
-pose P1 x := `[< x = mu1 >]; pose P2 x := `[< x = mu2 >].
-apply/(@EConseq (P1 ⊕ P2) (R1 ⊕ R2)) => //.
-* move=> nu /asboolP ->; apply/asboolP; exists (mu1, mu2) => /=.
-  - by apply/drestrD. - by split; apply/asboolP.
-apply/(EConseq _ _ (@ECond P1 R1 P2 R2 _ _ _ _ _ _ _)) => //.
-* move=> nu /asboolP[] [nu1 nu2 /= eqD] [eq1 eq2].
-  apply/asboolP; exists (nu1, nu2) => //=.
-  split; apply/andP; split=> //; apply/asboolP => /= m.
-  - by move/asboolP: eq1=> ->; rewrite dinsupp_restr=> /andP[].
-  - by move/asboolP: eq2=> ->; rewrite dinsupp_restr=> /andP[].
-* apply: (EConseq _ _ (ih1 mu1)) => nu /= => [/andP[]|].
-  - by move/asboolP=> -> h; apply/asboolP/distr_eqP=> m.
-  by move/asboolP=> ->; apply/asboolP.
-* apply: (EConseq _ _ (ih2 mu2)) => nu /= => [/andP[]|].
-  - by move/asboolP=> -> h; apply/asboolP/distr_eqP=> m.
-  by move/asboolP=> ->; apply/asboolP.
-Qed.
-
-Definition cl_mgt ps : phi :=
-  fun (f:ident) => (xpredT, (fun mu => eqmu (dssem ps (ps f) mu))).
-
-Lemma rel_complete_d (c : cmd) P Q ps' :
-    ellora_ ps' P Q c -> (forall ps, iscomplete' ps (cl_mgt ps') c (fun d d' => P d ==> Q d')).
-Proof.
-  elim: c P Q =>
-        [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2 | f ]
-          P Q  Hhl ps.
-  + move=> mu.
-    apply: (@EConseq (eqmu mu) (□ pred0)) => //; last by apply/EAbort.
-    move=> nu /asboolP h; apply/implyP => Pmu.
-    have hQ := Hhl mu Pmu; rewrite dssem_abortE in hQ.
-    suff -> : nu = mnull by exact: hQ.
-    apply/distr_eqP=> m; rewrite dnullE.
-    by case: (nu m =P 0)=> // /dinsuppP /h.
-  + move=> mu.
-    apply: (@EConseq (eqmu mu) (eqmu mu)) => //; last by apply/ESkip.
-    move=> nu /asboolP ->; apply/implyP => Pmu.
-    have hQ := Hhl mu Pmu; rewrite dssem_skipE in hQ; exact: hQ.
-  + move=> mu.
-    apply: (EConseq _ _ (EAssign (fun d' => P mu ==> Q d') x e _ ps)) => //.
-    move=> nu /asboolP ->; rewrite /dassn_map /=; apply/implyP => Pmu.
-    have E : ssem ps (x <<- e) = ssem ps' (x <<- e).
-      by apply/funext => m; rewrite !ssem_assnE.
-    rewrite /dssem E; exact: (Hhl mu Pmu).
-  + move=> mu.
-    apply: (EConseq _ _ (ESample (fun d' => P mu ==> Q d') x d _ ps)) => //.
-    move=> nu /asboolP ->; rewrite /dassn_map /=; apply/implyP => Pmu.
-    have E : ssem ps (x <$- d) = ssem ps' (x <$- d).
-      by apply/funext => m; rewrite !ssem_rndE.
-      rewrite /dssem E; exact: (Hhl mu Pmu).
-  + move=> mu.
-    pose mu1 := drestr `[{    e }] mu.
-    pose mu2 := drestr `[{ ~~ e }] mu.
-    pose R1 x := `[< x = dssem ps' c1 mu1 >].
-    pose R2 x := `[< x = dssem ps' c2 mu2 >].
-    apply/(@EConseq (eqmu mu) (R1 ⊕ R2)) => //.
-    { move=> nu /oplusP[] [nu1 nu2 /= eqD] [/asboolP eq1 /asboolP eq2].
-      apply/implyP => Pmu.
-      have E : nu = dssem ps' (If e then c1 else c2) mu.
-      { apply/distr_eqP=> m; rewrite eqD !(eq1, eq2) /dssem bsemE.
-        rewrite [RHS](dlet_additive (mu1 := mu1) (mu2 := mu2)).
-        - by apply/drestrD.
-        congr (_ + _); apply/distr.eq_in_dlet => //.
-        - by move=> m'; rewrite dinsupp_restr => /andP[_ ->].
-        - move=> m'; rewrite dinsupp_restr => /andP[_ /=].
-          by move/negbTE=> ->. }
-      by rewrite E; exact: (Hhl mu Pmu). }
-    pose P1 x := `[< x = mu1 >]; pose P2 x := `[< x = mu2 >].
-    apply/(@EConseq (P1 ⊕ P2) (R1 ⊕ R2)) => //.
-    * move=> nu /asboolP ->; apply/asboolP; exists (mu1, mu2) => /=.
-      - by apply/drestrD. - by split; apply/asboolP.
-    apply/(EConseq _ _ (@ECond P1 R1 P2 R2 _ _ _ _ _ _ _)) => //.
-    * move=> nu /asboolP[] [nu1 nu2 /= eqD] [eq1 eq2].
-      apply/asboolP; exists (nu1, nu2) => //=.
-      split; apply/andP; split=> //; apply/asboolP => /= m.
-      - by move/asboolP: eq1=> ->; rewrite dinsupp_restr=> /andP[].
-      - by move/asboolP: eq2=> ->; rewrite dinsupp_restr=> /andP[].
-    * apply: (EConseq _ _ (ih1 (eqmu mu1) (eqmu (dssem ps' c1 mu1)) _ ps mu1)).
-      - by move=> nu /andP[H1 _].
-      - by move=> nu /= /implyP H; apply: H; apply/asboolP.
-      - by move=> nu /asboolP ->; apply/asboolP.
-    * apply: (EConseq _ _ (ih2 (eqmu mu2) (eqmu (dssem ps' c2 mu2)) _ ps mu2)).
-      - by move=> nu /andP[H1 _].
-      - by move=> nu /= /implyP H; apply: H; apply/asboolP.
-      - by move=> nu /asboolP ->; apply/asboolP.
-  + move=> mu.
-    have rc0 : forall d, sellora ps (cl_mgt ps') (eqmu d) (eqmu (dssem ps' c0 d)) c0.
-    { move=> d; apply: (EConseq _ _ (ih0 (eqmu d) (eqmu (dssem ps' c0 d)) _ ps d)).
-      - by move=> nu /asboolP ->; apply/asboolP.
-      - by move=> nu /= /implyP H; apply: H; apply/asboolP.
-      - by move=> nu /asboolP ->; apply/asboolP. }
-    pose I n := iter n (seqc^~ (IfT e then c0)) skip.
-    pose A n := eqmu (dssem ps' (I n) mu).
-    pose B n := eqmu (dssem ps' (I n ;; IfT e then abort) mu).
-    pose Qinf := eqmu (dssem ps' (While e Do c0) mu).
-    apply/(EConseq _ _ (@EWhileTClosed A B Qinf _ _ _ _ _ _ _)).
-    { by move=> nu /asboolP ->; apply/asboolP => /=;
-        rewrite /dssem !bsemE dlet_dunit_id. }
-    { move=> nu /andP[/asboolP -> _]; apply/implyP => Pmu.
-      exact: (Hhl mu Pmu). }
-    { move=> n; rewrite /A {2}/I; set D := dssem ps' (iter _ _ _) _.
-      have ->: D = dssem ps' (IfT e then c0) (dssem ps' (I n) mu)
-        by rewrite /D iterS dssem_seqE.
-      apply/rel_cpl_if; first exact: rc0.
-      by move=> d; apply: rel_cpl_skip. }
-    { move=> n; rewrite /A /B; set D := dssem ps' (_ ;; _) _.
-      have ->: D = dssem ps' (IfT e then abort) (dssem ps' (I n) mu)
-        by rewrite /D dssem_seqE.
-      apply/rel_cpl_if; first by move=> d; apply: rel_cpl_abort.
-      by move=> d; apply: rel_cpl_skip. }
-    { move=> nu Bnu cvg; apply/asboolP.
-      pose C n := dssem ps' (I n ;; IfT e then abort) mu.
-      transitivity (\dlim_(n) C n); first apply/eq_dlim.
-      * by move=> n; move/asboolP: (Bnu n) => ->.
-      rewrite {}/C /dssem bsemE -dlim_let; first by apply/homo_whilen.
-      apply/distr_eqP=> m; rewrite -[in RHS]dlim_bump.
-      apply/distr_eqP: m; apply/eq_dlim=> n; apply/eq_in_dlet=> //.
-      move=> m _; rewrite whilen_iterc; rewrite !ssemE.
-      by apply/eq_in_dlet=> //; rewrite ssem_iterop_iterrev. }
-  + move=> mu.
-    pose d1 := dssem ps' c1 mu.
-    apply/(@ESeq (eqmu d1)).
-    - apply: (EConseq _ _ (ih1 (eqmu mu) (eqmu d1) _ ps mu)).
-      * by move=> nu /asboolP ->; apply/asboolP.
-      * by move=> nu /= /implyP H; apply: H; apply/asboolP.
-      * by move=> nu /asboolP ->; apply/asboolP.
-    - apply: (EConseq _ _ (ih2 (eqmu d1) (eqmu (dssem ps' c2 d1)) _ ps d1)).
-      * by move=> nu /asboolP ->; apply/asboolP.
-      * move=> nu /= /implyP H.
-        have Hd : nu = dssem ps' c2 d1 by apply/asboolP; apply: H; apply/asboolP.
-        by apply/implyP => Pmu; rewrite Hd /d1 -dssem_seqE; exact: (Hhl mu Pmu).
-      * by move=> nu /asboolP ->; apply/asboolP.
-  + move=> mu.
-    apply: H_khl.
-    apply: (H_adapt (P2 := get_pre (cl_mgt ps' f))
-                    (Q2 := get_post (cl_mgt ps' f))).
-    - by [].
-    - move=> m0 /asboolP -> m /asboolP ->.
-      apply/implyP => Pmu; have hQ := Hhl mu Pmu.
-      suff -> : dssem ps' (ps' f) mu = dssem ps' (call f) mu by exact: hQ.
-      by rewrite /dssem; apply/eq_in_dlet => // m1 _; rewrite ssem_call_eq.
-    - exact: H_call.
-Qed.
-
-Lemma rel_complete (c : cmd) (P : dassn) (Q : dassn2) ps:
-  kellora_ ps P Q c -> forall ps', sellora2 ps' (cl_mgt ps) P Q c.
-Proof.
-move=> /kellora_ellora h ps'.
-apply: H_hl => s0.
-apply: (EConseq _ _ (rel_complete_d (h s0) ps' s0)).
-- by move=> mu Hmu.
-- by move=> nu /= /implyP H; apply: H; apply/asboolP.
-Qed.
-
-Theorem kellora_complete: forall P c (Q: dassn2) ps cl,
-  kellora_ ps P Q c -> sellora2 ps cl P Q c.
-Proof.
-move=> P c Q ps cl Hvalid.
-apply: (H_rec (cl := cl_mgt ps)).
-- (* dnull \in get_post (cl_mgt ps p) mu.  With the *singleton* post
-     `eqmu (dssem ps (ps p) mu)` this is `dnull = dssem ps (ps p) mu`,
-     which is false for any non-diverging body.  See note in chat. *)
-  admit.
-- (* tclosed0 of the singleton post: any sequence landing in it is constant. *)
-  move=> p mu nu HnuD _; apply/asboolP.
-  have -> : nu = (fun=> dssem ps (ps p) mu).
-    by apply/funext => n; apply/asboolP; exact: (HnuD n).
-  by rewrite dlimC.
-- by move=> p' ps'; apply: rel_complete => mu _; apply/asboolP.
-- exact: rel_complete Hvalid.
-Admitted.
-
-Theorem ellora_complete: forall P c Q ps cl,
-  ellora_ ps P Q c -> sellora ps cl P Q c.
-Proof.
-move=> P c Q ps cl Hvalid.
-apply: H_khl.
-apply kellora_complete.
-by apply ellora_kellora.
-Qed.
-
-End Complete.
+(* End Complete. *)

@@ -89,8 +89,10 @@ Section Sound.
 Context {ps:psi}.
 
 Section Rules.
+
 Definition ahl (l : Y * mem -> Distr mem) (P : assn) (c : cmd) (Q : assn) :=
   forall m, P m -> range Q (ssem_aux l c m).
+
 Definition akhl (l : Y * mem -> Distr mem) (P : assn) (c : cmd) (Q : assn2) :=
   forall m, P m -> range (Q m) (ssem_aux l c m).
 
