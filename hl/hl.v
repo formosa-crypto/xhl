@@ -274,12 +274,10 @@ apply: derivable_mut.
 - (* H_hl *) by move=> P Q c cl ? ? IH Hv; apply/khl_hl=> s0; exact: (IH s0 Hv).
 - (* H_call *) by move=> cl f ? Hv; exact: Hv.
 - (* H_rec *)
--  move=> P Q c cl cl' ps' IH_body ? IH_c HI Hv.
-   apply: (recursion_hoare_triple (cl:=cl)).
-   + rewrite /hoare_triple_proc_ctx.
-     by rewrite /hoare_triple_ctx.
-   + rewrite /hoare_triple_ctx.
-     by move => h; apply: HI.
+-  move=> P Q c cl cl' ps' IH_body ? ? HI Hv.
+   apply: (recursion_hoare_triple (cl:=cl)) => //.
+   rewrite /hoare_triple_ctx.
+   by move => h; apply: HI.
 - (* H_adapt *)
   move=> P1 P2 Q1 Q2 c cl ? Hpre Hpost ?  IH Hv m P1m.
   have := (IH Hv m (Hpre m P1m)).

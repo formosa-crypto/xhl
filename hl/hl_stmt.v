@@ -66,7 +66,7 @@ Proof.
 Qed.
 
 Lemma khl_khl ps P c Q :
-  khl_ ps xpredT c (fun s0 s =>  P s0 ==> Q s0 s) <-> khl_ ps P c Q.
+  khl_ ps xpredT c (fun s0 s => P s0 ==> Q s0 s) <-> khl_ ps P c Q.
 Proof.
   split.
   + move => h s HP.

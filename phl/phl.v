@@ -270,20 +270,20 @@ Lemma recursive_proc_l ps' cl' :
           (get_r (cl' p))).
 Proof.
   move => H h p s hP.
-   rewrite /pr !hl.test8.
+   rewrite /pr !test8.
    apply sum_dlim_r_r.
     + move => ????.
      apply mono_ssem_aux.
      by apply homo_ubnf.
   move => n.
-  rewrite hl.ssem_ubnf_dnull hl.ubnf_ssem (hl.test9 _ _ _ _ ps') hl.test5.
+  rewrite ssem_ubnf_dnull ubnf_ssem (test9 _ _ _ _ ps') test5.
   revert hP; revert p; revert s.
   elim : n => [| n Hn].
-  + move => ???. rewrite hl.ssem_false_ps.
+  + move => ???. rewrite ssem_false_ps.
     under eq_psum do  rewrite dnullE mulr0.
     by rewrite psum0.
   move => s p hP.
-  rewrite (hl.inline2_split n 1).
+  rewrite (inline2_split n 1).
   apply: h => // p0 s0 hP0.
   by apply: Hn.
 Qed.
