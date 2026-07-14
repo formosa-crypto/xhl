@@ -68,41 +68,6 @@ Proof.
   by split; move => h s hP; apply h.
 Qed.
 
-(* (* -------------------------------------------------------------------- *) *)
-(* (* Procedire contract                                                   *) *)
-(* (* -------------------------------------------------------------------- *) *)
-
-(* Definition clause : Type := dassn * (nat -> dassn2) * dassn2. *)
-
-(* Definition get_pre (an:clause): dassn := *)
-(*   let (pre,_) := an in *)
-(*   let (pre,_) := pre in *)
-(*   pre. *)
-
-(* Definition get_post_inf (an:clause) : dassn2 := *)
-(*   let (pre,post) := an in *)
-(*   post. *)
-
-(* Definition get_post (an:clause): (nat -> dassn2) := *)
-(*   let (pre,_) := an in *)
-(*   let (_,post) := pre in *)
-(*   post. *)
-
-(* Definition phi : Type := ident -> clause. *)
-
-(* (** Empty procedure contract **) *)
-
-(* Definition empty_precondition : dassn := xpred0. *)
-
-(* Definition empty_postcondition_inf :  dassn2 := (fun _ => xpredT). *)
-
-(* Definition empty_postcondition :  nat -> dassn2 := (fun _ _ => xpredT). *)
-
-(* Definition empty_clause : clause := *)
-(*   (empty_precondition, empty_postcondition, empty_postcondition_inf). *)
-
-(* Definition empty_phi: phi := fun _ => empty_clause. *)
-
 (* -------------------------------------------------------------------- *)
 Definition detm (P : assn) :=
   [pred mu : dmem | `[< forall x, x \in dinsupp mu -> x \in P >]].
@@ -267,27 +232,6 @@ Inductive sellora : psi -> (ident -> dassn) -> (ident -> dassn2) -> dassn -> das
     -> sellora ps pre post P' Q' c
     -> sellora ps pre post P  Q  c
 
-(* | ESem c1 P Q c2 ps : *)
-(*        (forall mu, mu \in P -> dssem ps c1 mu = dssem ps c2 mu) *)
-(*     -> sellora P Q c1 -> sellora P Q c2 *)
-
-(* | ESemCond P Q (e : expr bool) c1 c2 : *)
-(*        (forall mu, mu \in P -> forall m, m \in dinsupp mu -> `[{ e }] m) *)
-(*     -> sellora P Q c1 -> sellora P Q (If e then c1 else c2) *)
-
-(* | ESemCondF P Q (e : expr bool) c1 c2 : *)
-(*        (forall mu, mu \in P -> forall m, m \in dinsupp mu -> `[{ ~~ e }] m) *)
-(*     -> sellora P Q c2 -> sellora P Q (If e then c1 else c2) *)
-
-(* | EDframe P c : *)
-(*     separated (mod c) P -> lossless predT c -> sellora P P c *)
-
-(* | EAnd P Q1 Q2 c : *)
-(*     sellora P Q1 c -> sellora P Q2 c -> sellora P (Q1 /\ Q2)%A c *)
-
-(* | EOr P1 P2 c Q : *)
-(*     sellora P1 Q c -> sellora P2 Q c -> sellora (P1 \/ P2)%A Q c *)
-
 | EAssign {t : IhbType.type} P (x : vars t) (e : expr t) pre post ps:
     sellora ps pre post (P.[fun mu => dssem ps (x <<- e) mu])%A P (x <<- e)
 
@@ -301,36 +245,12 @@ Inductive sellora : psi -> (ident -> dassn) -> (ident -> dassn2) -> dassn -> das
     -> sellora ps pre post SQ Q' c2
     -> sellora ps pre post (SP ⊕ SQ) (P' ⊕ Q') (If e then c1 else c2)
 
-(* | EWhileDClosed P b c : *)
-(*        dclosed P -> sellora P P (IfT b then c) *)
-(*     -> sellora P (P /\ □ `[{~~ b}])%A (While b Do c) *)
-
 | EWhileTClosed (P Q : nat -> dassn) Qinf b c pre post ps :
        (forall n, sellora ps pre post (P n) (P n.+1) (IfT b then c))
     -> (forall n, sellora ps pre post (P n) (Q n) (IfT b then abort))
     -> tclosed Q Qinf
     -> sellora ps pre post (P 0%N) (Qinf /\ □ `[{~~ b}])%A (While b Do c)
 
-(* | EWhileUClosed (P Q : nat -> dassn) Qinf b c : *)
-(*        (forall n, sellora (P n) (P n.+1) (IfT b then c)) *)
-(*     -> (forall n, sellora (P n) (Q n) (IfT b then abort)) *)
-(*     -> uclosed Q Qinf *)
-(*     -> sellora (P 0%N) (Qinf /\ □ `[{~~ b}])%A (While b Do c) *)
-
-(* | EWhileCertainCT P b c ps: *)
-(*     (forall mu, mu \in P -> exists k, *)
-(*        \P_[dssem ps (iwhilen k b c) mu] [eta `[{ b }]] = 0) *)
-(*   -> sellora P P (IfT b then c) *)
-(*   -> sellora P (P /\ □ `[{ ~~ b}])%A (While b Do c) *)
-
-(* | EWhileCertain (P : nat -> dassn) k e c ps: *)
-(*      (forall n, sellora (P n) (P n.+1) (IfT e then c)) *)
-(*   -> (forall mu, P 0%N mu -> dssem ps (While e Do c) = *)
-(*                              dssem ps (iterc k (IfT e then c))) *)
-(*   -> sellora (P 0%N) (P k /\ □ `[{~~ e}])%A (While e Do c) *)
-
-(* | ESplit P P' Q Q' c : *)
-(*     sellora P Q c -> sellora P' Q' c -> sellora (P) (Q) c *)
 | H_khl : forall P Q c pre post ps,
      sellora2 ps pre post P (fun _ => Q) c -> sellora ps pre post P Q c
 with sellora2: psi -> (ident -> dassn) -> (ident -> dassn2) -> dassn -> dassn2 -> cmd -> Prop :=
@@ -660,25 +580,14 @@ Hint Resolve ellora_abort            : ellora.
 Hint Resolve ellora_seq              : ellora.
 Hint Resolve ellora_conseq           : ellora.
 Hint Resolve ellora_sem              : ellora.
-(* Hint Resolve ellora_and              : ellora. *)
-(* Hint Resolve ellora_or               : ellora. *)
-(* Hint Resolve ellora_sem_condT        : ellora. *)
-(* Hint Resolve ellora_sem_condF        : ellora. *)
-(* Hint Resolve ellora_split            : ellora. *)
 Hint Resolve ellora_cond             : ellora.
 Hint Resolve ellora_semmap           : ellora.
-(* Hint Resolve ellora_while_cond       : ellora. *)
-(* Hint Resolve ellora_while_dclosed    : ellora. *)
 Hint Resolve ellora_while_tclosed    : ellora.
-(* Hint Resolve ellora_while_uclosed    : ellora. *)
-(* Hint Resolve ellora_while_certain    : ellora. *)
-(* Hint Resolve ellora_while_certain_ct : ellora. *)
-(* Hint Resolve ellora_frame            : ellora. *)
 
 Definition valid_cl pre post (ps:psi) :=
   forall f, kellora_ ps (pre f) (post f) (call f).
 
-Lemma sound:
+Lemma soundness:
   (forall ps pre post (P Q:dassn) c,
       sellora ps pre post P Q c -> valid_cl pre post ps -> ellora_ ps P Q c) /\
     (forall ps pre post (P: dassn) (Q: dassn2) c,
@@ -717,145 +626,25 @@ apply derivable_mut.
   exact: HQ.
 Qed.
 
+Corollary ellora_sound0 P c Q ps :
+  sellora ps (fun _ => xpredT) (fun _ _ => xpredT) P Q c -> ellora_ ps P Q c.
+Proof.
+  move => Hd; exact: (proj1 soundness _ (fun _ => xpredT) (fun _ _ => xpredT)).
+Qed.
+
+Corollary kellora_sound0 P c (Q:dassn2) ps :
+  sellora2 ps (fun _ => xpredT) (fun _ _ => xpredT) P Q c -> kellora_ ps P Q c.
+Proof.
+  move => Hd;  exact: (proj2 soundness _ (fun _ => xpredT) (fun _ _ => xpredT)).
+Qed.
+
 End Sound.
 
 Section Complete.
 
-(* Section help. *)
-(* Context (ps: psi). *)
-
-(* Definition iscomplete (c:cmd):= *)
-(*   (forall mu, sellora ps (eqmu mu) (eqmu (dssem ps c mu)) c). *)
-
-(* Local Notation PRE  := (X in sellora ps X _)%pattern. *)
-(* Local Notation POST := (X in sellora ps _ X)%pattern. *)
-
-(* (* -------------------------------------------------------------------- *) *)
-(* Lemma cpl_abort : iscomplete abort. *)
-(* Proof. *)
-(* move=> mu; apply/(@EConseq (eqmu mu) (□ pred0))=> //. *)
-(* + move=> nu /asboolP h; apply/asboolP; rewrite dssem_abortE. *)
-(*   apply/distr_eqP=> m; rewrite dnullE. *)
-(*   by case: (nu m =P 0)=> // /dinsuppP /h. *)
-(* by apply/EAbort. *)
-(* Qed. *)
-
-(* (* -------------------------------------------------------------------- *) *)
-(* Lemma cpl_skip : iscomplete skip. *)
-(* move=> mu; apply/(@EConseq (eqmu mu) (eqmu mu))=> //. *)
-(* + by move=> nu /asboolP=> ->; apply/asboolP; rewrite dssem_skipE. *)
-(* by apply/ESkip. *)
-(* Qed. *)
-
-(* (* -------------------------------------------------------------------- *) *)
-(* Lemma cpl_assign {t : IhbType.type} (x : vars t) e : iscomplete (x <<- e). *)
-(* Proof. *)
-(* move=> mu ; set Q := POST; apply: (EConseq  _ _ (EAssign Q x e ps)) => //. *)
-(* by move=> nu /asboolP ->; apply/asboolP. *)
-(* Qed. *)
-
-(* (* -------------------------------------------------------------------- *) *)
-(* Lemma cpl_sample {t : IhbType.type} (x : vars t) d : iscomplete (x <$- d). *)
-(* Proof. *)
-(* move=> mu; set Q := POST; apply/(EConseq _ _ (ESample Q x d ps)) => //. *)
-(* by move=> nu /asboolP ->; apply/asboolP. *)
-(* Qed. *)
-
-(* (* -------------------------------------------------------------------- *) *)
-(* Lemma cpl_seq c1 c2 : iscomplete c1 -> iscomplete c2 -> iscomplete (c1 ;; c2). *)
-(* Proof. *)
-(* move=> ih1 ih2 mu; pose S x := `[<x = dssem ps c1 mu>]. *)
-(* by apply/(@ESeq S); [apply/ih1 | rewrite dssem_seqE; apply/ih2]. *)
-(* Qed. *)
-
-(* (* -------------------------------------------------------------------- *) *)
-(* Lemma cpl_if e c1 c2 : *)
-(*   iscomplete c1 -> iscomplete c2 -> iscomplete (If e then c1 else c2). *)
-(* Proof. *)
-(* move=> ih1 ih2 mu; set P := PRE; set Q := POST. *)
-(* pose mu1 := (drestr `[{    e }] mu). *)
-(* pose mu2 := (drestr `[{ ~~ e }] mu). *)
-(* pose R1 x := `[< x = dssem ps c1 mu1 >]. *)
-(* pose R2 x := `[< x = dssem ps c2 mu2 >]. *)
-(* apply/(@EConseq P (R1 ⊕ R2)) => //; first move=> nu /asboolP. *)
-(* * case=> -[nu1 nu2 /= eqD] [/asboolP eq1 /asboolP eq2]. *)
-(*   apply/asboolP; apply/distr_eqP=> m; rewrite eqD. *)
-(*   rewrite !(eq1, eq2) /dssem bsemE. *)
-(*   rewrite [RHS](dlet_additive (mu1 := mu1) (mu2 := mu2)). *)
-(*   - by apply/drestrD. *)
-(*   congr (_ + _); apply/distr.eq_in_dlet => //. *)
-(*   - by move=> m'; rewrite dinsupp_restr => /andP[_ ->]. *)
-(*   - move=> m'; rewrite dinsupp_restr => /andP[_ /=]. *)
-(*     by move/negbTE=> ->. *)
-(* pose P1 x := `[< x = mu1 >]; pose P2 x := `[< x = mu2 >]. *)
-(* apply/(@EConseq (P1 ⊕ P2) (R1 ⊕ R2)) => //. *)
-(* * move=> nu /asboolP ->; apply/asboolP; exists (mu1, mu2) => /=. *)
-(*   - by apply/drestrD. - by split; apply/asboolP. *)
-(* apply/(EConseq _ _ (@ECond P1 R1 P2 R2 _ _ _ _ _ _)) => //. *)
-(* * move=> nu /asboolP[] [nu1 nu2 /= eqD] [eq1 eq2]. *)
-(*   apply/asboolP; exists (nu1, nu2) => //=. *)
-(*   split; apply/andP; split=> //; apply/asboolP => /= m. *)
-(*   - by move/asboolP: eq1=> ->; rewrite dinsupp_restr=> /andP[]. *)
-(*   - by move/asboolP: eq2=> ->; rewrite dinsupp_restr=> /andP[]. *)
-(* * apply: (EConseq _ _ (ih1 mu1)) => nu /= => [/andP[]|]. *)
-(*   - by move/asboolP=> -> h; apply/asboolP/distr_eqP=> m. *)
-(*   by move/asboolP=> ->; apply/asboolP. *)
-(* * apply: (EConseq _ _ (ih2 mu2)) => nu /= => [/andP[]|]. *)
-(*   - by move/asboolP=> -> h; apply/asboolP/distr_eqP=> m. *)
-(*   by move/asboolP=> ->; apply/asboolP. *)
-(* Qed. *)
-
-(* (* -------------------------------------------------------------------- *) *)
-(* Lemma cpl_while e c : iscomplete c -> iscomplete (While e Do c). *)
-(* Proof. *)
-(* move=> cc mu; pose I n := iter n (seqc^~ (IfT e then c)) skip. *)
-(* pose A n := eqmu (dssem ps (I n) mu). *)
-(* pose B n := eqmu (dssem ps (I n ;; IfT e then abort) mu). *)
-(* set Q := POST; apply/(EConseq _ _ (@EWhileTClosed A B Q _ _ _ _ _ _)). *)
-(* + move=> nu /asboolP ->; apply/asboolP=> /=. *)
-(*   by rewrite /dssem !bsemE dlet_dunit_id. *)
-(* + by move=> nu /andP[]. *)
-(* + move=> n; rewrite /A {2}/I; set D := dssem ps (iter _ _ _) _. *)
-(*   suff ->: D = dssem ps (IfT e then c) (dssem ps (I n) mu). *)
-(*   - by apply/cpl_if/cpl_skip=> nu; apply/cc. *)
-(*   - by rewrite /D iterS dssem_seqE. *)
-(* + move=> n; rewrite /A /B; set D := dssem ps (_ ;; _) _. *)
-(*   suff ->: D = dssem ps (IfT e then abort) (dssem ps (I n) mu). *)
-(*   - by apply/cpl_if/cpl_skip=> nnu; apply/cpl_abort. *)
-(*   - by rewrite /D dssem_seqE. *)
-(* + move=> nu Bnu cvg; apply/asboolP. *)
-(*   pose C n := dssem ps (I n ;; IfT e then abort) mu. *)
-(*   transitivity (\dlim_(n) C n); first apply/eq_dlim. *)
-(*   * by move=> n; move/asboolP: (Bnu n) => ->. *)
-(*   rewrite {}/C /dssem bsemE -dlim_let; first by apply/homo_whilen. *)
-(*   apply/distr_eqP=> m; rewrite -[in RHS]dlim_bump. *)
-(*   apply/distr_eqP: m; apply/eq_dlim=> n; apply/eq_in_dlet=> //. *)
-(*   move=> m _; rewrite whilen_iterc; rewrite !ssemE. *)
-(*   by apply/eq_in_dlet=> //; rewrite ssem_iterop_iterrev. *)
-(* Qed. *)
-(* End help. *)
-
-(* (* -------------------------------------------------------------------- *) *)
-(* Hint Resolve cpl_abort  : complete. *)
-(* Hint Resolve cpl_skip   : complete. *)
-(* Hint Resolve cpl_assign : complete. *)
-(* Hint Resolve cpl_sample : complete. *)
-(* Hint Resolve cpl_if     : complete. *)
-(* Hint Resolve cpl_while  : complete. *)
-(* Hint Resolve cpl_seq    : complete. *)
-
-(* -------------------------------------------------------------------- *)
-(* Lemma complete c mu : *)
-(*   sellora ps (eqmu mu) (eqmu (dssem ps c mu)) c. *)
-(* Proof. by elim: c mu; auto with complete. Qed. *)
-
 Definition iscomplete' ps pre post (c:cmd) (Q: dmem -> dassn):=
   (forall mu, sellora ps pre post (eqmu mu) (Q mu) c).
 
-(* Relative completeness helpers: derive `sellora ps` while pinning the *)
-(* post-condition to the `ps'` semantics.  Used by the while case, whose *)
-(* body may not be ps-independent (so `cpl_if`/`cpl_skip`/`cpl_abort`,    *)
-(* which need full `iscomplete`, do not apply).                           *)
 Lemma rel_cpl_skip pre post (ps ps' : psi) mu :
   sellora ps pre post (eqmu mu) (eqmu (dssem ps' skip mu)) skip.
 Proof.
