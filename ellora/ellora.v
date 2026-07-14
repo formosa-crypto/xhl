@@ -249,7 +249,7 @@ Local Notation iwhilen k b c := (iterc k (IfT b then c)).
 Section Logic.
 
 Definition post_shift (post : nat -> dassn2) n : dassn2 :=
- if n is n'.+1 then post n' else (fun _ => xpredT).
+ if n is n'.+1 then post n' else (fun _ => eqmu dnull).
 
 Inductive sellora : psi -> (ident -> dassn) -> (ident -> dassn2) -> dassn -> dassn -> cmd -> Prop :=
 | ESkip P pre post  ps : sellora ps pre post P P skip
@@ -606,7 +606,7 @@ have key : forall n p s, s \in pre p ->
       rewrite /dssem; transitivity (\dlet_(m0 <- s) (dnull : Distr cmem)).
         by apply/eq_in_dlet => // m0 _; rewrite KU /=.
       by apply/distr_eqP => x; rewrite dletC dnullE mulr0.
-    by rewrite /post_shift.
+    by rewrite /post_shift; apply/asboolP.
   - have -> : dssem (k_inliner_ps1 n.+1 ps') (call p) s
             = dssem (k_inliner_ps1 n ps') (ps' p) s.
       by rewrite /dssem; apply/eq_in_dlet => // m0 _; rewrite (inline2_split n 1).
@@ -1059,22 +1059,62 @@ Theorem kellora_complete: forall P c (Q: dassn2) ps pre post,
   kellora_ ps P Q c -> sellora2 ps pre post P Q c.
 Proof.
 move=> P c Q ps pre post Hvalid.
+(* term-wise identification of the k_inliner and ubnf approximations *)
+have KU : forall n c0 m, ssem_ (k_inliner_ps1 n ps) c0 m = ssem_aux (ubnf ps n) c0 m.
+  by move=> n c0 m; rewrite ssem_ubnf_dnull ubnf_ssem (test9 _ _ _ _ ps) test5.
+have EA : forall f n mu, (\dlet_(m <- mu) ssem_aux (ubnf ps n) (ps f) m)
+                       = dssem (k_inliner_ps1 n ps) (ps f) mu.
+  by move=> f n mu; rewrite /dssem; apply/eq_in_dlet => // m _; rewrite KU.
+have Hcall_eq : forall n f mu, dssem (k_inliner_ps1 n ps) ((k_inliner_ps1 n ps) f) mu
+                             = dssem (k_inliner_ps1 n ps) (call f) mu.
+  by move=> n f mu; rewrite /dssem; apply/eq_in_dlet => // m _; rewrite ssem_call_eq.
+have mono : forall (c0 : cmd) x n1 n2, (n1 <= n2)%N ->
+    ssem_ (k_inliner_ps1 n1 ps) c0 x <=1 ssem_ (k_inliner_ps1 n2 ps) c0 x.
+  by move=> c0 x n1 n2 le; rewrite !KU; apply: mono_ssem_aux; exact: (homo_ubnf le).
+have Elim : forall c0 s, dssem ps c0 s = \dlim_(n) dssem (k_inliner_ps1 n ps) c0 s.
+  move=> c0 s; rewrite /dssem [RHS]dlim_let;
+    first by move=> x n1 n2 le; exact: (mono c0 x n1 n2 le).
+  by apply/eq_in_dlet => // m0 _; rewrite test1.
+have pS : forall (F : nat -> dassn2) k, post_shift F k.+1 = F k by [].
+have p0 : forall (F : nat -> dassn2), post_shift F 0%N = (fun _ => eqmu dnull) by [].
+(* the shifted finite contract is exactly the exact contract of the n-th inlining *)
+have Ha : forall n f mu, post_shift (cl_mgt_n ps f) n mu = cl_mgt (k_inliner_ps1 n ps) f mu.
+  move=> n f mu; rewrite /cl_mgt Hcall_eq; case: n => [|k].
+  - rewrite p0.
+    suff -> : dssem (k_inliner_ps1 0 ps) (call f) mu = dnull by [].
+    rewrite /dssem; transitivity (\dlet_(m0 <- mu) (dnull : Distr cmem)).
+      by apply/eq_in_dlet => // m0 _; rewrite KU /=.
+    by apply/distr_eqP => x; rewrite dletC dnullE mulr0.
+  - rewrite pS.
+    suff -> : dssem (k_inliner_ps1 k.+1 ps) (call f) mu
+            = \dlet_(m <- mu) ssem_aux (ubnf ps k) (ps f) m by rewrite /cl_mgt_n.
+    by rewrite /dssem; apply/eq_in_dlet => // m0 _; rewrite (inline2_split k 1) KU.
 apply: (@H_rec _ _ _ pre_mgt (cl_mgt ps) _ _ (cl_mgt_n ps)).
-Admitted.
-(* valid_cl (cl_mgt ps) ps : a call equals its body (ssem_call_eq), *)
-(*      so it meets the exact most-general contract. *)
-(*   move=> f mu _; apply/asboolP. *)
-(*   by rewrite /dssem; apply/eq_in_dlet => // m _; rewrite ssem_call_eq. *)
-(* - exact: rel_complete Hvalid. *)
-(* Qed. *)
+- (* closure: the finite approximations converge to the exact semantics *)
+  move=> p s nu Hnu _; rewrite /cl_mgt /=; apply/asboolP.
+  have Hnu1 : forall n, nu n.+1 = dssem (k_inliner_ps1 n ps) (ps p) s.
+    move=> n; move: (Hnu n.+1); rewrite pS /cl_mgt_n /= => /asboolP ->.
+    exact: (EA p n s).
+  have -> : \dlim_(n) nu n = \dlim_(n) nu n.+1.
+    by apply/distr_eqP => x; rewrite dlim_bump.
+  by rewrite (Elim (ps p) s); apply/eq_dlim => n; exact: (Hnu1 n).
+- (* body derivation at each depth, via completeness for the n-th inlining *)
+  move=> p' ps0 n.
+  have -> : (fun f => post_shift (cl_mgt_n ps f) n) = cl_mgt (k_inliner_ps1 n ps).
+    by apply/funext => f; apply/funext => mu; rewrite Ha.
+  apply: (@rel_complete (ps p') (pre_mgt p') (cl_mgt_n ps p' n) (k_inliner_ps1 n ps)).
+  by move=> mu _; rewrite /cl_mgt_n /= EA; apply/asboolP.
+- (* the command c meets its contract assuming the exact call contract *)
+  by apply: rel_complete.
+Qed.
 
-(* Theorem ellora_complete: forall P c Q ps cl, *)
-(*   ellora_ ps P Q c -> sellora ps cl P Q c. *)
-(* Proof. *)
-(* move=> P c Q ps cl Hvalid. *)
-(* apply: H_khl. *)
-(* apply kellora_complete. *)
-(* by apply ellora_kellora. *)
-(* Qed. *)
+Theorem ellora_complete: forall P c Q ps pre post,
+  ellora_ ps P Q c -> sellora ps pre post P Q c.
+Proof.
+move=> P c Q ps pre post Hvalid.
+apply: H_khl.
+apply kellora_complete.
+by apply ellora_kellora.
+Qed.
 
 End Complete.
