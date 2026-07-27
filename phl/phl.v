@@ -57,6 +57,8 @@ Section phl.
 Definition phl_ ps P c Q r d :=
   forall m : cmem, P m -> r (\P_[ssem_ ps c m] Q) d.
 
+(* ehl_ ps (lift P (fun _ => EFin d) c (fun m => (Q m)%/R) *)
+
 Arguments phl_ ps _%_assn _%_syn_scope _%_assn _%_bd_scope _%_ring_scope.
 
 (* -------------------------------------------------------------------- *)
