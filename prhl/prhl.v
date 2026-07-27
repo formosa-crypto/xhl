@@ -87,15 +87,70 @@ Implicit Types c       : cmd.
 
 Definition psi := ident -> (@cmd_ ident cmem ident).
 
-Section PRHL.
-Context {ps: psi}.
+Section prhl.
 
-(* -------------------------------------------------------------------- *)
-Definition prhl P c1 c2 Q :=
+Definition prhl_  (ps: psi) P c1 c2 Q  :=
   forall m : rmem, P m ->
     exists2 ν,
         iscoupling (ssem_ ps c1 m.1) (ssem_ ps c2 m.2) ν
       & range Q ν.
+
+Section Logic.
+
+Inductive derivable : pred rmem -> cmd -> cmd -> pred rmem -> Prop :=
+| H_Skip : forall P, derivable P skip skip P
+| H_abort P c1 c2 Q : derivable P abort abort Q
+| H_case P A c1 c2 Q :
+     derivable (P /\   A)%A c1 c2 Q
+  -> derivable (P /\ ~ A)%A c1 c2 Q
+  -> derivable P c1 c2 Q
+| H_swap P c1 c2 Q :
+  derivable (pswap P) c2 c1 (pswap Q) -> derivable P c1 c2 Q
+| H_conseq P P' c1 c2 Q Q' :
+     (forall m, P' m -> P  m)
+  -> (forall m, Q  m -> Q' m)
+  -> derivable P  c1 c2 Q
+  -> derivable P' c1 c2 Q'
+| H_assignL {t : IhbType.type} (x : vars t) (e : expr t) Q :
+  derivable [pred m : rmem | Q m.[~1 x <- `[{ e }] m.1]] (x <<- e) skip Q
+| H_rndL {t : IhbType.type} P (x : vars t) (d : dexpr t) Q :
+     P =1 [pred m : rmem
+       |  dweight (`[{ d }] m.1) == 1
+       & `[< range [pred v | Q m.[~1 x <- v]] (`[{ d }] m.1) >]]
+     -> derivable P (x <$- d) skip Q
+| H_if P e1 e2 c1 c'1 c2 c'2 Q :
+     derivable (P /\ `[{    e1#'1 &&    e2#'2 }])%A c1  c2  Q
+  -> derivable (P /\ `[{ ~~ e1#'1 && ~~ e2#'2 }])%A c'1 c'2 Q
+  -> derivable (P /\ `[{ e1#'1 =b e2#'2 }])%A
+       (If e1 then c1 else c'1)
+       (If e2 then c2 else c'2)
+       Q
+| H_ifL P e c1 c2 c Q :
+     derivable (P /\ `[{    e#'1 }])%A c1 c Q
+  -> derivable (P /\ `[{ ~~ e#'1 }])%A c2 c Q
+  -> derivable P (If e then c1 else c2) c Q
+| H_seq R P c1 c1' c2 c2' Q :
+     derivable P c1  c2  R
+  -> derivable R c1' c2' Q
+  -> derivable P (c1 ;; c1') (c2 ;; c2') Q
+| H_while I e1 e2 c1 c2 :
+     (forall m : rmem, I m -> `[{ e1#'1 =b e2#'2 }] m)
+  -> (derivable (I /\ `[{ e1#'1 && e2#'2 }])%A c1 c2 I)
+  ->  derivable
+    I
+      (While e1 Do c1)
+      (While e2 Do c2)
+    (I /\ `[{ ~~ e1#'1}] /\ `[{ ~~ e2#'2 }])%A.
+
+Scheme derivable_min := Minimality for derivable Sort Prop.
+
+End Logic.
+
+Section Sound.
+Section Rules.
+Context {ps: psi}.
+
+Notation prhl   := (prhl_ ps).
 
 (* -------------------------------------------------------------------- *)
 Lemma prhlw P c1 c2 Q m :
@@ -326,5 +381,39 @@ exists (dlim ν).
   apply/range_dunit=> /=; rewrite Im' /= !ssemE.
   by move: (hs _ Im'); rewrite !ssemE => /eqP <-; rewrite hNe1.
 Qed.
+End Rules.
 
-End PRHL.
+Hint Resolve prhl_skip             : prhl.
+Hint Resolve prhl_abort            : prhl.
+Hint Resolve prhl_case             : prhl.
+Hint Resolve prhl_swap             : prhl.
+Hint Resolve prhl_conseq           : prhl.
+Hint Resolve prhl_assignL          : prhl.
+Hint Resolve prhl_rndL             : prhl.
+Hint Resolve prhl_if               : prhl.
+Hint Resolve prhl_ifL              : prhl.
+Hint Resolve prhl_seq              : prhl.
+Hint Resolve prhl_while            : prhl.
+
+Lemma soundness :
+  (forall ps P c1 c2 Q,
+      derivable P c1 c2 Q ->
+       prhl_ ps P c1 c2 Q).
+Proof.
+intros ps.
+apply: derivable_min.
++ eauto 2 with prhl.
++ eauto 2 with prhl.
++ eauto 2 with prhl.
++ intros ??????;  apply prhl_swap; auto.
++ eauto 2 with prhl.
++ eauto 2 with prhl.
++ eauto 2 with prhl.
++ eauto 2 with prhl.
++ eauto 2 with prhl.
++ eauto 2 with prhl.
++ eauto 2 with prhl.
+Qed.
+
+End Sound.
+End prhl.

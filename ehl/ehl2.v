@@ -587,7 +587,7 @@ Lemma ehl_prhl (c d:cmd) (f g f' g':(@ehl_stmt.cond _ cmem))  P Q (ps: ident -> 
   (forall m : cmem, 0 <= g m)%E ->
   (forall m : cmem, 0 <= g' m)%E ->
   ehl_ ps f' d g' ->
-  @prhl ps P d c Q ->
+  @prhl_ ps P d c Q ->
   (forall m, exists m', f' m' <= f m /\ P (m',m))%E ->
   (forall m' m, Q (m',m) -> g m <= g' m')%E ->
   ehl_ ps f c g.

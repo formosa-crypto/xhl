@@ -40,7 +40,7 @@ Definition cond2_independent (P:  mem -> \bar pwhile.R -> mem -> \bar pwhile.R) 
 
 Definition cl_cond2_independent (cl:phi) :=
   forall (f: Y), cond2_independent (get_post (cl f)).
-  
+
 (* Definition lcont p := *)
 (*   forall (u : nat -> pwhile.R) (x x' : mem), *)
 (*     (forall n m, (n <= m)%N -> u n <= u m) -> *)
@@ -50,7 +50,7 @@ Definition cl_cond2_independent (cl:phi) :=
 (*      <= ereal_sup (classical_sets.image classical_sets.setT *)
 (*           (fun n =>  p x ((u n)%:E) x' * (u n)%:E)))%E. *)
 
-  
+
 (* (** Left-continuity of a postcondition's weighted contribution, along *) *)
 (* (*     nondecreasing sequences of probability weights.  Equivalently: the *) *)
 (* (*     postcondition is left-continuous in its weight argument (it holds with *) *)
@@ -446,7 +446,7 @@ Lemma ehl_prhl (c d:cmd) (f g f' g':(@ehl_stmt.cond _ cmem))  P Q (ps: ident -> 
   (forall m : cmem, 0 <= g m)%E ->
   (forall m : cmem, 0 <= g' m)%E ->
   ehl_ ps f' d g' ->
-  @prhl ps P d c Q ->
+  @prhl_ ps P d c Q ->
   (forall m, exists m', f' m' <= f m /\ P (m',m))%E ->
   (forall m' m, Q (m',m) -> g m <= g' m')%E ->
   ehl_ ps f c g.

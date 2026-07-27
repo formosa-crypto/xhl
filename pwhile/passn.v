@@ -7,7 +7,7 @@ From mathcomp.experimental_reals Require Import realsum distr.
 (* ------- *)           Require Import notations.
 
 (* -------------------------------------------------------------------- *)
-CoInductive or_spec (a b : bool) : bool -> bool -> Type :=
+Inductive or_spec (a b : bool) : bool -> bool -> Type :=
 | OrT of a    : or_spec a b true  true
 | OrF of ~~ a : or_spec a b false b.
 
