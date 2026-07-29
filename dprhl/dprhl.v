@@ -1,9 +1,8 @@
 (* -------------------------------------------------------------------- *)
 From Stdlib.Logic Require Import FunctionalExtensionality.
-From Stdlib             Require Import Setoid Morphisms.
 From mathcomp           Require Import all_boot all_order all_algebra.
 From mathcomp.reals     Require Import reals constructive_ereal.
-From mathcomp.classical Require Import contra boolp classical_sets.
+From mathcomp.classical Require Import boolp classical_sets.
 From mathcomp.experimental_reals  Require Import realseq realsum distr.
 From xhl.pwhile Require Import notations inhabited pwhile psemantic passn range.
 From xhl.phl    Require Import phl.
@@ -115,6 +114,18 @@ have [hin|hout] := boolP (x \in dinsupp mu).
 by move/dinsuppPn: hout => ->; rewrite !mulr0.
 Qed.
 
+Lemma pr_dnull {T : choiceType} (A : pred T) : \P_[dnull : Distr T] A = 0.
+Proof. by apply/eq0_pr => x /dinsuppP; rewrite dnullE. Qed.
+
+Lemma le1_natb (b : bool) : ((b : nat)%:R : R) <= 1.
+Proof. by case: b; rewrite ?mulr0n ?mulr1n ?ler01 ?lexx. Qed.
+
+Lemma has_exp_natb {T : choiceType} (mu : Distr T) (A : pred T) :
+  \E?_[mu] (fun x => ((A x : nat))%:R).
+Proof.
+by apply/bounded_has_exp; exists 1 => x; rewrite ger0_norm ?ler0n ?le1_natb.
+Qed.
+
 Lemma dweight_dlet {T U : choiceType} (mu : Distr T) (f : T -> Distr U) :
   dweight (\dlet_(x <- mu) f x) <= dweight mu.
 Proof.
@@ -122,28 +133,6 @@ rewrite pr_dlet -[X in _ <= X]mulr1 -exp_cst.
 apply/le_exp; last by move=> x /=; apply/le1_pr.
 + by apply/bounded_has_exp; exists 1 => x; rewrite ger0_norm ?ge0_pr ?le1_pr.
 by apply/has_expC.
-Qed.
-
-Lemma dweight_dmargin {T U : choiceType} (f : T -> U) (mu : Distr T) :
-  dweight (dmargin f mu) = dweight mu.
-Proof. by rewrite pr_dmargin; apply/eq_pr => x; rewrite !inE. Qed.
-
-Lemma dunit_weight {T : choiceType} (mu : Distr T) x :
-  mu <=1 dunit x -> dweight mu = 1 -> mu = dunit x.
-Proof.
-move=> le_mu wg1.
-have h0: forall z, z != x -> mu z = 0.
-+ move=> z nexz; apply/eqP; rewrite eq_le ge0_mu andbT.
-  by have := le_mu z; rewrite dunit1E eq_sym (negbTE nexz).
-have hx: mu x = 1.
-+ rewrite -wg1 pr_predT (psum_finseq (r := [:: x])) ?big_seq1 ?ger0_norm ?ge0_mu //.
-  move=> z; rewrite !inE => nz.
-  case: eqP => //= /eqP nexz.
-  by move: nz; rewrite (h0 _ nexz) eqxx.
-apply/distr_eqP => y; rewrite dunit1E.
-have [<-|nexy] := eqVneq x y; first by rewrite hx.
-have nyx: y != x by rewrite eq_sym.
-by rewrite (h0 _ nyx).
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -263,10 +252,6 @@ Definition ispartialcoupling (ν : Distr (A * B)) :=
 End PartialCouplings.
 
 Section PartialCouplingsTheory.
-
-Lemma ispartialcoupling_eq {A B : choiceType} (u1 u2 u1' u2' : Distr _) (ν : Distr (A * B)) (f1 f2 : _ -> Distr _) :
-  u1 =1 u1' -> u2 =1 u2' -> ispartialcoupling u1 u2 f1 f2 ν -> ispartialcoupling u1' u2' f1 f2 ν.
-Proof. by do 2! move=> /distr_eqP->. Qed.
 
 Lemma ispartialcoupling_dnull {A B : choiceType} (f1 f2 : _ -> Distr _):
 	@ispartialcoupling A B dnull dnull f1 f2 dnull.
@@ -646,6 +631,52 @@ under eq_in_dlet=> [m' _|] do [rewrite H|].
 by rewrite -ssem_seqE seqA.
 Qed.
 
+(* A command that commutes with every atomic command commutes with every  *)
+(* command, by induction on the latter.                                   *)
+Lemma swap_atomL (a c : cmd):
+     [disjoint (write a) & (read c `|` write c)]
+  -> [disjoint (write c) & (read a)]
+  -> (forall S (y : vars S) (u : expr S),
+          [disjoint (write a) & (fv u `|` set1 (vname y))]
+       -> [disjoint (set1 (vname y)) & (read a)]
+       -> (a ;; y <<- u) =C (y <<- u ;; a))
+  -> (forall S (y : vars S) (d : dexpr S),
+          [disjoint (write a) & (fv d `|` set1 (vname y))]
+       -> [disjoint (set1 (vname y)) & (read a)]
+       -> (a ;; y <$- d) =C (y <$- d ;; a))
+  -> (a ;; c) =C (c ;; a).
+Proof.
+move=> + + Hasgn Hrnd; elim: c.
++	by rewrite swap_abort.
++ by rewrite swap_skip.
++ by move=> S y u /=; apply: Hasgn.
++ by move=> S y d /=; apply: Hrnd.
++ move=> b ct Hct cf Hcf /=.
+	rewrite -!setUA.
+  rewrite disjointUr=> - [] Hdx.
+	rewrite [write ct `|` _]setUC [read cf `|` _]setUA [_ `|` write ct]setUC [read ct `|` _]setUA.
+	rewrite disjointUr=> - [] {}/Hct Hct {}/Hcf Hcf.
+	rewrite disjointUl=> - [] {}/Hcf Hcf {}/Hct Hct.
+	move=> m.
+	by apply /Logic.eq_sym/swap_if.
++ move=> b ct Hct /=.
+	rewrite -!setUA.
+  rewrite disjointUr=> - [] Hdx {}/Hct Hct.
+	move=> {}/Hct Hct.
+	move=> m.
+	by apply /Logic.eq_sym/swap_while.
+move=> d1 /= + d2  +/=.
+rewrite !disjointUr !disjointUl=> Hd1 Hd2 - [] [H1 H2] [H3 H4] [H5 H6].
+rewrite seqA Hd1 //.
+rewrite -seqA Hd2 //; last by rewrite seqA.
+split; last by exact H4.
+have := disjointUr (write a) (write d1) (read d2 `\` write d1).
+rewrite {}H3 {}H2 (rwP andP) /=.
+rewrite setUDr setDv setD0.
+move=> [] _ /implyP /=.
+by rewrite disjointUr=> - [] _.
+Qed.
+
 Lemma swap_cmd c1 c2:
 	[disjoint (write c1) & (read c2 `|` write c2)]
 	-> [disjoint (write c2) & (read c1)]
@@ -654,84 +685,30 @@ Proof.
 elim c1.
 +	by rewrite swap_abort.
 + by rewrite swap_skip.
-+ move=> T x e /=.
-	elim c2.
-	+	by rewrite swap_abort.
-	+ by rewrite swap_skip.
-	+ move=> S y u /=.
++ move=> T x e /= Hd1 Hd2; apply: (@swap_atomL (x <<- e) c2 Hd1 Hd2).
+	+ move=> S y u.
 		rewrite disjointUr !disjoint1=> - [H1].
 		rewrite notin_setE /= => H2 H3.
 		by apply swap_asgn_asgn.
-	+ move=> S y u /=.
-		rewrite disjointUr !disjoint1=> - [H1].
-		rewrite notin_setE /= => H2 H3 m.
-		apply /Logic.eq_sym/swap_samp_asgn=> //.
-		apply /eqP.
-		rewrite eq_sym.
-		by move: H2=> /eqP.
-	+ move=> b ct Hct cf Hcf /=.
-		rewrite -!setUA.
-	  rewrite disjointUr=> - [] Hdx.
-		rewrite [write ct `|` _]setUC [read cf `|` _]setUA [_ `|` write ct]setUC [read ct `|` _]setUA.
-		rewrite disjointUr=> - [] {}/Hct Hct {}/Hcf Hcf.
-		rewrite disjointUl=> - [] {}/Hcf Hcf {}/Hct Hct.
-		move=> m.
-		by apply /Logic.eq_sym/swap_if.
-	+ move=> b ct Hct /=.
-		rewrite -!setUA.
-	  rewrite disjointUr=> - [] Hdx {}/Hct Hct.
-		move=> {}/Hct Hct.
-		move=> m.
-		by apply /Logic.eq_sym/swap_while.
-	move=> d1 /= + d2  +/=.
-	rewrite !disjointUr !disjointUl=> Hd1 Hd2 - [] [H1 H2] [H3 H4] [H5 H6].
-	rewrite seqA Hd1 //.
-	rewrite -seqA Hd2 //; last by rewrite seqA.
-	split; last by exact H4.
-	have := disjointUr (set1 (vname x)) (write d1) (read d2 `\` write d1).
-	rewrite {}H3 {}H2 (rwP andP) /=.
-	rewrite setUDr setDv setD0.
-	move=> [] _ /implyP /=.
-	by rewrite disjointUr=> - [] _.
-+ move=> T x d /=.
-	elim c2.
-	+	by rewrite swap_abort.
-	+ by rewrite swap_skip.
-	+ move=> S y u /=.
+	move=> S y u.
+	rewrite disjointUr !disjoint1=> - [H1].
+	rewrite notin_setE /= => H2 H3 m.
+	apply /Logic.eq_sym/swap_samp_asgn=> //.
+	apply /eqP.
+	rewrite eq_sym.
+	by move: H2=> /eqP.
++ move=> T x d /= Hd1 Hd2; apply: (@swap_atomL (x <$- d) c2 Hd1 Hd2).
+	+ move=> S y u.
 		rewrite disjointUr !disjoint1=> - [H1].
 		rewrite notin_setE /= => H2 H3.
 		by apply swap_samp_asgn.
-	+ move=> S y u /=.
-		rewrite disjointUr !disjoint1=> - [H1].
-		rewrite notin_setE /= => H2 H3 m.
-		apply /Logic.eq_sym/swap_samp_samp=> //.
-		apply /eqP.
-		rewrite eq_sym.
-		by move: H2=> /eqP.
-	+ move=> b ct Hct cf Hcf /=.
-		rewrite -!setUA.
-	  rewrite disjointUr=> - [] Hdx.
-		rewrite [write ct `|` _]setUC [read cf `|` _]setUA [_ `|` write ct]setUC [read ct `|` _]setUA.
-		rewrite disjointUr=> - [] {}/Hct Hct {}/Hcf Hcf.
-		rewrite disjointUl=> - [] {}/Hcf Hcf {}/Hct Hct.
-		move=> m.
-		by apply /Logic.eq_sym/swap_if.
-	+ move=> b ct Hct /=.
-		rewrite -!setUA.
-	  rewrite disjointUr=> - [] Hdx {}/Hct Hct.
-		move=> {}/Hct Hct.
-		move=> m.
-		by apply /Logic.eq_sym/swap_while.
-	move=> d1 /= + d2  +/=.
-	rewrite !disjointUr !disjointUl=> Hd1 Hd2 - [] [H1 H2] [H3 H4] [H5 H6].
-	rewrite seqA Hd1 //.
-	rewrite -seqA Hd2 //; last by rewrite seqA.
-	split; last by exact H4.
-	have := disjointUr (set1 (vname x)) (write d1) (read d2 `\` write d1).
-	rewrite {}H3 {}H2 (rwP andP) /=.
-	rewrite setUDr setDv setD0.
-	move=> [] _ /implyP /=.
-	by rewrite disjointUr=> - [] _.
+	move=> S y u.
+	rewrite disjointUr !disjoint1=> - [H1].
+	rewrite notin_setE /= => H2 H3 m.
+	apply /Logic.eq_sym/swap_samp_samp=> //.
+	apply /eqP.
+	rewrite eq_sym.
+	by move: H2=> /eqP.
 + move=> e ct Hct cf Hcf /=.
 	rewrite disjointUl=> - [] {}/Hct Hct {}/Hcf Hcf.
 	rewrite !disjointUr=> - [[]] /disjoint_cond Hcond {}/Hct Hct {}/Hcf Hcf m.
@@ -756,25 +733,6 @@ by rewrite -seqA Hd2 seqA Hd1 seqA.
 Qed.
 
 End Swapping.
-
-(*
-Section Prod.
-
-Definition edprod {T S : choiceType} := @cst_ ident cmem _ (fun (d1 : { distr T / R}) (d2 : {distr S / R}) => dprod d1 d2).
-
-Lemma sem_dprod {T S : IhbType.type} (x : vars T) (y : vars S) v d1 d2:
-	(x <$- d1 ;; y <$- d2 ;; v <<- app2_ (pair %:S) ` x ` y) =C (v <$- app2_ edprod d1 d2 ;; x <<- app_ (fst %:S) ` v ;; y <<- app_ (snd %:S) ` v).
-Proof.
-move=> m.
-rewrite !ssem_seqE !ssem_rndE /= dprod_dlet !dlet_dlet.
-apply eq_in_dlet=> //.
-move=> u usupp.
-rewrite dlet_unit ssem_rndE !dlet_dlet.
-apply eq_in_dlet; last first.
-Admitted.
-
-End Prod.
-*)
 
 (* -------------------------------------------------------------------- *)
 (* Judgement Definition *)
@@ -833,19 +791,28 @@ by [].
 Qed.
 
 (* -------------------------------------------------------------------- *)
-(* Synchronous Rules *)
+(* Delaying, and the Synchronous Rules *)
 (* -------------------------------------------------------------------- *)
 
-
-Lemma dprhl_skip P r1 r2 Q:
-	dprhl Q r1 r2 skip skip r1 r2 Q.
+(* Nothing happens now; the whole of [c1] is postponed to the delayed    *)
+(* left-hand side.                                                       *)
+Lemma dprhl_delayL Q r1 r2 c1:
+  dprhl Q r1 r2 c1 skip (r1 ;; c1) r2 Q.
 Proof.
-move=> m H.
-exists (dunit m).
-+ by split; rewrite dmargin_dunit dlet_unit seq_skip_r.
-by apply/range_dunit/H.
+move=> m Qm; exists (dunit m); last by apply: range_dunit.
+by split; rewrite dmargin_dunit dlet_unit ?seq_skip_r.
 Qed.
 
+(* -------------------------------------------------------------------- *)
+(* ... of which [dprhl_skip] is the empty-body instance.                 *)
+Lemma dprhl_skip r1 r2 Q:
+	dprhl Q r1 r2 skip skip r1 r2 Q.
+Proof.
+apply: (dprhl_sem _ _ _ _ _ _ (dprhl_delayL r1 r2 skip)) => //.
+by rewrite seq_skip_r.
+Qed.
+
+(* -------------------------------------------------------------------- *)
 Lemma dprhl_sample {T U : IhbType.type} P r1 r2 (x1 : vars T) d1 (x2 : vars U) d2 Q:
   [disjoint (write r1) & ((vname x1) |` (fv d1))]
 	-> [disjoint (write r2) & ((vname x2) |` (fv d2))]
@@ -1067,16 +1034,8 @@ Lemma dprhl_seqL1 P r1 r2 c1 c2 R t1 t2 c1' s1 s2 Q:
   -> dprhl P r1 r2 (c1 ;; c1') c2 s1 s2 Q.
 Proof.
 move=> Htop Hbot.
-apply: dprhl_sem; last first.
-apply: dprhl_seq.
-+ exact Htop.
-+ exact Hbot.
-+ by [].
-+ by [].
-+ by rewrite seq_skip_l.
-+ by [].
-+ by [].
-by [].
+apply: (dprhl_sem _ _ _ _ _ _ (dprhl_seq Htop Hbot)) => //.
+by rewrite seq_skip_l.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -1086,16 +1045,8 @@ Lemma dprhl_seqL2 P r1 r2 c1 c2 R t1 t2 c1' s1 s2 Q:
   -> dprhl P r1 r2 (c1 ;; c1') c2 s1 s2 Q.
 Proof.
 move=> Htop Hbot.
-apply: dprhl_sem; last first.
-apply: dprhl_seq.
-+ exact Htop.
-+ exact Hbot.
-+ by [].
-+ by [].
-+ by rewrite seq_skip_r.
-+ by [].
-+ by [].
-by [].
+apply: (dprhl_sem _ _ _ _ _ _ (dprhl_seq Htop Hbot)) => //.
+by rewrite seq_skip_r.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -1115,17 +1066,243 @@ Lemma dprhl_gendelayL P r1 r2 c1 s1 Q:
   dprhl P r1 skip c1 skip s1 skip Q
   -> dprhl P r1 r2 c1 skip s1 r2 Q.
 Proof.
-  move=> H m.
-  move=> /H [v] [l r] s.
-  exists v; last by exact s.
-  split; first by exact l.
-  move: r.
-  rewrite !seq_skip_r.
-  under eq_in_dlet=> [x _|] do [rewrite ssem_skipE|].
-  rewrite dlet_dunit_id.
-  move=> ->.
-  by rewrite ssem_skipE dlet_unit.
+move=> h m /h [v [hL hR] rg]; exists v; last exact: rg.
+split=> //; move: hR; rewrite !seq_skip_r.
+under eq_in_dlet => [x _|] do [rewrite ssem_skipE|].
+by rewrite dlet_dunit_id => ->; rewrite ssem_skipE dlet_unit.
 Qed.
+
+(* -------------------------------------------------------------------- *)
+(* Approximants of a one-sided loop coupling: [cwhilen f n m] iterates   *)
+(* the one-step coupling [f] n times starting from [m], and              *)
+(* [cwhilee e f n m] keeps only the states that have already left the    *)
+(* loop guarded by [e].                                                  *)
+Fixpoint cwhilen (f : rmem -> Distr rmem) n m :=
+  if n is n.+1 then \dlet_(w <- cwhilen f n m) f w else dunit m.
+
+Definition cwhilee (e : expr bool) f n m :=
+  \dlet_(u <- cwhilen f n m) (if `[{ e }] u.1 then dnull else dunit u).
+
+(* -------------------------------------------------------------------- *)
+(* The common core of the one-sided while rules.  Everything here is     *)
+(* independent of *why* the loop terminates: from one step [ν1] of the   *)
+(* coupling, the limit of the [cwhilee] approximants is a partial        *)
+(* coupling for the whole loop as soon as the mass still running the     *)
+(* loop after [n] steps can be made arbitrarily small.  The three rules  *)
+(* below differ only in how they bound that mass.                        *)
+Section WhileLCore.
+Context (I : rassn) (e1 : expr bool) (c1 r1 r2 : cmd)
+        (ν1 : rmem -> Distr rmem).
+
+Local Notation νn := (cwhilen ν1).
+Local Notation νe := (cwhilee e1 ν1).
+
+Hypothesis Hdisj : [disjoint (write r1) & (fv e1)].
+Hypothesis ν1_id : forall w, ~~ `[{ e1 }] w.1 -> ν1 w = dunit w.
+Hypothesis ν1_rg : forall w, I w -> range I (ν1 w).
+Hypothesis ν1_L  : forall w, I w ->
+  \dlet_(u <- ν1 w) ssem r1 u.1 = ssem (r1 ;; IfT e1 then c1) w.1.
+Hypothesis ν1_R  : forall w,
+  \dlet_(u <- ν1 w) ssem r2 u.2 = ssem r2 w.2.
+
+(* -- the invariant is preserved all along the iteration -- *)
+Lemma cwhilen_rg m : I m -> forall n, range I (νn n m).
+Proof using ν1_rg.
+by move=> Im; elim=> [|n ih] /=; [apply/range_dunit | apply/(range_dlet ih)].
+Qed.
+
+Lemma cwhilee_rg m : I m -> forall n, range (I /\ `[{ ~~ e1#'1 }])%A (νe n m).
+Proof using ν1_rg.
+move=> Im n u /dinsupp_dlet [w hw] /=; case: (boolP (`[{ e1 }] w.1)) => he.
+- by rewrite dnullE eqxx.
+move=> /in_dunit eq; rewrite eq.
+by apply/andP; split; [exact: (cwhilen_rg Im hw) | rewrite /= ssemE].
+Qed.
+
+(* -- the two marginals of the finite approximants -- *)
+Lemma cwhilen_L m : I m -> forall n,
+    \dlet_(u <- νn n m) ssem r1 u.1
+  = \dlet_(w <- ssem r1 m.1) ssem (iterc n (IfT e1 then c1)) w.
+Proof using ν1_L ν1_rg.
+move=> Im; elim=> [|n ih] /=.
+- rewrite dlet_unit iterc0.
+  by under eq_in_dlet => [w _|] do [rewrite ssem_skipE|]; rewrite dlet_dunit_id.
+rewrite dlet_dlet.
+transitivity (\dlet_(u <- νn n m) ssem (r1 ;; IfT e1 then c1) u.1).
+- by apply/eq_in_dlet => // u /(cwhilen_rg Im) Iu; apply/ν1_L.
+under eq_in_dlet => [u _|] do [rewrite ssem_seqE|].
+rewrite -dlet_dlet ih dlet_dlet.
+apply/eq_in_dlet => // y _.
+by rewrite (itercSr n (IfT e1 then c1) y) ssem_seqE.
+Qed.
+
+Lemma cwhilen_R m : forall n, \dlet_(u <- νn n m) ssem r2 u.2 = ssem r2 m.2.
+Proof using ν1_R.
+elim=> [|n ih] /=; first by rewrite dlet_unit.
+rewrite dlet_dlet.
+by under eq_in_dlet => [u _|] do [rewrite ν1_R|]; rewrite ih.
+Qed.
+
+Lemma cwhilee_L m : I m -> forall n,
+    \dlet_(u <- νe n m) ssem r1 u.1
+  = \dlet_(w <- ssem r1 m.1) ssem (whilen e1 c1 n.+1) w.
+Proof using Hdisj ν1_L ν1_rg.
+move=> Im n; rewrite /cwhilee dlet_dlet.
+transitivity (\dlet_(u <- νn n m) ssem (r1 ;; IfT e1 then abort) u.1).
+- apply/eq_in_dlet => // u _; rewrite (disjoint_cond abort skip Hdisj).
+  case: ifPn => he; last by rewrite dlet_unit seq_skip_r.
+  by rewrite dlet_null seq_abort_r ssem_abortE.
+under eq_in_dlet => [u _|] do [rewrite ssem_seqE|].
+rewrite -dlet_dlet (cwhilen_L Im) dlet_dlet.
+apply/eq_in_dlet => // w _.
+by rewrite (whilen_iterc n e1 c1 w) ssem_seqE.
+Qed.
+
+(* -- the cut-off couplings increase, and stay below the uncut ones -- *)
+Lemma le_cwhilee m : forall n, νe n m <=1 νn n m.
+Proof using Type.
+move=> n u; rewrite /cwhilee.
+apply/(@le_trans _ _ ((\dlet_(w <- νn n m) dunit w) u)); last first.
+- by rewrite dlet_dunit_id.
+apply: (le_in_dlet _ u) => w _ u'.
+by case: ifPn => // _; rewrite dnullE ge0_mu.
+Qed.
+
+Lemma mono_cwhilee m : forall n k, (n <= k)%N -> νe n m <=1 νe k m.
+Proof using ν1_id.
+have le1: forall j, νe j m <=1 νe j.+1 m.
++ move=> j; rewrite /cwhilee /= dlet_dlet.
+  apply/le_in_dlet => w _ u; case: (boolP (`[{ e1 }] w.1)) => he.
+  - by rewrite dnullE ge0_mu.
+  by rewrite (ν1_id he) dlet_unit (negbTE he).
+move=> n k le_nk u; rewrite -(subnK le_nk).
+elim: (k - n)%N => [|j ih]; first by rewrite add0n.
+by rewrite addSn; apply/(le_trans ih)/le1.
+Qed.
+
+(* -- the left marginal of the limit is the loop itself -- *)
+Lemma cwhilee_limL m : I m ->
+  \dlet_(u <- \dlim_(n) νe n m) ssem r1 u.1 = ssem (r1 ;; While e1 Do c1) m.1.
+Proof using Hdisj ν1_L ν1_id ν1_rg.
+move=> Im; rewrite (dlet_lim _ (@mono_cwhilee m)).
+transitivity (\dlim_(n) \dlet_(w <- ssem r1 m.1) ssem (whilen e1 c1 n.+1) w).
+- by apply/eq_dlim => n; rewrite (cwhilee_L Im).
+transitivity (\dlim_(n) \dlet_(w <- ssem r1 m.1) ssem (whilen e1 c1 n) w).
+- by apply/distr_eqP/dlim_bump.
+have mono_wn: forall x n k, (n <= k)%N ->
+    ssem (whilen e1 c1 n) x <=1 ssem (whilen e1 c1 k) x.
++ by move=> x n k le_nk; apply/homo_whilen.
+rewrite (dlim_let _ mono_wn) ssem_seqE.
+by apply/eq_in_dlet => // w _; rewrite ssem_whileE.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+(* Once the mass still running the loop after [n] steps can be made      *)
+(* arbitrarily small, the limit coupling is total on the right.          *)
+Lemma whileL_core m :
+     I m
+  -> (forall eps : R, 0 < eps ->
+        exists n, \P_[νn n m] [pred u : rmem | `[{ e1 }] u.1] <= eps)
+  -> exists2 ν,
+         ispartialcoupling (ssem (r1 ;; While e1 Do c1) m.1)
+           (ssem (r2 ;; skip) m.2) (ssem r1) (ssem r2) ν
+       & range (I /\ `[{ ~~ e1#'1 }])%A ν.
+Proof using All.
+move=> Im small_a; pose a n := \P_[νn n m] [pred u : rmem | `[{ e1 }] u.1].
+exists (\dlim_(n) νe n m); last by apply/range_dlim => n; apply/(cwhilee_rg Im).
+split; first by rewrite dlet_dmargin (cwhilee_limL Im).
+rewrite dlet_dmargin seq_skip_r.
+have leA: \dlet_(u <- \dlim_(n) νe n m) ssem r2 u.2 <=1 ssem r2 m.2.
++ rewrite (dlet_lim _ (@mono_cwhilee m)); apply/leub_dlim => n.
+  by rewrite -(cwhilen_R m n); apply/le_mu_dlet/(@le_cwhilee m).
+apply/(le_dweight_eq leA); apply/eqP; rewrite eq_le.
+apply/andP; split; first by apply/le_mu_pr => x _ _; apply/leA.
+(* -- the deficit of the [n]-th approximant is bounded by [a n] -- *)
+have leAn: forall n, dweight (ssem r2 m.2)
+    <= dweight (\dlet_(u <- \dlim_(n) νe n m) ssem r2 u.2) + a n.
++ move=> n.
+  have leAe: dweight (\dlet_(u <- νe n m) ssem r2 u.2)
+          <= dweight (\dlet_(u <- \dlim_(n) νe n m) ssem r2 u.2).
+  - apply/le_mu_pr => x _ _; apply/le_mu_dlet => u.
+    by apply/(dlim_ub n (@mono_cwhilee m)).
+  apply/(le_trans _ (lerD leAe (lexx (a n)))).
+  have hAe: \dlet_(u <- νe n m) ssem r2 u.2
+      = \dlet_(u <- νn n m) (if `[{ e1 }] u.1 then dnull else ssem r2 u.2).
+  - rewrite /cwhilee dlet_dlet; apply/eq_in_dlet => // u _.
+    by case: ifPn => he; rewrite ?dlet_null ?dlet_unit.
+  have ge0f: forall u : rmem,
+      0 <= \P_[if `[{ e1 }] u.1 then dnull else ssem r2 u.2] predT.
+  - by move=> u; apply/ge0_pr.
+  have le1f: forall u : rmem,
+      \P_[if `[{ e1 }] u.1 then dnull else ssem r2 u.2] predT <= 1.
+  - by move=> u; apply/le1_pr.
+  have ge0k: forall u : rmem, 0 <= ((`[{ e1 }] u.1 : nat))%:R :> R.
+  - by move=> u; apply/ler0n.
+  have hasf: \E?_[νn n m]
+      (fun u => \P_[if `[{ e1 }] u.1 then dnull else ssem r2 u.2] predT).
+  - by apply/bounded_has_exp; exists 1 => u; rewrite ger0_norm ?ge0f ?le1f.
+  have hask := has_exp_natb (νn n m) [pred u : rmem | `[{ e1 }] u.1].
+  have hEf: dweight (\dlet_(u <- νe n m) ssem r2 u.2)
+    = \E_[νn n m]
+        (fun u => \P_[if `[{ e1 }] u.1 then dnull else ssem r2 u.2] predT).
+  - by rewrite hAe pr_dlet.
+  have hEk: a n = \E_[νn n m] (fun u : rmem => ((`[{ e1 }] u.1 : nat))%:R).
+  - by rewrite /a pr_exp.
+  have hEg: dweight (ssem r2 m.2)
+    = \E_[νn n m] (fun u : rmem => \P_[ssem r2 u.2] predT).
+  - by rewrite -(cwhilen_R m n) pr_dlet.
+  rewrite hEf hEk hEg -(expD ge0f ge0k hasf hask).
+  apply/le_exp.
+  - by apply/bounded_has_exp; exists 1 => u; rewrite ger0_norm ?ge0_pr ?le1_pr.
+  - apply/bounded_has_exp; exists (1 + 1) => u.
+    by rewrite ger0_norm ?addr_ge0 ?ge0f ?ge0k // lerD ?le1f ?le1_natb.
+  move=> u /=; case: (boolP (`[{ e1 }] u.1)) => he.
+  - by rewrite pr_dnull mulr1n add0r le1_pr.
+  by rewrite mulr0n addr0.
+(* -- ... hence the deficit vanishes in the limit -- *)
+rewrite leNgt; apply/negP => hlt.
+pose d := dweight (ssem r2 m.2)
+  - dweight (\dlet_(u <- \dlim_(n) νe n m) ssem r2 u.2).
+have gt0d: 0 < d by rewrite subr_gt0.
+have gt0d2: 0 < d / 2%:R by rewrite divr_gt0 ?ltr0n.
+case: (small_a _ gt0d2) => n hn; move: (leAn n); rewrite leNgt => /negP; apply.
+apply/(le_lt_trans (lerD (lexx _) hn)).
+have ->: dweight (ssem r2 m.2)
+       = dweight (\dlet_(u <- \dlim_(n) νe n m) ssem r2 u.2) + d.
++ by rewrite /d addrCA subrr addr0.
+rewrite ltrD2l ltr_pdivrMr ?ltr0n // -[X in X < _]mulr1 ltr_pM2l //.
+by rewrite ltr1n.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+(* Losslessness of the left program is one way of making that mass       *)
+(* vanish.                                                               *)
+Lemma whileL_ll m :
+     I m
+  -> dweight (ssem (r1 ;; While e1 Do c1) m.1) = 1
+  -> forall eps : R, 0 < eps ->
+       exists n, \P_[νn n m] [pred u : rmem | `[{ e1 }] u.1] <= eps.
+Proof using All.
+move=> Im Hll.
+have wν: dweight (\dlim_(n) νe n m) = 1.
++ apply/eqP; rewrite eq_le le1_pr /=.
+  by rewrite -Hll -(cwhilee_limL Im); apply/dweight_dlet.
+have wge: forall n, dweight (νe n m)
+  = dweight (νn n m) - \P_[νn n m] [pred u : rmem | `[{ e1 }] u.1].
++ move=> n; rewrite /cwhilee pr_dlet -pr_predC pr_exp.
+  apply/eq_exp => u /=; case: (boolP (`[{ e1 }] u.1)) => he.
+  - by rewrite pr_dnull mulr0n.
+  by rewrite pr_dunit.
+move=> eps gt0eps; case: (dweight_dlim (@mono_cwhilee m) gt0eps) => n hn.
+exists n; have ->: \P_[νn n m] [pred u : rmem | `[{ e1 }] u.1]
+                 = dweight (νn n m) - dweight (νe n m).
+- by rewrite wge opprB addrCA subrr addr0.
+apply/(@le_trans _ _ (1 - dweight (νe n m))).
+- by rewrite lerD2r le1_pr.
+by move: hn; rewrite wν lerBlDr addrC -lerBlDr.
+Qed.
+
+End WhileLCore.
 
 (* -------------------------------------------------------------------- *)
 (* One-sided while rule, with a variant bounding the number of           *)
@@ -1151,8 +1328,6 @@ move=> Hdisj hvar h.
 pose ν1 (w : rmem) :=
   if @idP ((I /\ `[{ e1#'1 }] /\ [pred u : rmem | `[{ v }] u.1 == `[{ v }] w.1])%A w)
   is ReflectT Rw then tag (dprhlw (h (`[{ v }] w.1)) Rw) else dunit w.
-pose νn := fix νn n m {struct n} :=
-  if n is n.+1 then \dlet_(w <- νn n m) ν1 w else dunit m.
 (* -- one step of the iteration -- *)
 have ν1_J: forall w, I w -> `[{ e1 }] w.1 ->
     (I /\ `[{ e1#'1 }] /\ [pred u : rmem | `[{ v }] u.1 == `[{ v }] w.1])%A w.
@@ -1160,10 +1335,14 @@ have ν1_J: forall w, I w -> `[{ e1 }] w.1 ->
 have ν1_id: forall w, ~~ `[{ e1 }] w.1 -> ν1 w = dunit w.
 + move=> w he; rewrite /ν1; case: {-}_ / idP => // p.
   by case/and3P: {+}p => _; rewrite ssemE (negbTE he).
-have ν1_rg: forall w, I w -> `[{ e1 }] w.1 ->
+have ν1_dec: forall w, I w -> `[{ e1 }] w.1 ->
     range (I /\ [pred u : rmem | (`[{ v }] u.1 < `[{ v }] w.1)%N])%A (ν1 w).
 + move=> w Iw he; rewrite /ν1; case: {-}_ / idP => [p|]; first by case: dprhlw.
   by move=> /(_ (ν1_J _ Iw he)) [].
+have ν1_rg: forall w, I w -> range I (ν1 w).
++ move=> w Iw; case: (boolP (`[{ e1 }] w.1)) => he; last first.
+  - by rewrite (ν1_id _ he); apply/range_dunit.
+  by apply/(range_weaken _ (ν1_dec _ Iw he)) => u /andP [].
 have ν1_L: forall w, I w ->
     \dlet_(u <- ν1 w) ssem r1 u.1 = ssem (r1 ;; IfT e1 then c1) w.1.
 + move=> w Iw; rewrite /ν1; case: {-}_ / idP => [p|hn]; last first.
@@ -1180,77 +1359,26 @@ have ν1_R: forall w, \dlet_(u <- ν1 w) ssem r2 u.2 = ssem r2 w.2.
   transitivity (\dlet_(u <- x) ssem r2 u.2); first by [].
   have hr := proj2 cpl; rewrite seq_skip_r in hr.
   by rewrite -hr dlet_dmargin.
-move=> m Im.
-(* -- the invariant, together with the decreasing variant -- *)
+move=> m Im; apply: (whileL_core Hdisj ν1_id ν1_rg ν1_L ν1_R Im).
+(* -- the variant bounds the number of iterations -- *)
 have rg: forall n, range
-    (I /\ [pred u : rmem | (`[{ v }] u.1 + n <= `[{ v }] m.1)%N || ~~ `[{ e1 }] u.1])%A (νn n m).
+    (I /\ [pred u : rmem | (`[{ v }] u.1 + n <= `[{ v }] m.1)%N || ~~ `[{ e1 }] u.1])%A
+    (cwhilen ν1 n m).
 + elim=> [|n ih] /=.
   - by apply/range_dunit; apply/andP; split; rewrite //= addn0 leqnn.
   apply/(range_dlet ih) => w /andP [Iw]; rewrite /= => hw.
   case: (boolP (`[{ e1 }] w.1)) => he; last first.
   - rewrite (ν1_id _ he); apply/range_dunit; apply/andP; split=> //=.
     by rewrite he orbT.
-  apply/(range_weaken _ (ν1_rg _ Iw he)) => u /andP [Iu]; rewrite /= => hu.
+  apply/(range_weaken _ (ν1_dec _ Iw he)) => u /andP [Iu]; rewrite /= => hu.
   apply/andP; split=> //=; apply/orP; left.
   case/orP: hw => [hw|]; last by rewrite he.
   by rewrite addnS -addSn; apply/(leq_trans _ hw); rewrite leq_add2r.
-have rgI: forall n, range I (νn n m).
-+ by move=> n u /(rg n) /andP [].
-have rgN: range (I /\ `[{ ~~ e1#'1 }])%A (νn (`[{ v }] m.1) m).
-+ move=> u /(rg (`[{ v }] m.1)) /andP [Iu]; rewrite /= => hu.
-  apply/andP; split; rewrite //= ssemE.
-  case/orP: hu => [|//]; rewrite -{2}[`[{ v }] m.1]add0n leq_add2r leqn0 => /eqP h0.
-  by apply/negP => he; move: (hvar _ Iu he); rewrite h0.
-have rgNe: range [pred u : rmem | ~~ `[{ e1 }] u.1] (νn (`[{ v }] m.1) m).
-+ by move=> u /rgN /andP [_]; rewrite /= ssemE.
-(* -- the iteration is stationary once the variant is exhausted -- *)
-have stab: forall n, (`[{ v }] m.1 <= n)%N -> νn n m = νn (`[{ v }] m.1) m.
-+ move=> n leN; rewrite -(subnK leN); elim: (n - `[{ v }] m.1)%N => [|j ih].
-  - by rewrite add0n.
-  rewrite addSn /= ih -[RHS]dlet_dunit_id.
-  by apply/eq_in_dlet => // u /rgNe hu; rewrite (ν1_id _ hu).
-(* -- the two marginals -- *)
-have hL: forall n,
-    \dlet_(u <- νn n m) ssem r1 u.1
-  = \dlet_(w <- ssem r1 m.1) ssem (iterc n (IfT e1 then c1)) w.
-+ elim=> [|n ih] /=.
-  - rewrite dlet_unit iterc0.
-    by under eq_in_dlet => [w _|] do [rewrite ssem_skipE|]; rewrite dlet_dunit_id.
-  rewrite dlet_dlet.
-  transitivity (\dlet_(u <- νn n m) ssem (r1 ;; IfT e1 then c1) u.1).
-  - by apply/eq_in_dlet => // u /(rgI n) Iu; apply/ν1_L.
-  under eq_in_dlet => [u _|] do [rewrite ssem_seqE|].
-  rewrite -dlet_dlet ih dlet_dlet.
-  apply/eq_in_dlet => // y _.
-  by rewrite (itercSr n (IfT e1 then c1) y) ssem_seqE.
-have hR: forall n, \dlet_(u <- νn n m) ssem r2 u.2 = ssem r2 m.2.
-+ elim=> [|n ih] /=; first by rewrite dlet_unit.
-  rewrite dlet_dlet.
-  by under eq_in_dlet => [u _|] do [rewrite ν1_R|]; rewrite ih.
-(* -- past that point, the truncated loop is the loop itself -- *)
-have hcut: forall n, (`[{ v }] m.1 <= n)%N ->
-    \dlet_(w <- ssem r1 m.1) ssem (whilen e1 c1 n.+1) w
-  = \dlet_(u <- νn (`[{ v }] m.1) m) ssem r1 u.1.
-+ move=> n leN.
-  transitivity (\dlet_(w <- ssem r1 m.1)
-     \dlet_(y <- ssem (iterc n (IfT e1 then c1)) w) ssem (IfT e1 then abort) y).
-  - by apply/eq_in_dlet => // w _; rewrite (whilen_iterc n e1 c1 w) ssem_seqE.
-  rewrite -dlet_dlet -(hL n) dlet_dlet.
-  rewrite (stab n leN); apply/eq_in_dlet => // u /rgNe hu.
-  rewrite -(ssem_seqE r1 (IfT e1 then abort) u.1).
-  by rewrite (disjoint_cond abort skip Hdisj) (negbTE hu) seq_skip_r.
-exists (νn (`[{ v }] m.1) m); last by exact: rgN.
-split; last by rewrite dlet_dmargin seq_skip_r; apply/hR.
-rewrite dlet_dmargin ssem_seqE.
-under [RHS]eq_in_dlet => [w _|] do [rewrite ssem_whileE|].
-have mono_wn: forall x n k, (n <= k)%N ->
-    ssem (whilen e1 c1 n) x <=1 ssem (whilen e1 c1 k) x.
-+ by move=> x n k le_nk; apply/homo_whilen.
-rewrite -(dlim_let _ mono_wn).
-rewrite -[LHS]dlimC.
-apply/distr_eqP/(eq_from_dlim (K := (`[{ v }] m.1).+1)) => n.
-case: n => [//|n]; rewrite ltnS => le_Nn.
-by rewrite (hcut n le_Nn).
+(* -- so after [`[{ v }] m.1] steps no mass is left in the loop -- *)
+move=> eps gt0eps; exists (`[{ v }] m.1); rewrite eq0_pr ?ltW //.
+move=> u /(rg (`[{ v }] m.1)) /andP [Iu]; rewrite !inE /= => hu.
+case/orP: hu => [|//]; rewrite -{2}[`[{ v }] m.1]add0n leq_add2r leqn0 => /eqP h0.
+by apply/negP => he; move: (hvar _ Iu he); rewrite h0.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -1276,17 +1404,16 @@ Proof.
 move=> Hdisj Hll h.
 pose ν1 (w : rmem) :=
   if @idP ((I /\ `[{ e1#'1 }])%A w) is ReflectT Rw then tag (dprhlw h Rw) else dunit w.
-pose νn := fix νn n m {struct n} :=
-  if n is n.+1 then \dlet_(w <- νn n m) ν1 w else dunit m.
-pose νe n m := \dlet_(u <- νn n m) (if `[{ e1 }] u.1 then dnull else dunit u).
 (* -- one step of the iteration -- *)
 have ν1_J: forall w, I w -> `[{ e1 }] w.1 -> (I /\ `[{ e1#'1 }])%A w.
 + by move=> w Iw he; rewrite /=; apply/andP; split; rewrite ?ssemE.
 have ν1_id: forall w, ~~ `[{ e1 }] w.1 -> ν1 w = dunit w.
 + move=> w he; rewrite /ν1; case: {-}_ / idP => // p.
   by case/andP: {+}p => _; rewrite ssemE (negbTE he).
-have ν1_rg: forall w, I w -> `[{ e1 }] w.1 -> range I (ν1 w).
-+ move=> w Iw he; rewrite /ν1; case: {-}_ / idP => [p|]; first by case: dprhlw.
+have ν1_rg: forall w, I w -> range I (ν1 w).
++ move=> w Iw; case: (boolP (`[{ e1 }] w.1)) => he; last first.
+  - by rewrite (ν1_id _ he); apply/range_dunit.
+  rewrite /ν1; case: {-}_ / idP => [p|]; first by case: dprhlw.
   by move=> /(_ (ν1_J _ Iw he)) [].
 have ν1_L: forall w, I w ->
     \dlet_(u <- ν1 w) ssem r1 u.1 = ssem (r1 ;; IfT e1 then c1) w.1.
@@ -1304,164 +1431,8 @@ have ν1_R: forall w, \dlet_(u <- ν1 w) ssem r2 u.2 = ssem r2 w.2.
   transitivity (\dlet_(u <- v) ssem r2 u.2); first by [].
   have hr := proj2 cpl; rewrite seq_skip_r in hr.
   by rewrite -hr dlet_dmargin.
-move=> m Im.
-(* -- the invariant -- *)
-have rgI: forall n, range I (νn n m).
-+ elim=> [|n ih] /=; first by apply/range_dunit.
-  apply/(range_dlet ih) => w Iw.
-  case: (boolP (`[{ e1 }] w.1)) => he; first by apply/ν1_rg.
-  by rewrite (ν1_id _ he); apply/range_dunit.
-have rgNe: forall n, range (I /\ `[{ ~~ e1#'1 }])%A (νe n m).
-+ move=> n u /dinsupp_dlet [w hw] /=; case: (boolP (`[{ e1 }] w.1)) => he.
-  - by rewrite dnullE eqxx.
-  move=> /in_dunit eq; rewrite eq.
-  by apply/andP; split; [exact: (rgI n _ hw) | rewrite /= ssemE].
-(* -- the two marginals of the finite approximants -- *)
-have hL: forall n,
-    \dlet_(u <- νn n m) ssem r1 u.1
-  = \dlet_(w <- ssem r1 m.1) ssem (iterc n (IfT e1 then c1)) w.
-+ elim=> [|n ih] /=.
-  - rewrite dlet_unit iterc0.
-    by under eq_in_dlet => [w _|] do [rewrite ssem_skipE|]; rewrite dlet_dunit_id.
-  rewrite dlet_dlet.
-  transitivity (\dlet_(u <- νn n m) ssem (r1 ;; IfT e1 then c1) u.1).
-  - by apply/eq_in_dlet => // u /(rgI n) Iu; apply/ν1_L.
-  under eq_in_dlet => [u _|] do [rewrite ssem_seqE|].
-  rewrite -dlet_dlet ih dlet_dlet.
-  apply/eq_in_dlet => // y _.
-  by rewrite (itercSr n (IfT e1 then c1) y) ssem_seqE.
-have hLe: forall n,
-    \dlet_(u <- νe n m) ssem r1 u.1
-  = \dlet_(w <- ssem r1 m.1) ssem (whilen e1 c1 n.+1) w.
-+ move=> n; rewrite /νe dlet_dlet.
-  transitivity (\dlet_(u <- νn n m) ssem (r1 ;; IfT e1 then abort) u.1).
-  - apply/eq_in_dlet => // u _; rewrite (disjoint_cond abort skip Hdisj).
-    case: ifPn => he; last by rewrite dlet_unit seq_skip_r.
-    by rewrite dlet_null seq_abort_r ssem_abortE.
-  under eq_in_dlet => [u _|] do [rewrite ssem_seqE|].
-  rewrite -dlet_dlet hL dlet_dlet.
-  apply/eq_in_dlet => // w _.
-  by rewrite (whilen_iterc n e1 c1 w) ssem_seqE.
-have hR: forall n, \dlet_(u <- νn n m) ssem r2 u.2 = ssem r2 m.2.
-+ elim=> [|n ih] /=; first by rewrite dlet_unit.
-  rewrite dlet_dlet.
-  by under eq_in_dlet => [u _|] do [rewrite ν1_R|]; rewrite ih.
-(* -- the cut-off couplings increase, and stay below the uncut ones -- *)
-have le_νe_νn: forall n, νe n m <=1 νn n m.
-+ move=> n u; rewrite /νe.
-  apply/(@le_trans _ _ ((\dlet_(w <- νn n m) dunit w) u)); last first.
-  - by rewrite dlet_dunit_id.
-  apply: (le_in_dlet _ u) => w _ u'.
-  by case: ifPn => // _; rewrite dnullE ge0_mu.
-have le_νe1: forall n, νe n m <=1 νe n.+1 m.
-+ move=> n; rewrite /νe /= dlet_dlet.
-  apply/le_in_dlet => w _ u; case: (boolP (`[{ e1 }] w.1)) => he.
-  - by rewrite dnullE ge0_mu.
-  by rewrite (ν1_id _ he) dlet_unit (negbTE he).
-have mono_νe: forall n k, (n <= k)%N -> νe n m <=1 νe k m.
-+ move=> n k le_nk u; rewrite -(subnK le_nk).
-  elim: (k - n)%N => [|j ih]; first by rewrite add0n.
-  by rewrite addSn; apply/(le_trans ih)/le_νe1.
-(* -- the limit coupling -- *)
-have hlimL: \dlet_(u <- \dlim_(n) νe n m) ssem r1 u.1
-          = ssem (r1 ;; While e1 Do c1) m.1.
-+ rewrite (dlet_lim _ mono_νe).
-  transitivity (\dlim_(n) \dlet_(w <- ssem r1 m.1) ssem (whilen e1 c1 n.+1) w).
-  - by apply/eq_dlim => n; rewrite hLe.
-  transitivity (\dlim_(n) \dlet_(w <- ssem r1 m.1) ssem (whilen e1 c1 n) w).
-  - by apply/distr_eqP/dlim_bump.
-  have mono_wn: forall x n k, (n <= k)%N ->
-      ssem (whilen e1 c1 n) x <=1 ssem (whilen e1 c1 k) x.
-  + by move=> x n k le_nk; apply/homo_whilen.
-  rewrite (dlim_let _ mono_wn) ssem_seqE.
-  by apply/eq_in_dlet => // w _; rewrite ssem_whileE.
-(* -- losslessness on the left forces the coupling to be full -- *)
-have wν: dweight (\dlim_(n) νe n m) = 1.
-+ apply/eqP; rewrite eq_le le1_pr /=.
-  by rewrite -(Hll _ Im) -hlimL; apply/dweight_dlet.
-(* -- the mass still running the loop after [n] steps vanishes -- *)
-pose a n := \P_[νn n m] [pred u : rmem | `[{ e1 }] u.1].
-have hnull: forall T : choiceType, \P_[dnull : Distr T] predT = 0.
-+ by move=> T; apply/eq0_pr => x /dinsuppP; rewrite dnullE.
-have wge: forall n, dweight (νe n m) = dweight (νn n m) - a n.
-+ move=> n; rewrite /νe /a pr_dlet -pr_predC pr_exp.
-  apply/eq_exp => u /=; case: (boolP (`[{ e1 }] u.1)) => he.
-  - by rewrite hnull mulr0n.
-  by rewrite pr_dunit.
-have small_a: forall eps : R, 0 < eps -> exists n, a n <= eps.
-+ move=> eps gt0eps; case: (dweight_dlim mono_νe gt0eps) => n hn.
-  exists n; have ->: a n = dweight (νn n m) - dweight (νe n m).
-  - by rewrite wge opprB addrCA subrr addr0.
-  apply/(@le_trans _ _ (1 - dweight (νe n m))).
-  - by rewrite lerD2r le1_pr.
-  by move: hn; rewrite wν lerBlDr addrC -lerBlDr.
-(* -- the coupling has the right second marginal -- *)
-exists (\dlim_(n) νe n m); last by apply/range_dlim => n; apply/rgNe.
-split; first by rewrite dlet_dmargin hlimL.
-rewrite dlet_dmargin seq_skip_r.
-have leA: \dlet_(u <- \dlim_(n) νe n m) ssem r2 u.2 <=1 ssem r2 m.2.
-+ rewrite (dlet_lim _ mono_νe); apply/leub_dlim => n.
-  by rewrite -(hR n); apply/le_mu_dlet/le_νe_νn.
-apply/(le_dweight_eq leA); apply/eqP; rewrite eq_le.
-apply/andP; split; first by apply/le_mu_pr => x _ _; apply/leA.
-(* -- the deficit of the [n]-th approximant is bounded by [a n] -- *)
-have leAn: forall n, dweight (ssem r2 m.2)
-    <= dweight (\dlet_(u <- \dlim_(n) νe n m) ssem r2 u.2) + a n.
-+ move=> n.
-  have leAe: dweight (\dlet_(u <- νe n m) ssem r2 u.2)
-          <= dweight (\dlet_(u <- \dlim_(n) νe n m) ssem r2 u.2).
-  - apply/le_mu_pr => x _ _; apply/le_mu_dlet => u.
-    by apply/(dlim_ub n mono_νe).
-  apply/(le_trans _ (lerD leAe (lexx (a n)))).
-  have hAe: \dlet_(u <- νe n m) ssem r2 u.2
-      = \dlet_(u <- νn n m) (if `[{ e1 }] u.1 then dnull else ssem r2 u.2).
-  - rewrite /νe dlet_dlet; apply/eq_in_dlet => // u _.
-    by case: ifPn => he; rewrite ?dlet_null ?dlet_unit.
-  have ge0f: forall u : rmem,
-      0 <= \P_[if `[{ e1 }] u.1 then dnull else ssem r2 u.2] predT.
-  - by move=> u; apply/ge0_pr.
-  have le1f: forall u : rmem,
-      \P_[if `[{ e1 }] u.1 then dnull else ssem r2 u.2] predT <= 1.
-  - by move=> u; apply/le1_pr.
-  have ge0k: forall u : rmem, 0 <= ((`[{ e1 }] u.1 : nat))%:R :> R.
-  - by move=> u; apply/ler0n.
-  have le1k: forall u : rmem, ((`[{ e1 }] u.1 : nat))%:R <= 1 :> R.
-  - by move=> u; case: (`[{ e1 }] u.1); rewrite ?mulr0n ?mulr1n ?ler01 ?lexx.
-  have hasf: \E?_[νn n m]
-      (fun u => \P_[if `[{ e1 }] u.1 then dnull else ssem r2 u.2] predT).
-  - by apply/bounded_has_exp; exists 1 => u; rewrite ger0_norm ?ge0f ?le1f.
-  have hask: \E?_[νn n m] (fun u : rmem => ((`[{ e1 }] u.1 : nat))%:R).
-  - by apply/bounded_has_exp; exists 1 => u; rewrite ger0_norm ?ge0k ?le1k.
-  have hEf: dweight (\dlet_(u <- νe n m) ssem r2 u.2)
-    = \E_[νn n m]
-        (fun u => \P_[if `[{ e1 }] u.1 then dnull else ssem r2 u.2] predT).
-  - by rewrite hAe pr_dlet.
-  have hEk: a n = \E_[νn n m] (fun u : rmem => ((`[{ e1 }] u.1 : nat))%:R).
-  - by rewrite /a pr_exp.
-  have hEg: dweight (ssem r2 m.2)
-    = \E_[νn n m] (fun u : rmem => \P_[ssem r2 u.2] predT).
-  - by rewrite -(hR n) pr_dlet.
-  rewrite hEf hEk hEg -(expD ge0f ge0k hasf hask).
-  apply/le_exp.
-  - by apply/bounded_has_exp; exists 1 => u; rewrite ger0_norm ?ge0_pr ?le1_pr.
-  - apply/bounded_has_exp; exists (1 + 1) => u.
-    by rewrite ger0_norm ?addr_ge0 ?ge0f ?ge0k // lerD ?le1f ?le1k.
-  move=> u /=; case: (boolP (`[{ e1 }] u.1)) => he.
-  - by rewrite hnull mulr1n add0r le1_pr.
-  by rewrite mulr0n addr0.
-(* -- ... hence vanishes in the limit -- *)
-rewrite leNgt; apply/negP => hlt.
-pose d := dweight (ssem r2 m.2)
-  - dweight (\dlet_(u <- \dlim_(n) νe n m) ssem r2 u.2).
-have gt0d: 0 < d by rewrite subr_gt0.
-have gt0d2: 0 < d / 2%:R by rewrite divr_gt0 ?ltr0n.
-case: (small_a _ gt0d2) => n hn; move: (leAn n); rewrite leNgt => /negP; apply.
-apply/(le_lt_trans (lerD (lexx _) hn)).
-have ->: dweight (ssem r2 m.2)
-       = dweight (\dlet_(u <- \dlim_(n) νe n m) ssem r2 u.2) + d.
-+ by rewrite /d addrCA subrr addr0.
-rewrite ltrD2l ltr_pdivrMr ?ltr0n // -[X in X < _]mulr1 ltr_pM2l //.
-by rewrite ltr1n.
+move=> m Im; apply: (whileL_core Hdisj ν1_id ν1_rg ν1_L ν1_R Im).
+by apply: (whileL_ll Hdisj ν1_id ν1_rg ν1_L ν1_R Im); apply/Hll.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -1511,21 +1482,10 @@ Lemma dprhl_whileL_phl I (J : assn) (v : expr nat) (e1 : expr bool) c1 r1 r2
     (I /\ `[{ ~~ e1#'1 }])%A.
 Proof.
 move=> Hdisj Hdisjv gt0p HJ hpos hpr h.
-have hnull: forall T : choiceType, \P_[dnull : Distr T] predT = 0.
-+ by move=> T; apply/eq0_pr => x /dinsuppP; rewrite dnullE.
-have leb1: forall b : bool, ((b : nat)%:R : R) <= 1.
-+ by case; rewrite ?mulr1n ?ler01 ?lexx.
-have hasb: forall (mu : Distr rmem) (A : pred rmem),
-    \E?_[mu] (fun u => ((A u : nat))%:R).
-+ move=> mu A; apply/bounded_has_exp; exists 1 => u.
-  by rewrite ger0_norm ?ler0n ?leb1.
 pose ν1 (w : rmem) :=
   if @idP ((I /\ `[{ e1#'1 }] /\
        [pred u : rmem | `[{ v }] u.1 == `[{ v }] w.1])%A w)
   is ReflectT Rw then tag (dprhlw (h (`[{ v }] w.1)) Rw) else dunit w.
-pose νn := fix νn n m {struct n} :=
-  if n is n.+1 then \dlet_(w <- νn n m) ν1 w else dunit m.
-pose νe n m := \dlet_(u <- νn n m) (if `[{ e1 }] u.1 then dnull else dunit u).
 (* -- one step of the iteration -- *)
 have ν1_J: forall w, I w -> `[{ e1 }] w.1 ->
     (I /\ `[{ e1#'1 }] /\ [pred u : rmem | `[{ v }] u.1 == `[{ v }] w.1])%A w.
@@ -1533,10 +1493,14 @@ have ν1_J: forall w, I w -> `[{ e1 }] w.1 ->
 have ν1_id: forall w, ~~ `[{ e1 }] w.1 -> ν1 w = dunit w.
 + move=> w he; rewrite /ν1; case: {-}_ / idP => // q.
   by case/and3P: {+}q => _; rewrite ssemE (negbTE he).
-have ν1_rg: forall w, I w -> `[{ e1 }] w.1 ->
+have ν1_dec: forall w, I w -> `[{ e1 }] w.1 ->
     range (I /\ [pred u : rmem | (`[{ v }] u.1 <= `[{ v }] w.1)%N])%A (ν1 w).
 + move=> w Iw he; rewrite /ν1; case: {-}_ / idP => [q|]; first by case: dprhlw.
   by move=> /(_ (ν1_J _ Iw he)) [].
+have ν1_rg: forall w, I w -> range I (ν1 w).
++ move=> w Iw; case: (boolP (`[{ e1 }] w.1)) => he; last first.
+  - by rewrite (ν1_id _ he); apply/range_dunit.
+  by apply/(range_weaken _ (ν1_dec _ Iw he)) => u /andP [].
 have ν1_L: forall w, I w ->
     \dlet_(u <- ν1 w) ssem r1 u.1 = ssem (r1 ;; IfT e1 then c1) w.1.
 + move=> w Iw; rewrite /ν1; case: {-}_ / idP => [q|hn]; last first.
@@ -1566,81 +1530,32 @@ have ν1_pr: forall w, I w -> `[{ e1 }] w.1 ->
   apply/(le_trans (hpr _ _ Pw)); rewrite -hLw pr_dlet [X in _ <= X]pr_exp.
   apply/le_exp.
   + by apply/bounded_has_exp; exists 1 => u; rewrite ger0_norm ?ge0_pr ?le1_pr.
-  + by apply/(hasb _ [pred u : rmem | (`[{ v }] u.1 < `[{ v }] w.1)%N]).
+  + by apply/(has_exp_natb _ [pred u : rmem | (`[{ v }] u.1 < `[{ v }] w.1)%N]).
   move=> u /=; case: (boolP ((`[{ v }] u.1 < `[{ v }] w.1)%N)) => hu.
   + by rewrite mulr1n le1_pr.
   have ->: \P_[ssem r1 u.1] [pred m1 : cmem | (`[{ v }] m1 < `[{ v }] w.1)%N] = 0.
   + apply/eq0_pr => m' hm'; rewrite !inE /= -(disjoint_cmd Hdisjv hm').
     exact: hu.
   by rewrite mulr0n.
-move=> m Im.
+move=> m Im; apply: (whileL_core Hdisj ν1_id ν1_rg ν1_L ν1_R Im).
 pose N := `[{ v }] m.1.
 (* -- the invariant, together with the (global) bound on the variant -- *)
-have rgIv: forall n, range (I /\ [pred u : rmem | (`[{ v }] u.1 <= N)%N])%A (νn n m).
+have rgIv: forall n,
+    range (I /\ [pred u : rmem | (`[{ v }] u.1 <= N)%N])%A (cwhilen ν1 n m).
 + elim=> [|n ih] /=.
   - by apply/range_dunit; apply/andP; split=> //; rewrite /= /N leqnn.
   apply/(range_dlet ih) => w /andP [Iw lew].
   case: (boolP (`[{ e1 }] w.1)) => he; last first.
   - by rewrite (ν1_id _ he); apply/range_dunit; apply/andP; split.
-  apply/(range_weaken _ (ν1_rg _ Iw he)) => u /andP [Iu leu].
+  apply/(range_weaken _ (ν1_dec _ Iw he)) => u /andP [Iu leu].
   by apply/andP; split=> //=; apply/(leq_trans leu).
-have rgI: forall n, range I (νn n m).
+have rgI: forall n, range I (cwhilen ν1 n m).
 + by move=> n; apply/(range_weaken _ (rgIv n)) => u /andP [].
-have rgNe: forall n, range (I /\ `[{ ~~ e1#'1 }])%A (νe n m).
-+ move=> n u /dinsupp_dlet [w hw] /=; case: (boolP (`[{ e1 }] w.1)) => he.
-  - by rewrite dnullE eqxx.
-  move=> /in_dunit eq; rewrite eq.
-  by apply/andP; split; [exact: (rgI n _ hw) | rewrite /= ssemE].
-(* -- the marginals of the finite approximants -- *)
-have hL: forall n,
-    \dlet_(u <- νn n m) ssem r1 u.1
-  = \dlet_(w <- ssem r1 m.1) ssem (iterc n (IfT e1 then c1)) w.
-+ elim=> [|n ih] /=.
-  - rewrite dlet_unit iterc0.
-    by under eq_in_dlet => [w _|] do [rewrite ssem_skipE|]; rewrite dlet_dunit_id.
-  rewrite dlet_dlet.
-  transitivity (\dlet_(u <- νn n m) ssem (r1 ;; IfT e1 then c1) u.1).
-  - by apply/eq_in_dlet => // u /(rgI n) Iu; apply/ν1_L.
-  under eq_in_dlet => [u _|] do [rewrite ssem_seqE|].
-  rewrite -dlet_dlet ih dlet_dlet.
-  apply/eq_in_dlet => // y _.
-  by rewrite (itercSr n (IfT e1 then c1) y) ssem_seqE.
-have hLe: forall n,
-    \dlet_(u <- νe n m) ssem r1 u.1
-  = \dlet_(w <- ssem r1 m.1) ssem (whilen e1 c1 n.+1) w.
-+ move=> n; rewrite /νe dlet_dlet.
-  transitivity (\dlet_(u <- νn n m) ssem (r1 ;; IfT e1 then abort) u.1).
-  - apply/eq_in_dlet => // u _; rewrite (disjoint_cond abort skip Hdisj).
-    case: ifPn => he; last by rewrite dlet_unit seq_skip_r.
-    by rewrite dlet_null seq_abort_r ssem_abortE.
-  under eq_in_dlet => [u _|] do [rewrite ssem_seqE|].
-  rewrite -dlet_dlet hL dlet_dlet.
-  apply/eq_in_dlet => // w _.
-  by rewrite (whilen_iterc n e1 c1 w) ssem_seqE.
-have hR: forall n, \dlet_(u <- νn n m) ssem r2 u.2 = ssem r2 m.2.
-+ elim=> [|n ih] /=; first by rewrite dlet_unit.
-  rewrite dlet_dlet.
-  by under eq_in_dlet => [u _|] do [rewrite ν1_R|]; rewrite ih.
-(* -- monotonicity of the cut-off couplings -- *)
-have le_νe_νn: forall n, νe n m <=1 νn n m.
-+ move=> n u; rewrite /νe.
-  apply/(@le_trans _ _ ((\dlet_(w <- νn n m) dunit w) u)); last first.
-  - by rewrite dlet_dunit_id.
-  apply: (le_in_dlet _ u) => w _ u'.
-  by case: ifPn => // _; rewrite dnullE ge0_mu.
-have le_νe1: forall n, νe n m <=1 νe n.+1 m.
-+ move=> n; rewrite /νe /= dlet_dlet.
-  apply/le_in_dlet => w _ u; case: (boolP (`[{ e1 }] w.1)) => he.
-  - by rewrite dnullE ge0_mu.
-  by rewrite (ν1_id _ he) dlet_unit (negbTE he).
-have mono_νe: forall n k, (n <= k)%N -> νe n m <=1 νe k m.
-+ move=> n k le_nk u; rewrite -(subnK le_nk).
-  elim: (k - n)%N => [|j ih]; first by rewrite add0n.
-  by rewrite addSn; apply/(le_trans ih)/le_νe1.
-(* -- the potential argument -- *)
+(* -- the potential argument: [Phi] decreases by [p] per unit of mass    *)
+(* left in the loop, and is bounded, so that mass has to vanish -- *)
 pose Phi (u : rmem) := (minn (`[{ v }] u.1) N)%:R : R.
-pose a n := \P_[νn n m] [pred u : rmem | `[{ e1 }] u.1].
-pose E n := \E_[νn n m] Phi.
+pose a n := \P_[cwhilen ν1 n m] [pred u : rmem | `[{ e1 }] u.1].
+pose E n := \E_[cwhilen ν1 n m] Phi.
 have ge0Phi: forall u, 0 <= Phi u by move=> u; apply/ler0n.
 have leNPhi: forall u, Phi u <= N%:R by move=> u; rewrite ler_nat geq_minr.
 have hasPhi: forall mu : Distr rmem, \E?_[mu] Phi.
@@ -1651,19 +1566,20 @@ have hascb: forall (mu : Distr rmem) (A : pred rmem) (c : R), 0 <= c ->
     \E?_[mu] (fun w => c * ((A w : nat))%:R).
 + move=> mu A c ge0c; apply/bounded_has_exp; exists c => w.
   rewrite normrM !ger0_norm ?ler0n //.
-  by rewrite -[X in _ <= X]mulr1 ler_wpM2l ?leb1.
+  by rewrite -[X in _ <= X]mulr1 ler_wpM2l ?le1_natb.
 have step: forall n, E n.+1 + p * a n <= E n.
 + move=> n.
   have ge0A: forall u : rmem, 0 <= \E_[ν1 u] Phi by move=> u; apply/exp_ge0.
   have ge0B: forall u : rmem, 0 <= p * ((`[{ e1 }] u.1 : nat))%:R.
   + by move=> u; rewrite mulr_ge0 ?ler0n ?ltW.
-  have hasA: \E?_[νn n m] (fun u => \E_[ν1 u] Phi).
+  have hasA: \E?_[cwhilen ν1 n m] (fun u => \E_[ν1 u] Phi).
   + apply/bounded_has_exp; exists N%:R => u; rewrite ger0_norm ?ge0A //.
     by apply/exp_le_bd => // u'; rewrite ger0_norm ?ge0Phi ?leNPhi.
-  have hasB := hascb (νn n m) [pred u : rmem | `[{ e1 }] u.1] p (ltW gt0p).
-  have hE1: E n.+1 = \E_[νn n m] (fun u => \E_[ν1 u] Phi).
+  have hasB := hascb (cwhilen ν1 n m) [pred u : rmem | `[{ e1 }] u.1] p (ltW gt0p).
+  have hE1: E n.+1 = \E_[cwhilen ν1 n m] (fun u => \E_[ν1 u] Phi).
   + by rewrite /E /= (exp_dlet_bd _ _ ge0Phi leNPhi).
-  have hE2: p * a n = \E_[νn n m] (fun u => p * ((`[{ e1 }] u.1 : nat))%:R).
+  have hE2: p * a n
+    = \E_[cwhilen ν1 n m] (fun u => p * ((`[{ e1 }] u.1 : nat))%:R).
   + by rewrite /a pr_exp -expZ.
   rewrite hE1 hE2 -(expD ge0A ge0B hasA hasB).
   apply/le_exp_supp => //.
@@ -1701,7 +1617,7 @@ have step: forall n, E n.+1 + p * a n <= E n.
   have hle: \E_[ν1 u] Phi <= \E_[ν1 u] g.
   + apply/le_exp_supp => //.
     + by move=> w; rewrite addr_ge0 ?ge0g1 ?ge0g2.
-    move=> w hw; case/andP: (ν1_rg _ Iu he _ hw) => Iw; rewrite /= => lek.
+    move=> w hw; case/andP: (ν1_dec _ Iu he _ hw) => Iw; rewrite /= => lek.
     rewrite /g /Phi /=; case: (boolP ((`[{ v }] w.1 < `[{ v }] u.1)%N)) => hD.
     + rewrite mulr1n mulr0n mulr1 mulr0 addr0.
       by rewrite ler_nat (leq_trans (geq_minl _ _)) // -ltnS (ltn_predK gt0k).
@@ -1727,105 +1643,32 @@ have mono_a: forall n k, (n <= k)%N -> a k <= a n.
     apply/le_exp_supp.
     + by move=> u; apply/ge0_pr.
     + by move=> u; apply/ler0n.
-    + by apply/(hasb _ [pred u : rmem | `[{ e1 }] u.1]).
+    + by apply/(has_exp_natb _ [pred u : rmem | `[{ e1 }] u.1]).
     move=> u /(rgI n) Iu /=; case: (boolP (`[{ e1 }] u.1)) => he.
     + by rewrite mulr1n le1_pr.
     by rewrite (ν1_id _ he) pr_dunit /= (negbTE he) mulr0n.
   move=> n k le_nk; rewrite -(subnK le_nk).
   elim: (k - n)%N => [|j ih]; first by rewrite add0n.
   by rewrite addSn; apply/(le_trans (le1 _)).
-have key: forall eps : R, 0 < eps -> exists n, a n <= eps.
-+ move=> eps gt0eps; pose n := (Num.bound (N%:R / (p * eps))).+1.
-  exists n; have gt0n: (0 < n%:R :> R) by rewrite ltr0n.
-  have gt0pe: 0 < p * eps by rewrite mulr_gt0.
-  have hb: N%:R / (p * eps) < n%:R.
-  + apply/(lt_le_trans (archi_boundP _)); last by rewrite ler_nat leqnSn.
-    by rewrite divr_ge0 ?ler0n ?ltW.
-  rewrite ltr_pdivrMr // in hb.
-  have hs: p * (n%:R * a n) <= N%:R.
-  + apply/(le_trans _ (tel n)).
-    apply/(@le_trans _ _ (p * (\sum_(i < n) a i) + 0)); last first.
-    + by rewrite lerD2l; apply/ge0E.
-    rewrite addr0 ler_pM2l //.
-    apply/(@le_trans _ _ (\sum_(i < n) a n)); last first.
-    + by apply: ler_sum => i _; apply/mono_a/ltnW/ltn_ord.
-    by rewrite sumr_const card_ord mulr_natl.
-  apply/ltW; rewrite -(@ltr_pM2l _ (p * n%:R)) ?mulr_gt0 //.
-  rewrite -mulrA; apply/(le_lt_trans hs).
-  by rewrite -mulrA mulrCA.
-exists (\dlim_(n) νe n m); last by apply/range_dlim => n; apply/rgNe.
-split.
-+ rewrite dlet_dmargin (dlet_lim _ mono_νe).
-  transitivity (\dlim_(n) \dlet_(w <- ssem r1 m.1) ssem (whilen e1 c1 n.+1) w).
-  - by apply/eq_dlim => n; rewrite hLe.
-  transitivity (\dlim_(n) \dlet_(w <- ssem r1 m.1) ssem (whilen e1 c1 n) w).
-  - by apply/distr_eqP/dlim_bump.
-  have mono_wn: forall x n k, (n <= k)%N ->
-      ssem (whilen e1 c1 n) x <=1 ssem (whilen e1 c1 k) x.
-  + by move=> x n k le_nk; apply/homo_whilen.
-  rewrite (dlim_let _ mono_wn) ssem_seqE.
-  by apply/eq_in_dlet => // w _; rewrite ssem_whileE.
-(* -- the second marginal: the mass left in the loop vanishes -- *)
-rewrite dlet_dmargin seq_skip_r.
-have leA: \dlet_(u <- \dlim_(n) νe n m) ssem r2 u.2 <=1 ssem r2 m.2.
-+ rewrite (dlet_lim _ mono_νe); apply/leub_dlim => n.
-  by rewrite -(hR n); apply/le_mu_dlet/le_νe_νn.
-apply/(le_dweight_eq leA); apply/eqP; rewrite eq_le.
-apply/andP; split; first by apply/le_mu_pr => x _ _; apply/leA.
-have leAn: forall n, dweight (ssem r2 m.2)
-    <= dweight (\dlet_(u <- \dlim_(n) νe n m) ssem r2 u.2) + a n.
-+ move=> n.
-  have leAe: dweight (\dlet_(u <- νe n m) ssem r2 u.2)
-          <= dweight (\dlet_(u <- \dlim_(n) νe n m) ssem r2 u.2).
-  - apply/le_mu_pr => x _ _; apply/le_mu_dlet => u.
-    by apply/(dlim_ub n mono_νe).
-  apply/(le_trans _ (lerD leAe (lexx (a n)))).
-  have hAe: \dlet_(u <- νe n m) ssem r2 u.2
-      = \dlet_(u <- νn n m) (if `[{ e1 }] u.1 then dnull else ssem r2 u.2).
-  - rewrite /νe dlet_dlet; apply/eq_in_dlet => // u _.
-    by case: ifPn => he; rewrite ?dlet_null ?dlet_unit.
-  have ge0f: forall u : rmem,
-      0 <= \P_[if `[{ e1 }] u.1 then dnull else ssem r2 u.2] predT.
-  - by move=> u; apply/ge0_pr.
-  have le1f: forall u : rmem,
-      \P_[if `[{ e1 }] u.1 then dnull else ssem r2 u.2] predT <= 1.
-  - by move=> u; apply/le1_pr.
-  have ge0k: forall u : rmem, 0 <= ((`[{ e1 }] u.1 : nat))%:R :> R.
-  - by move=> u; apply/ler0n.
-  have hasf: \E?_[νn n m]
-      (fun u => \P_[if `[{ e1 }] u.1 then dnull else ssem r2 u.2] predT).
-  - by apply/bounded_has_exp; exists 1 => u; rewrite ger0_norm ?ge0f ?le1f.
-  have hask: \E?_[νn n m] (fun u : rmem => ((`[{ e1 }] u.1 : nat))%:R).
-  - by apply/(hasb _ [pred u : rmem | `[{ e1 }] u.1]).
-  have hEf: dweight (\dlet_(u <- νe n m) ssem r2 u.2)
-    = \E_[νn n m]
-        (fun u => \P_[if `[{ e1 }] u.1 then dnull else ssem r2 u.2] predT).
-  - by rewrite hAe pr_dlet.
-  have hEk: a n = \E_[νn n m] (fun u : rmem => ((`[{ e1 }] u.1 : nat))%:R).
-  - by rewrite /a pr_exp.
-  have hEg: dweight (ssem r2 m.2)
-    = \E_[νn n m] (fun u : rmem => \P_[ssem r2 u.2] predT).
-  - by rewrite -(hR n) pr_dlet.
-  rewrite hEf hEk hEg -(expD ge0f ge0k hasf hask).
-  apply/le_exp.
-  - by apply/bounded_has_exp; exists 1 => u; rewrite ger0_norm ?ge0_pr ?le1_pr.
-  - apply/bounded_has_exp; exists (1 + 1) => u.
-    by rewrite ger0_norm ?addr_ge0 ?ge0f ?ge0k // lerD ?le1f ?leb1.
-  move=> u /=; case: (boolP (`[{ e1 }] u.1)) => he.
-  - by rewrite hnull mulr1n add0r le1_pr.
-  by rewrite mulr0n addr0.
-rewrite leNgt; apply/negP => hlt.
-pose d := dweight (ssem r2 m.2)
-  - dweight (\dlet_(u <- \dlim_(n) νe n m) ssem r2 u.2).
-have gt0d: 0 < d by rewrite subr_gt0.
-have gt0d2: 0 < d / 2%:R by rewrite divr_gt0 ?ltr0n.
-case: (key _ gt0d2) => n hn; move: (leAn n); rewrite leNgt => /negP; apply.
-apply/(le_lt_trans (lerD (lexx _) hn)).
-have ->: dweight (ssem r2 m.2)
-       = dweight (\dlet_(u <- \dlim_(n) νe n m) ssem r2 u.2) + d.
-+ by rewrite /d addrCA subrr addr0.
-rewrite ltrD2l ltr_pdivrMr ?ltr0n // -[X in X < _]mulr1 ltr_pM2l //.
-by rewrite ltr1n.
+(* -- [n] steps cost at least [p * n * a n], so [a n] is O(1/n) -- *)
+move=> eps gt0eps; pose n := (Num.bound (N%:R / (p * eps))).+1.
+exists n; have gt0n: (0 < n%:R :> R) by rewrite ltr0n.
+have gt0pe: 0 < p * eps by rewrite mulr_gt0.
+have hb: N%:R / (p * eps) < n%:R.
++ apply/(lt_le_trans (archi_boundP _)); last by rewrite ler_nat leqnSn.
+  by rewrite divr_ge0 ?ler0n ?ltW.
+rewrite ltr_pdivrMr // in hb.
+have hs: p * (n%:R * a n) <= N%:R.
++ apply/(le_trans _ (tel n)).
+  apply/(@le_trans _ _ (p * (\sum_(i < n) a i) + 0)); last first.
+  + by rewrite lerD2l; apply/ge0E.
+  rewrite addr0 ler_pM2l //.
+  apply/(@le_trans _ _ (\sum_(i < n) a n)); last first.
+  + by apply: ler_sum => i _; apply/mono_a/ltnW/ltn_ord.
+  by rewrite sumr_const card_ord mulr_natl.
+apply/ltW; rewrite -(@ltr_pM2l _ (p * n%:R)) ?mulr_gt0 //.
+rewrite -mulrA; apply/(le_lt_trans hs).
+by rewrite -mulrA mulrCA.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -1856,17 +1699,6 @@ Qed.
 (* Structural Rules *)
 (* -------------------------------------------------------------------- *)
 
-Lemma dprhl_delayL Q r1 r2 c1 c2:
-  dprhl Q r1 r2 c1 skip (r1 ;; c1) r2 Q.
-Proof.
-move=> m Qm.
-exists (dunit m).
-+ split; rewrite dmargin_dunit dlet_unit //.
-  by rewrite seq_skip_r.
-by apply: range_dunit.
-Qed.
-
-(* -------------------------------------------------------------------- *)
 Lemma dprhl_delaystarL P Q r1 r2 c1 s1:
 	(forall m1 m2, Q (m1, m2) -> P (m1, m1))
   -> dprhl (P /\ [ pred m | m.1 == m.2 ])%A r1 skip c1 s1 skip skip [ pred m | m.1 == m.2 ]
@@ -1878,7 +1710,7 @@ rewrite /= eq_refl HP /=.
 case; first done.
 move=> v.
 rewrite seq_skip_l.
-move=> H2 /=.
+move=> H2 /= Hrng.
 exists (dunit (m1, m2)); last by apply range_dunit.
 rewrite seq_skip_r.
 split; rewrite dlet_dmargin dlet_unit //=.
@@ -1895,7 +1727,7 @@ suff : forall m, m.1 != m.2	-> v m = 0.
 move=> m' neq.
 apply /dinsuppPn.
 case Hin: (m' \in dinsupp v)=> //.
-by move: (q m' Hin) neq=> //= ->.
+by move: (Hrng m' Hin) neq=> //= ->.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -2000,14 +1832,14 @@ Lemma dprhl_exfalso c1 c2 r1 r2 s1 s2 Q : dprhl pred0 r1 r2 c1 c2 s1 s2 Q.
 Proof. by []. Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma dprhl_abort P r1 r2 c1 c2 s1 s2 Q : dprhl P r1 r2 abort abort s1 s2 Q.
+Lemma dprhl_abort P r1 r2 s1 s2 Q : dprhl P r1 r2 abort abort s1 s2 Q.
 Proof.
 move=> m _; exists dnull; last by apply/range_dnull.
 by rewrite !seq_abort_r !ssemE; split; rewrite dmarginE !dlet_null.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma dprhl_trans P12 P23 r1 r2 r3 c1 c2 c3 s1 s2 s3 Q12 Q23:
+Lemma dprhl_trans P12 P23 r1 r2 r3 c1 c2 c3 s1 s3 Q12 Q23:
 	dprhl P12 r1 r2 c1 c2 s1 skip Q12
 	-> dprhl P23 r2 r3 c2 c3 skip s3 Q23
 	-> dprhl [pred m | `[<exists m', P12 (m.1, m') /\ P23 (m', m.2)>]] r1 r3 c1 c3 s1 s3 [pred m | `[<exists m', Q12 (m.1, m') /\ Q23 (m', m.2)>]].
