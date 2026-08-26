@@ -1,6 +1,6 @@
 (* -------------------------------------------------------------------- *)
-From mathcomp           Require Import all_boot.
-From mathcomp.algebra   Require Import all_algebra.
+From mathcomp           Require Import boot.
+From mathcomp.algebra   Require Import algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals.
 From mathcomp.experimental_reals Require Import realsum distr.

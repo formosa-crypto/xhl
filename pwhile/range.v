@@ -1,10 +1,11 @@
 (* -------------------------------------------------------------------- *)
 (* ----------------- *) Require Import Setoid Morphisms.
-From mathcomp Require Import all_boot all_order all_algebra.
+From mathcomp Require Import boot order algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals.
-From mathcomp.experimental_reals  Require Import realseq realsum distr.
-(* ----------------- *) Require Import notations inhabited pwhile psemantic passn.
+From mathcomp.analysis  Require Import counting_distr.
+(* ----------------- *) Require Import pwhile passn.
+From xhl                Require Import misc.
 
 Set   Implicit Arguments.
 Unset Strict Implicit.
@@ -15,7 +16,6 @@ Import GRing.Theory Num.Theory Order.Theory.
 
 Local Open Scope ring_scope.
 Local Open Scope syn_scope.
-Local Open Scope sem_scope.
 Local Open Scope mem_scope.
 
 (* -------------------------------------------------------------------- *)
@@ -48,12 +48,7 @@ Proof. by move=> hA hB y /dinsupp_dlet[x] /hA /hB /(_ y). Qed.
 Lemma dinsupp_dlim (mu : nat -> Distr A) x:
   x \in dinsupp (\dlim_(n) mu n) ->
     exists k, x \in dinsupp (mu k).
-Proof.
-move/dinsuppP; rewrite dlimE; apply: contra_notP.
-move/asboolPn/forallp_asboolPn => eq; rewrite (@eq_nlim _ (fun _ => 0)).
-  by move=> n; apply/dinsuppPn/negP/eq.
-  by rewrite nlimC.
-Qed.
+Proof. by move=> /dinsupp_dlim[K] /(_ _ (leqnn _)) h; exists K. Qed.
 
 Lemma range_dlim P (mu : nat -> Distr A):
   (forall n, range P (mu n)) -> range P (dlim mu).

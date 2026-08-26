@@ -1,10 +1,10 @@
 (* -------------------------------------------------------------------- *)
 From HB                 Require Import structures.
-From mathcomp           Require Import all_boot all_order.
-From mathcomp.algebra   Require Import all_algebra.
+From mathcomp           Require Import boot order.
+From mathcomp.algebra   Require Import algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals.
-From mathcomp.experimental_reals Require Import distr.
+From mathcomp.analysis  Require Import counting_distr.
 (* ----------------- *) Require Import inhabited notations.
 
 From Stdlib Require Import Eqdep_dec.
@@ -35,7 +35,7 @@ Parameter R : realType.
 HB.instance Definition real_ihbType :=
   IsInhabited.Build R 0.
 
-Notation Distr T := {distr T / R}.
+Notation Distr T := {distr T%type / R}.
 
 (* -------------------------------------------------------------------- *)
 Section MemType.

@@ -1,9 +1,9 @@
 (* -------------------------------------------------------------------- *)
 (* ----------------- *) Require Import Setoid Morphisms.
-From mathcomp Require Import all_boot all_order all_algebra.
+From mathcomp Require Import boot order algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals.
-From mathcomp.experimental_reals  Require Import realseq realsum distr.
+From mathcomp.analysis  Require Import counting_distr.
 From xhl.pwhile Require Import notations inhabited pwhile psemantic passn range.
 
 Set   Implicit Arguments.

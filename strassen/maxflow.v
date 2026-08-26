@@ -1,6 +1,6 @@
 (* -------------------------------------------------------------------- *)
 From HB       Require Import structures.
-From mathcomp Require Import all_boot all_order all_algebra.
+From mathcomp Require Import boot order algebra.
 (* ------- *) Require Import xbigops misc lp.
 
 Set   Implicit Arguments.

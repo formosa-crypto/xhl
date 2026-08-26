@@ -1,12 +1,12 @@
 (* -------------------------------------------------------------------- *)
 (* ----------------- *) Require Import Setoid Morphisms.
-From mathcomp           Require Import all_boot all_order.
-From mathcomp.algebra   Require Import all_algebra.
+From mathcomp           Require Import boot order.
+From mathcomp.algebra   Require Import algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals constructive_ereal.
-From mathcomp.experimental_reals  Require Import realseq realsum distr.
+From mathcomp.analysis  Require Import esum counting_distr.
 From xhl.pwhile Require Import notations inhabited pwhile psemantic passn range.
-From xhl.strassen Require Import misc.
+From xhl Require Import misc.
 
 Set   Implicit Arguments.
 Unset Strict Implicit.
@@ -294,28 +294,26 @@ Proof.
 Qed.
 
 Lemma espcE {T: choiceType} mu (f : T -> R)  A :
+   \E?_[mu] f ->
    espc mu f A = esp (drestr A mu) f / \P_[mu] A .
 Proof.
-  rewrite /espc.
-  erewrite eq_sum; last first.
-  * move => x;rewrite mulrA mulrC; reflexivity.
-  rewrite sumZ mulrC.
-  congr (_ * _).
-  rewrite /esp.
-  apply eq_sum => x.
-  congr (_ * _).
-  rewrite pr_pred1 -pr_drestr /pr.
-  apply eq_psum => r.
-  rewrite !drestrE.
-  by case (pred1 x r); case (A r); rewrite !Monoid.simpm.
+move=> sm.
+have key : \P_[mu] A * espc mu f A = esp (drestr A mu) f.
++ rewrite (pr_esp_sum A sm) /esp; congr fine.
+  apply: eq_esum => x _ /=.
+  by rewrite drestrE; case: (A x); rewrite ?mul1r ?mul0r ?mulr0.
+have [z|nz] := eqVneq (\P_[mu] A) 0.
++ rewrite z invr0 mulr0 /espc (eq_esum _ _ (fun _ => 0%E)).
+  - by move=> x _; rewrite prc_pred1 z invr0 !mulr0.
+  - by rewrite esum0.
+by rewrite -key mulrAC divff // mul1r.
 Qed.
 
-Lemma mass_drestr {T: choiceType} (mu : {distr T / R}) A  : \P_[drestr A mu] predT = \P_[mu] A.
+
+Lemma mass_drestr {T: choiceType} (mu : {distr T / R}) A  :
+  \P_[drestr A mu] predT = \P_[mu] A.
 Proof.
- rewrite pr_drestr /pr.
- apply eq_psum => x.
- congr (_ *_).
- by rewrite /in_mem /= andbC andTb.
+by rewrite pr_drestr; apply: eq_pr => x; rewrite !inE andbT.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -333,12 +331,14 @@ move=> -> PR PNR RQ NRQ m Pm /=; rewrite ssemE pr_dlet.
 apply/eqP; rewrite (exp_split R); first by apply: has_esp_pr.
 have [/= /eqP-> /eqP->] := (PR _ Pm, PNR _ Pm); congr (_ + _).
 - case: (dR =P 0) => [->|/eqP nz_dR]; first by rewrite !mul0r.
-  congr (_ * _). rewrite espcE. rewrite -(@eq_exp _ _ _ (fun=> dRQ)).
+  congr (_ * _). rewrite espcE; first by apply: has_esp_pr.
+  rewrite -(@eq_exp _ _ _ (fun=> dRQ)).
   - move=> m'; rewrite dinsupp_restr => /andP [_ Rm'].
     by apply/esym/eqP ; apply: (RQ m' Rm').
     by rewrite exp_cst mass_drestr  mulrAC divff ?mul1r // (eqP (PR m Pm)).
 - case: (dNR =P 0) => [->|/eqP nz_dNR]; first by rewrite !mul0r.
-  congr (_ * _); rewrite espcE; rewrite -(@eq_exp _ _ _ (fun=> dNRQ)).
+  congr (_ * _); rewrite espcE; first by apply: has_esp_pr.
+  rewrite -(@eq_exp _ _ _ (fun=> dNRQ)).
   - move=> m'; rewrite dinsupp_restr => /andP[_ Rm'].
     by apply/esym/eqP; apply: (NRQ m' Rm').
   by rewrite exp_cst mass_drestr mulrAC divff ?mul1r // (eqP (PNR m Pm)).
@@ -384,21 +384,29 @@ Definition hoare_triple_proc_ctx_l (cl : phi) (ps_init: ident -> (@cmd_ ident cm
             (get_r (cl p))
             (ps_init p).
 
-Lemma sum_dlim_r_r (f: nat -> {distr cmem /R}) [E : pred cmem]  [r : R]:
-  (forall n m : nat, (n <= m)%N -> forall x : cmem, f n x <= f m x) ->
-  (forall (n : nat), psum (fun x : cmem => ((E x)%:R * f n x)) <= r) ->
-  (psum (fun x : cmem => ((E x)%:R * (\dlim_(n) (f n) ) x)) <= r).
+(* -------------------------------------------------------------------- *)
+(* ----------------  This would go in distr.v  ------------------------ *)
+
+Lemma pr_dnull {T : choiceType} (E : pred T) :
+  \P_[(dnull : {distr T / R})] E = 0.
 Proof.
-move=> hmono h.
-rewrite (sum_dlim hmono E).
-have hE : forall x : cmem, 0 <= (E x)%:R by [].
-have smb : forall n, summable (fun x : cmem => (E x)%:R * f n x)
-  by move=> n; apply: summable_pr.
-have [lp cvlp] := @ncvg_lp _ _ _ hmono (fun x => (E x)%:R) r (hE _) smb h.
-rewrite (nlimE cvlp) /=.
-by rewrite -lee_fin; exact: (ncvg_leC h cvlp).
+rewrite /pr (eq_esum _ _ (fun _ => 0%E)).
+- by move=> x; rewrite /= dnullE mulr0.
+- by rewrite esum0.
 Qed.
 
+Lemma sum_dlim_r_r (f : nat -> {distr cmem / R}) (E : pred cmem) (r : R) :
+  (forall n m : nat, (n <= m)%N -> forall x : cmem, f n x <= f m x) ->
+  (forall n : nat, \P_[f n] E <= r) ->
+  \P_[\dlim_(n) f n] E <= r.
+Proof.
+move=> hmono h; rewrite -lee_fin prE.
+apply: (esum_dlim_r_r (dhomo_dnd hmono)).
+- by move=> ?; exact: ler0n.
+- by move=> n; rewrite -prE lee_fin; exact: h.
+Qed.
+
+(* -------------------------------------------------------------------- *)
 Lemma recursive_proc_l ps' cl' :
   (forall p, 0 <= (get_r (cl' p))) ->
   hoare_triple_proc_ctx_l cl' ps' ->
@@ -408,23 +416,23 @@ Lemma recursive_proc_l ps' cl' :
           Le
           (get_r (cl' p))).
 Proof.
-  move => H h p s hP.
-   rewrite /pr !test8.
-   apply sum_dlim_r_r.
-    + move => ????.
-     apply mono_ssem_aux.
-     by apply homo_ubnf.
-  move => n.
-  rewrite ssem_ubnf_dnull ubnf_ssem (test9 _ _ _ _ ps') test5.
-  revert hP; revert p; revert s.
-  elim : n => [| n Hn].
-  + move => ???. rewrite ssem_false_ps.
-    under eq_psum do  rewrite dnullE mulr0.
-    by rewrite psum0.
-  move => s p hP.
-  rewrite (inline2_split n 1).
-  apply: h => // p0 s0 hP0.
-  by apply: Hn.
+move=> H h.
+have key : forall n p s, get_pre (cl' p) s ->
+    \P_[ssem_ (k_inliner_ps1 n ps') (call p) s] (get_post (cl' p) s)
+      <= get_r (cl' p).
++ elim=> [|n Hn] p s hP.
+  - by rewrite ssem_false_ps pr_dnull; exact: H.
+  have hcall : forall p0, kphl_ (k_inliner_ps1 n ps')
+      (get_pre (cl' p0)) (call p0) (get_post (cl' p0)) Le (get_r (cl' p0)).
+  * by move=> p0 s0 hP0; apply: Hn.
+  rewrite (inline2_split n 1) //=.
+  exact: (h p (k_inliner_ps1 n ps') hcall s hP).
+move=> p s hP /=.
+rewrite test8; apply: sum_dlim_r_r.
++ by move=> ????; apply: mono_ssem_aux; apply: homo_ubnf.
+move=> n.
+rewrite ssem_ubnf_dnull ubnf_ssem (test9 _ _ _ _ ps') test5.
+exact: key.
 Qed.
 
 (** Modular Hoare Triple Verification **)
