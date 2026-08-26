@@ -4,7 +4,7 @@ From mathcomp.ssreflect Require Import all_ssreflect.
 From mathcomp.algebra   Require Import all_algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals constructive_ereal.
-From mathcomp.experimental_reals  Require Import realseq realsum distr.
+From mathcomp.analysis  Require Import counting_distr.
 (* ----------------- *) Require Import inhabited passn pwhile psemantic.
 
 From ITree Require Import
@@ -19,8 +19,6 @@ From ITree Require Import
   RuttFacts.
 
 Import Basics.Monads.
-(* Import MonadNotation. *)
-(* Import ListNotations. *)
 
 
 Set Implicit Arguments.
@@ -33,30 +31,16 @@ Local Open Scope ring_scope.
 Local Open Scope syn_scope.
 Local Open Scope mem_scope.
 
-(* Section Estate. *)
+Variant Rnd : Type -> Type :=
+  | GetRnd : forall t : IhbType.type, {distr t / R} -> Rnd t.
 
-(*   Variant estate {T}: Type -> Type := *)
-(*     | Abort : nat -> T ->  estate T *)
-(*     | Ok : T -> estate T. *)
+Variant Call : Type -> Type :=
+  | CallE (f:ident) : Call unit.
 
-(*   Definition bind A T (f : A ->  estate T) (g : estate A):= *)
-(*     match g with *)
-(*     | Ok x    => f x *)
-(*     | Abort n s => Abort n s *)
-(*   end. *)
-
-(* End Estate. *)
-
-  Variant Rnd : Type -> Type :=
-    | GetRnd : forall t : IhbType.type, {distr t / R} -> Rnd t.
-
-  Variant Call : Type -> Type :=
-    | CallE (f:ident) : Call unit.
-
-  Variant InstrE {ident : eqType}  {mem : memType ident} : Type -> Type :=
-    | Assig : forall t : IhbType.type,  vars t -> expr_ ident mem t  -> InstrE unit
-    | RAssig :  forall t : IhbType.type,  vars t -> expr_ ident mem {distr t / R}  -> InstrE unit
-    | EvalCond : bexpr -> InstrE bool.
+Variant InstrE {ident : eqType}  {mem : memType ident} : Type -> Type :=
+  | Assig : forall t : IhbType.type,  vars t -> expr_ ident mem t  -> InstrE unit
+  | RAssig :  forall t : IhbType.type,  vars t -> expr_ ident mem {distr t / R}  -> InstrE unit
+  | EvalCond : bexpr -> InstrE bool.
 
 Section ParSem.
 
@@ -86,7 +70,7 @@ Section ParSem.
 
   Fixpoint com_sem (c : cmd) :  itree (Call +' E) unit :=
     match c with
-    | abort => Ret tt
+    | abort => ITree.spin
     | skip => Ret tt
     | x <<- e => trigger (Assig x e)
     | x <$- e => trigger (RAssig x e)
@@ -162,17 +146,62 @@ Section PropSem.
       | RetF r => dunit r
       | TauF t => dinterp' (observe t) n
       | VisF _ e k =>
-          match e in Rnd A return (A -> itree Rnd T) -> distr R T with
+          match e in Rnd A return (A -> itree Rnd T) -> {distr T / R} with
           | GetRnd _ mu =>
               fun k0 => \dlet_(t <- mu) (dinterp' (observe (k0 t)) n)
           end k
       end
     else dnull.
 
-  Definition dinterp (t : itree Rnd T) : distr R T :=
+  Definition dinterp (t : itree Rnd T) : {distr T / R}  :=
     dlim (dinterp' (observe t)).
 
 End PropSem.
 
 Definition interp_full (c:cmd) (ps: ident -> cmd) : cmem -> {distr cmem / R} :=
-    fun s => dinterp (interp_intr (interp_call ps (com_sem c)) s).
+  fun s => dinterp (interp_intr (interp_call ps (com_sem c)) s).
+
+(* Section Truc2. *)
+
+(*   Definition Distr (T: Type) : Type := {distr (classicType T) / R}. *)
+
+(*   Definition Monad_Distr : Monad Distr := *)
+(*     {| *)
+(*       ret := fun T => dunit (T := {classic T}); *)
+(*       bind := fun T U mu f => dlet (T := {classic T}) f mu; *)
+(*     |}. *)
+
+(*   Definition to_classic {T:Type} (x : T) : {classic T} := x. *)
+(*   Definition of_classic {T:Type} (x : {classic T}) : T := x. *)
+
+(*   Definition dclassic {T} (mu : {distr T / R}) : {distr {classic T} / R}:= *)
+(*     dmargin to_classic mu. *)
+
+(*   Fixpoint diter_n *)
+(*     {T I : Type} (step : I -> Distr (I + T)) (i : I) (n : nat) : Distr T := *)
+(*     if n is S n then *)
+(*       \dlet_(x <- step i) *)
+(*         match of_classic x with *)
+(*         | inl i => diter_n step i n *)
+(*         | inr t => dunit (to_classic t) *)
+(*         end *)
+(*     else dnull (T:= {classic T}). *)
+
+(*   Definition diter {R I} (step : I -> Distr (I + R)) (i : I) : Distr R := *)
+(*     dlim (diter_n step i). *)
+
+(*   Definition MonadIter_Distr : MonadIter Distr := @diter. *)
+
+(*   Definition handle_rnd : Rnd ~> Distr := *)
+(*     fun _ e => let 'GetRnd _ mu := e in dclassic mu. *)
+
+(*   Definition interp_rnd T t:= *)
+(*     @interp *)
+(*       Rnd *)
+(*       Distr *)
+(*       (@Functor_Monad Distr Monad_Distr) *)
+(*       Monad_Distr MonadIter_Distr handle_rnd *)
+(*       T *)
+(*       t. *)
+
+(* End Truc2. *)
