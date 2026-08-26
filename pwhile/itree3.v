@@ -4,7 +4,7 @@ From mathcomp.ssreflect Require Import all_ssreflect.
 From mathcomp.algebra   Require Import all_algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals constructive_ereal.
-From mathcomp.experimental_reals  Require Import realseq realsum distr.
+From mathcomp.analysis  Require Import counting_distr.
 (* ----------------- *) Require Import inhabited passn pwhile psemantic.
 
 From ITree Require Import
@@ -19,9 +19,6 @@ From ITree Require Import
   RuttFacts.
 
 Import Basics.Monads.
-(* Import MonadNotation. *)
-(* Import ListNotations. *)
-
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -33,31 +30,18 @@ Local Open Scope ring_scope.
 Local Open Scope syn_scope.
 Local Open Scope mem_scope.
 
-(* Section Estate. *)
 
-(*   Variant estate {T}: Type -> Type := *)
-(*     | Abort : nat -> T ->  estate T *)
-(*     | Ok : T -> estate T. *)
+Variant Rnd : Type -> Type :=
+  | GetRnd : forall t : IhbType.type, {distr t / R} -> Rnd t.
 
-(*   Definition bind A T (f : A ->  estate T) (g : estate A):= *)
-(*     match g with *)
-(*     | Ok x    => f x *)
-(*     | Abort n s => Abort n s *)
-(*   end. *)
+Variant Str : Type -> Type :=
+  | CallE (f:ident) : Str unit
+  | WhE : bexpr -> cmd -> Str unit.
 
-(* End Estate. *)
-
-  Variant Rnd : Type -> Type :=
-    | GetRnd : forall t : IhbType.type, {distr t / R} -> Rnd t.
-
-  Variant Str : Type -> Type :=
-    | CallE (f:ident) : Str unit
-    | WhE : bexpr -> cmd -> Str unit.
-
-  Variant InstrE {ident : eqType}  {mem : memType ident} : Type -> Type :=
-    | Assig : forall t : IhbType.type,  vars t -> expr_ ident mem t  -> InstrE unit
-    | RAssig :  forall t : IhbType.type,  vars t -> expr_ ident mem {distr t / R}  -> InstrE unit
-    | EvalCond : bexpr -> InstrE bool.
+Variant InstrE {ident : eqType}  {mem : memType ident} : Type -> Type :=
+  | Assig : forall t : IhbType.type,  vars t -> expr_ ident mem t  -> InstrE unit
+  | RAssig :  forall t : IhbType.type,  vars t -> expr_ ident mem {distr t / R}  -> InstrE unit
+  | EvalCond : bexpr -> InstrE bool.
 
 Section ParSem.
 
@@ -68,7 +52,7 @@ Section ParSem.
 
   Fixpoint com_sem (c : cmd) :  itree (Str +' E) unit :=
     match c with
-    | abort => Ret tt
+    | abort => ITree.spin
     | skip => Ret tt
     | x <<- e => trigger (Assig x e)
     | x <$- e => trigger (RAssig x e)
@@ -144,14 +128,14 @@ Section PropSem.
       | RetF r => dunit r
       | TauF t => dinterp' (observe t) n
       | VisF _ e k =>
-          match e in Rnd A return (A -> itree Rnd T) -> distr R T with
+          match e in Rnd A return (A -> itree Rnd T) -> {distr T / R} with
           | GetRnd _ mu =>
               fun k0 => \dlet_(t <- mu) (dinterp' (observe (k0 t)) n)
           end k
       end
     else dnull.
 
-  Definition dinterp (t : itree Rnd T) : distr R T :=
+  Definition dinterp (t : itree Rnd T) : {distr T / R} :=
     dlim (dinterp' (observe t)).
 
 End PropSem.

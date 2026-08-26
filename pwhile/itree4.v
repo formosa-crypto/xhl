@@ -4,7 +4,7 @@ From mathcomp.ssreflect Require Import all_ssreflect.
 From mathcomp.algebra   Require Import all_algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals constructive_ereal.
-From mathcomp.experimental_reals  Require Import realseq realsum distr.
+From mathcomp.analysis  Require Import counting_distr.
 (* ----------------- *) Require Import inhabited passn pwhile psemantic.
 
 From ITree Require Import
@@ -36,7 +36,7 @@ Variant Call : Type -> Type :=
  | CallE: ident -> cmem -> Call nat. (* A corriger *)
 
 Variant Rnd : Type -> Type :=
-  | GetRnd : forall t : IhbType.type, {distr t / R} -> Rnd t.
+  | GetRnd : forall t : IhbType.type, {distr t / R}  -> Rnd t.
 
 Section ParSem.
 
@@ -56,6 +56,7 @@ Section ParSem.
     (c : cmd) (e:bexpr) (m : cmem) :
     itree E cmem :=
     ITree.iter (isem_while_round sem_i c e) m.
+
 
     Fixpoint com_sem (c : cmd) : cmem -> itree (Call +' E) cmem :=
     match c with
@@ -96,7 +97,7 @@ End ParSem.
 
 Section Truc2.
 
-  Definition Distr (T: Type) : Type := distr R (classicType T).
+  Definition Distr (T: Type) : Type := {distr (classicType T) / R}.
 
   Definition Monad_Distr : Monad Distr :=
     {|
@@ -107,7 +108,7 @@ Section Truc2.
   Definition to_classic {T:Type} (x : T) : {classic T} := x.
   Definition of_classic {T:Type} (x : {classic T}) : T := x.
 
-  Definition dclassic {T} (mu : distr R T) : distr R {classic T} :=
+  Definition dclassic {T} (mu : {distr T / R}) : {distr {classic T} / R}:=
     dmargin to_classic mu.
 
   Fixpoint diter_n
