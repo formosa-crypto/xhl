@@ -1,9 +1,9 @@
 (* -------------------------------------------------------------------- *)
 From Stdlib             Require Import Setoid Morphisms.
-From mathcomp           Require Import all_boot all_order all_algebra.
+From mathcomp           Require Import boot order algebra.
 From mathcomp.reals     Require Import reals.
 From mathcomp.classical Require Import boolp.
-From mathcomp.experimental_reals  Require Import realseq realsum distr.
+From mathcomp.analysis Require Import counting_distr.
 From xhl.pwhile Require Import notations inhabited pwhile psemantic passn range.
 
 Set   Implicit Arguments.
@@ -368,7 +368,7 @@ exists (dlim ν).
     rewrite !ssemE => /eqP <-; case: ifPn => _.
     - by apply/iscoupling_dnull.
     - by case: m' => a b; apply/iscoupling_dunit.
-  elim: n => /= [|n ihn]; rewrite !(iterc0, itercSr) !ssemE.
+  elim: n => [|n ihn]; rewrite !(iterc0, itercSr) !ssemE.
   * by case: {+}m => a b; apply/iscoupling_dunit.
   apply/iscoupling_dlet => //= m' /rg_νn Im'; move/hs: (Im').
   rewrite !ssemE => /eqP eqe; rewrite -eqe /ν1.

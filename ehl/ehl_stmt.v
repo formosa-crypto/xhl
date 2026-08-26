@@ -1,9 +1,8 @@
 From HB Require Import structures.
-From mathcomp Require Import all_boot all_order all_algebra.
+From mathcomp Require Import boot order algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals constructive_ereal.
-From mathcomp.analysis Require Import esum ereal.
-From mathcomp.experimental_reals  Require Import realseq realsum distr edistr.
+From mathcomp.analysis Require Import esum ereal counting_distr.
 From mathcomp    Require  finmap.
 From xhl.pwhile Require Import notations inhabited pwhile psemantic range.
 

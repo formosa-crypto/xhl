@@ -1,13 +1,12 @@
 (* -------------------------------------------------------------------- *)
-From HB Require Import structures.
-From mathcomp Require Import all_boot all_order all_algebra.
+From HB                 Require Import structures.
+From mathcomp           Require Import boot order algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals constructive_ereal.
-From mathcomp.analysis Require Import esum ereal.
-From mathcomp.experimental_reals  Require Import realseq realsum distr edistr.
-From mathcomp    Require  finmap.
-From xhl.pwhile Require Import notations inhabited pwhile psemantic range.
-From xhl.ehl    Require Import ehl_stmt.
+From mathcomp.analysis  Require Import esum ereal counting_distr.
+From mathcomp           Require finmap.
+From xhl.pwhile         Require Import notations inhabited pwhile psemantic range.
+From xhl.ehl            Require Import ehl_stmt.
 
 Import GRing.Theory Order.Theory Num.Theory.
 
@@ -40,30 +39,6 @@ Definition cond2_independent (P:  mem -> \bar pwhile.R -> mem -> \bar pwhile.R) 
 
 Definition cl_cond2_independent (cl:phi) :=
   forall (f: Y), cond2_independent (get_post (cl f)).
-
-(* Definition lcont p := *)
-(*   forall (u : nat -> pwhile.R) (x x' : mem), *)
-(*     (forall n m, (n <= m)%N -> u n <= u m) -> *)
-(*     (p x *)
-(*        (ereal_sup (classical_sets.image classical_sets.setT (fun n => (u n)%:E))) x' *)
-(*        * ereal_sup (classical_sets.image classical_sets.setT (fun n => (u n)%:E)) *)
-(*      <= ereal_sup (classical_sets.image classical_sets.setT *)
-(*           (fun n =>  p x ((u n)%:E) x' * (u n)%:E)))%E. *)
-
-
-(* (** Left-continuity of a postcondition's weighted contribution, along *) *)
-(* (*     nondecreasing sequences of probability weights.  Equivalently: the *) *)
-(* (*     postcondition is left-continuous in its weight argument (it holds with *) *)
-(* (*     equality; only this direction is needed here).  It is discharged trivially *) *)
-(* (*     by the empty contract and by the most-general contract of [ehl2.v]. *) *)
-(* Definition cl_post_lcont (cl : phi) := forall (p:Y), lcont (get_post (cl p)). *)
-(*   (* forall (p : Y) (u : nat -> pwhile.R) (x x' : mem), *) *)
-(*   (*   (forall n m, (n <= m)%N -> u n <= u m) -> *) *)
-(*   (*   (get_post (cl p) x *) *)
-(*   (*      (ereal_sup (classical_sets.image classical_sets.setT (fun n => (u n)%:E))) x' *) *)
-(*   (*      * ereal_sup (classical_sets.image classical_sets.setT (fun n => (u n)%:E)) *) *)
-(*   (*    <= ereal_sup (classical_sets.image classical_sets.setT *) *)
-(*   (*         (fun n => get_post (cl p) x ((u n)%:E) x' * (u n)%:E)))%E. *) *)
 
 Inductive derivable : psi -> phi -> cond -> cmd -> cond -> Prop :=
 | H_Skip : forall f cl ps,
@@ -133,7 +108,7 @@ Notation kehl   := (kehl_ ps).
 Lemma ehl_skip f g :
   (forall m, (g m <= f m)%E) ->
   ehl f skip g.
-Proof. by move => h m; rewrite ssemE exp_dunit. Qed.
+Proof. by move => h m; rewrite ssemE eexp_dunit. Qed.
 
 (* -------------------------------------------------------------------- *)
 
@@ -143,9 +118,9 @@ Lemma ehl_abort f g :
 Proof.
 move => h m.
 rewrite ssem_abortE /espe.
-rewrite (@esum.eq_sum _ _ _ (fun _ => 0)).
-- by rewrite esum.sum0.
+rewrite (eq_esum _ _ (fun _ => 0)).
 - by move => x; rewrite dnullE mule0.
+- by rewrite esum0.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -157,15 +132,11 @@ Lemma ehl_seq_m (m:mem) f g h c1 c2:
   (espe(\dlet_(m' <- ssem_ ps c1 m) ssem_ ps c2 m') g <= f m)%E.
 Proof.
 move => Hg h1 h2.
-rewrite exp_dlet //.
+rewrite eexp_dlet //.
 apply: (@le_trans _ _ (espe (ssem_ ps c1 m) h)); last exact: h1.
-rewrite /espe; apply: esum.le_sum.
-- move => x; apply: mule_ge0; last by apply: lee_tofin; apply: ge0_mu.
-  apply: sum_ge0 => x'; apply: mule_ge0; first exact: Hg.
-  by apply: lee_tofin; apply: ge0_mu.
-- move => x; apply: lee_wpmul2r.
-  + by apply: lee_tofin; apply: ge0_mu.
-  + exact: h2.
+rewrite /espe; apply: le_esum => x ?; apply: lee_wpmul2r.
++ by apply: lee_tofin; apply: ge0_mu.
++ exact: h2.
 Qed.
 
 Lemma ehl_seq f g h c1 c2:
@@ -181,7 +152,7 @@ Qed.
 
 Lemma ehl_assign {T : IhbType.type} f x (e : expr_ X mem T) :
   ehl (fun m => f m.[x <- `[{e}] m]) (x <<- e) f.
-Proof. by  move => m; rewrite ssemE exp_dunit. Qed.
+Proof. by  move => m; rewrite ssemE eexp_dunit. Qed.
 
 (* -------------------------------------------------------------------- *)
 
@@ -217,15 +188,10 @@ Lemma ehl_while (e:expr_ X mem bool) c f :
 Proof.
 move => Hf.
 have Hpos : forall m : mem, (0%R <= (if ~~ `[{e}] m then f m else +oo))%E.
-+ by move => m;  case (`[{e}] m) => //=.
++ move => m;  case (`[{e}] m) => //=. exact: le0y.
 rewrite /lift => Hi m.
-rewrite  ssemE /espe esum_sum';last first.
-- move => x; rewrite mule_ge0 //.
-  by rewrite lee_tofin.
-apply: (esum_dlim_r (homo_whilen e c m)) => //.
-move => n; rewrite -esum_sum';last first.
-- move => x; rewrite mule_ge0 //.
-  by rewrite lee_tofin.
+rewrite ssemE /espe.
+apply: (esum_dlim_r (dhomo_dnd (homo_whilen e c m)) Hpos) => n.
 move : m.
 elim : n => /=.
 + by apply ehl_abort.
@@ -275,15 +241,12 @@ Lemma recursive_proc (ps': psi) (cl' : phi) :
 Proof.
   rewrite /cl_cond2_independent /cond2_independent.
   move => hcl h p s.
-  rewrite /espe  esum_sum';last first.
-  - move => x; rewrite mule_ge0 // ?lee_tofin //.
-    exact: post_pos.
-   rewrite {2}test8.
-   apply esum_dlim_r.
-    + move => ????.
-     apply mono_ssem_aux.
-     by apply homo_ubnf.
-    + move => m. exact: post_pos.
+  rewrite /espe {2}test8.
+  apply esum_dlim_r.
+  + move => ????.
+    apply mono_ssem_aux.
+    by apply homo_ubnf.
+  + move => m. exact: post_pos.
   move => n.
   (*This should be a lemma*)
   rewrite ssem_ubnf_dnull ubnf_ssem (test9 _ _ _ _ ps') test5.
@@ -296,18 +259,13 @@ Proof.
     exact: pre_pos.
   move => s p.
   rewrite (inline2_split n 1) //=.
-  rewrite -esum_sum';last first.
-  + move => x; rewrite mule_ge0 // ?lee_tofin //.
-    exact: post_pos.
   rewrite /hoare_triple_proc_ctx in h.
   rewrite /hoare_triple_ctx in h.
-  under esum.eq_sum => i do rewrite (hcl p _ (EFin (ssem_ (k_inliner_ps1 n ps') (ps' p) s i))).
+  under eq_esum => i do rewrite (hcl p _ (EFin (ssem_ (k_inliner_ps1 n ps') (ps' p) s i))).
   apply: h => // p0 s0.
-  rewrite /espe esum_sum';last first.
-  + move => x; rewrite mule_ge0 // ?lee_tofin //.
-    exact: post_pos.
- under eq_esum do rewrite (hcl p0 _ 0%E).
- by apply: Hn.
+  rewrite /espe.
+  under eq_esum do rewrite (hcl p0 _ 0%E).
+  by apply: Hn.
 Qed.
 
 (** Modular Hoare Triple Verification **)
@@ -397,19 +355,19 @@ fun (f:Y) => ((fun _ => 0)%E,
                    if (r <= ((ssem_ ps (ps f) s0) s)%:E)%E then 0%E else +oo%E)
           ).
 
-(* The logic in section Logic cannot be proven complete.
-   This is because the to proof completes, the contract "cl_mgt"
-   is requires. This contract implies that postcondition for procedure
-   dependents on the resulting distribution of the execution of the program.
-   However, to proof soundness, the postcondition must be independent from
-   from this argument.
+(* The logic in section Logic cannot be proven complete. *)
+(*    This is because the to proof completes, the contract "cl_mgt" *)
+(*    is requires. This contract implies that postcondition for procedure *)
+(*    dependents on the resulting distribution of the execution of the program. *)
+(*    However, to proof soundness, the postcondition must be independent from *)
+(*    from this argument. *)
 
-   If the H_rec case in the logic is like in Ellora, then the logic is complete.
+(*    If the H_rec case in the logic is like in Ellora, then the logic is complete. *)
 
-   The ehl2.v file present a logic which is complete. Not, that
-   the logic in ehl2.v allows to use H_rec more then one time
-   which is not possible in the logic present in section logic.
- *)
+(*    The ehl2.v file present a logic which is complete. Not, that *)
+(*    the logic in ehl2.v allows to use H_rec more then one time *)
+(*    which is not possible in the logic present in section logic. *)
+(*  *)
 
 End Complete.
 
@@ -426,20 +384,21 @@ Lemma espe_coupling (ν : Distr (cmem * cmem)) (g g':(@ehl_stmt.cond _ cmem)) :
   (espe (dsnd ν) g <= espe (dfst ν) g')%E.
 Proof.
 move => Hg Hg' Hpw.
-rewrite exp_dlet //.
-rewrite (_ : (fun p => espe (dunit p.2) g) = (fun p => g p.2));
-  last by apply/funext => p; rewrite exp_dunit.
-rewrite [espe (dfst ν) g']exp_dlet //.
-rewrite (_ : (fun p => espe (dunit p.1) g') = (fun p => g' p.1));
-  last by apply/funext => p; rewrite exp_dunit.
-rewrite /espe; apply: esum.le_sum.
-- move => p; apply: mule_ge0; first exact: Hg.
-  by apply: lee_tofin; apply: ge0_mu.
-- move => p.
-  case/boolP: (p \in dinsupp ν) => [hp | /dinsuppPn hp].
-  + apply: lee_wpmul2r; first by apply: lee_tofin; apply: ge0_mu.
-    exact: Hpw _ hp.
-  + by rewrite hp !mule0.
+rewrite eexp_dlet //.
+rewrite {1}/espe.
+rewrite (eq_esum _ _ (fun p => g p.2 * EFin (ν p))%E).
++ by move => ??; rewrite eexp_dunit.
+rewrite [espe (dfst ν) g'] eexp_dlet //.
+rewrite {1}/espe.
+rewrite (eq_esum _
+           (fun x => espe (dunit (T:=cmem) x.1) g' * EFin (ν x))%E
+           (fun p => g' p.1 * EFin (ν p))%E).
++ by move => ??; rewrite eexp_dunit.
+rewrite /espe; apply: le_esum => p _.
+case/boolP: (p \in dinsupp ν) => [hp | /dinsuppPn hp].
++ apply: lee_wpmul2r; first by apply: lee_tofin; apply: ge0_mu.
+  exact: Hpw _ hp.
++ by rewrite hp !mule0.
 Qed.
 
 Lemma ehl_prhl (c d:cmd) (f g f' g':(@ehl_stmt.cond _ cmem))  P Q (ps: ident -> cmd):

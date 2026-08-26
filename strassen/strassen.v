@@ -1,10 +1,11 @@
 (* -------------------------------------------------------------------- *)
-From mathcomp Require Import all_boot all_order.
-From mathcomp.algebra   Require Import all_algebra.
+From mathcomp Require Import boot order.
+From mathcomp.algebra   Require Import algebra.
 From mathcomp.finmap    Require Import finmap.
-From mathcomp.classical Require Import boolp classical_sets.
+From mathcomp.classical Require Import boolp classical_sets filter.
 From mathcomp.reals     Require Import reals constructive_ereal.
-From mathcomp.experimental_reals  Require Import realseq realsum distr xfinmap.
+From mathcomp.analysis Require Import counting_distr ereal esum.
+From mathcomp.analysis Require Import sequences normedtype topology.
 (* ------- *)           Require Import xbigops misc maxflow elift.
 
 Set   Implicit Arguments.
@@ -13,6 +14,7 @@ Unset Printing Implicit Defensive.
 Unset SsrOldRewriteGoalsOrder.
 
 Import GRing.Theory Num.Theory Order.Theory.
+Import numFieldNormedType.Exports.
 
 Local Open Scope ring_scope.
 
@@ -26,100 +28,47 @@ Local Notation "⇐ x" := (inl (Some x)) (at level 2).
 Local Notation "⇒ x" := (inr (Some x)) (at level 2).
 
 (* ==================================================================== *)
-Local Notation distr T := {distr T / R}.
+Local Notation distr T := {distr T%type / R}.
 
 (* -------------------------------------------------------------------- *)
-Lemma nbounded_sub_mono (u : nat -> R) : nbounded u ->
-  {α : nat -> nat & {b : bool |
-    {homo α : x y / (x < y)%N} &
-    {homo ((-1) ^+ b \*o (u \o α)) : x y / (x <= y)%N >-> (x <= y)} } }.
+(* [BW] used to be proved here from scratch, on top of a 45-line         *)
+(* [nbounded_sub_mono]; mathcomp-analysis now provides the theorem       *)
+(* itself.  All that is left is the sigma-type packaging, which [strcvg] *)
+(* below needs because it computes with the extracted subsequence.       *)
+Lemma BW (u : nat -> R) : bounded_fun u ->
+  {α : nat -> nat | {homo α : x y / (x < y)%N} & cvgn (u \o α)}.
 Proof.
-move=> bnd_u; pose E n := `[<forall m, (n < m)%N -> (u m < u n)%R>].
-case: (discrete.existsTP (fun s : seq nat => {subset E <= s})) => /=; last first.
-+ case/natpred_finiteN => α homo_α Eα; exists α, true => //.
-  move=> m n le_mn; rewrite expr1 /= !mulN1r lerNr opprK.
-  move: le_mn; rewrite leq_eqVlt => /orP[/eqP->//|lt_mn].
-  by have /asboolP := Eα m => /(_ (α n) (homo_α _ _ lt_mn)) /ltW.
-case=> s sub_sE; pose N := \max_(i <- s) i.+1.
-have h k : (N <= k)%N -> exists k', (k < k')%N && (u k <= u k').
-+ move=> le_Nk; case/boolP: (E k).
-  * move/sub_sE => k_in_s; move: le_Nk; rewrite /N.
-    rewrite (perm_big _ (perm_to_rem (k_in_s))) /=.
-    by rewrite big_cons geq_max ltnn.
-  case/existsp_asboolPn=> k' /asboolPn /imply_asboolPn.
-  case=> lt_kk' /negP; rewrite -leNgt => le_ukuk'.
-  by exists k'; rewrite lt_kk' le_ukuk'.
-pose α := fix α n := if n is n.+1
-  then xchoose (h _ (leq_addr (α n - N) N))
-  else N%N.
-have geN_α n : (N <= α n)%N.
-+ elim: n => //= n ih; have := xchooseP (h _ (leq_addr (α n - N) N)).
-  case/andP; rewrite {1}subnKC // => /(leq_trans _) h' _.
-  by apply/h'; apply/(leq_trans ih).
-have homo_α : {homo α : x y / (x < y)%N}.
-+ apply/homoS_lt => -[|n] /=.
-  * have := xchooseP (h _ (leq_addr (N - N) N)).
-    by case/andP; rewrite subnn {1}addn0.
-  set m := xchoose _; have := xchooseP (h _ (leq_addr (m - N) N)).
-  case/andP; rewrite {1}subnKC //.
-  have := xchooseP (h _ (leq_addr (α n - N) N)).
-  rewrite {1}subnKC ?geN_α // => /andP[h' _].
-  by apply/(leq_trans _ h')/ltnW/geN_α.
-exists (fun n => α n.+1), false => //.
-+ by move=> m n; rewrite -ltnS => /homo_α.
-apply/homoS_ler=> n; rewrite expr0 /= !mul1r.
-set m := xchoose _; have := xchooseP (h _ (leq_addr (m - N) N)).
-set k := xchoose _ => /andP[]; rewrite subnKC //.
-have := xchooseP (h _ (leq_addr (α n - N) N)); rewrite -/m.
-by rewrite subnKC ?geN_α // => /andP[/ltnW /(leq_trans (geN_α _))].
-Qed.
-
-(* -------------------------------------------------------------------- *)
-
-Lemma BW (u : nat -> R) : nbounded u ->
-  {α : nat -> nat | {homo α : x y / (x < y)%N} & iscvg (u \o α)}.
-Proof.
-move=> bnd; have bndcp f : nbounded (u \o f).
-+ by case: bnd => v hv; exists v => n; apply/hv.
-case/nbounded_sub_mono: (bnd) => [α] [[]] homo_α homo_uα; last first.
-+ exists α => //; have /ncvg_mono_bnd: nbounded (u \o α) by apply/bndcp.
-  case=> [x y /homo_uα|]; first by rewrite !expr0 /= !mul1r.
-  by move=> l cvl; exists l.
-exists α => //; have /ncvg_mono_bnd: nbounded ((\- u) \o α).
-+ case: bnd; elim/nbh_finW => e gt0_e /= h.
-  exists (NFin _ gt0_e) => n /=; move: (h (α n)); rewrite !inE.
-  by rewrite !subr0 normrN.
-case=> [x y /homo_uα|]; first by rewrite !expr1 /= !mulN1r.
-move=> l cvl; exists (- l) => /=; apply/(ncvg_eq (v := \- (\- u \o α))).
-+ by move=> x /=; rewrite opprK.
-+ by apply/(@ncvgN _ _ l%:E).
+move=> /bolzano_weierstrass/cid2[f incr_f cvg_f].
+rewrite leEnat in incr_f.
+exists f; last exact: cvg_f.
+by move=> x y; rewrite !ltnNge incr_f.
 Qed.
 
 (* -------------------------------------------------------------------- *)
 Axiom DCT : forall {T: choiceType} (un : nat -> T -> R) (u g : T -> R),
-     (forall x, ncvg (un^~ x) (u x)%:E)
+     (forall x, ((un^~ x) @ \oo --> u x)%classic)
   -> (forall n x, `|un n x| <= g x)
-  -> summable g
-  -> summable u /\ ncvg (fun n => psum (un n)) (psum u)%:E.
+  -> esummable [set: T] (EFin \o g)
+  -> esummable [set: T] (EFin \o u)
+     /\ ((fun n => rsum (un n)) @ \oo --> rsum u)%classic.
 
 (* -------------------------------------------------------------------- *)
 Lemma DCT_swap {T: choiceType} (un : nat -> T -> R) (u g : T -> R) :
-     (forall x, ncvg (un^~ x) (u x)%:E)
+     (forall x, ((un^~ x) @ \oo --> u x)%classic)
   -> (forall n x, `|un n x| <= g x)
-  -> summable g
-  -> fine (nlim (fun n => psum (un n)))
-     = psum (fun a => (fine (nlim (un^~ a)))).
+  -> esummable [set: T] (EFin \o g)
+  -> limn (fun n => rsum (un n)) = rsum (fun a => limn (un^~ a)).
 Proof.
-move=> h1 h2 h3; case: (DCT h1 h2 h3) => _ /nlimE ->.
-by apply/eq_psum => x /=; rewrite (nlimE (h1 x)).
+move=> h1 h2 h3; case: (DCT h1 h2 h3) => _ /cvg_lim -> //.
+by apply/eq_rsum => x /=; rewrite (cvg_lim _ (h1 x)).
 Qed.
 
 (* -------------------------------------------------------------------- *)
 Lemma DCT_ncvg {T: choiceType} (un : nat -> T -> R) (u g : T -> R) :
-     (forall x, ncvg (un^~ x) (u x)%:E)
+     (forall x, ((un^~ x) @ \oo --> u x)%classic)
   -> (forall n x, `|un n x| <= g x)
-  -> summable g
-  -> ncvg (fun n => psum (un n)) (psum u)%:E.
+  -> esummable [set: T] (EFin \o g)
+  -> ((fun n => rsum (un n)) @ \oo --> rsum u)%classic.
 Proof. by move=> h1 h2 h3; case: (@DCT T un u g). Qed.
 
 (* ==================================================================== *)
@@ -129,13 +78,13 @@ Context {A : countType} (μ : nat -> distr A).
 (* -------------------------------------------------------------------- *)
 Lemma strcvg :
   {Ω : nat -> nat | {homo Ω : x y / (x < y)%N} &
-    forall a : A, iscvg (fun n => μ (Ω n) a)}.
+    forall a : A, cvgn (fun n => μ (Ω n) a)}.
 Proof.
 have α a θ: {α : nat -> nat |
-  {homo α : x y / (x < y)%N} & iscvg (μ^~ a \o θ \o α)}.
+  {homo α : x y / (x < y)%N} & cvgn (μ^~ a \o θ \o α)}.
 + case: (@BW (μ^~ a \o θ)) => [|α mono_α cvg_μα]; last by exists α.
-  apply/asboolP/nboundedP; exists 2%:R => // n.
-  by rewrite (@le_lt_trans _ _ 1) ?ltr1n // ger0_norm //= le1_mu1.
+  apply: (bounded_funP (M := 1)) => n.
+  by rewrite ger0_norm //= le1_mu1.
 have homo_α a θ : {homo tag (α a θ) : x y / (x < y)%N} by case: (α a θ).
 pose ω θ n := odflt idfun (omap (fun a => tag (α a θ)) (choice.unpickle n)).
 have homo_ω k θ: {homo θ : m n / (m < n)%N} -> {homo ω θ k : m n / (m < n)%N}.
@@ -164,7 +113,7 @@ exists (fun n => (Ω n).2 n) => [|a].
   rewrite (misc.homo_leq_mono (homoΩ2 _)) homo_geidfun //.
   by apply/homo_bigcomp => k _; apply/homoΩ1.
 have [p pE]: exists p, p = (choice.pickle a).+1 by exists (choice.pickle a).+1.
-rewrite (iscvg_shift p); pose T n := (Ω (n + p)%N).2 (n + p)%N.
+rewrite -(is_cvg_shiftn p); pose T n := (Ω (n + p)%N).2 (n + p)%N.
 have h: exists2 σ, {homo σ : x y / (x < y)%N} & T =1 (Ω p).2 \o σ.
 + exists (fun n => (\big[comp/idfun]_(0 <= j < n) (Ω (p.+1+j)%N).1) (n+p)%N).
   * move=> x y ltxy; rewrite -(homo_ltn_mono (homoΩ2 p)).
@@ -175,8 +124,8 @@ have h: exists2 σ, {homo σ : x y / (x < y)%N} & T =1 (Ω p).2 \o σ.
     by apply/homo_geidfun/homo_bigcomp => k _; apply/homoΩ1.
   * by move=> n /=; rewrite /T addnC ΩD2E.
 case: h => σ homoσ TE; pose X := ((μ^~ a) \o (Ω p).2) \o σ.
-apply/(@iscvg_eq _ _ X); first by move=> k /=; rewrite -/(T _) TE.
-apply/iscvg_sub => //; rewrite {p T TE X}pE /=; set ξ := Ω _.
+apply/(@cvgn_eq _ _ X); first by move=> k /=; rewrite -/(T _) TE.
+apply/cvgn_subseq => //; rewrite {p T TE X}pE /=; set ξ := Ω _.
 by rewrite /ω choice.pickleK /=; case: (α a ξ.2).
 Qed.
 End CountableSeqCompacityForDistr.
@@ -186,14 +135,14 @@ Lemma strcvg2
   {A B : countType} (μ1 : nat -> distr A) (μ2 : nat -> distr B)
 :
   { Ω : nat -> nat | {homo Ω : x y / (x < y)%N} &
-     [/\ forall a : A, iscvg (fun n => μ1 (Ω n) a)
-       & forall b : B, iscvg (fun n => μ2 (Ω n) b) ] }.
+     [/\ forall a : A, cvgn (fun n => μ1 (Ω n) a)
+       & forall b : B, cvgn (fun n => μ2 (Ω n) b) ] }.
 Proof.
 case: (strcvg μ1) => ω1 mono1 cvg1.
 case: (strcvg (μ2 \o ω1)) => ω2 mono2 cvg2.
 (exists (ω1 \o ω2); last split) => // [m n|a].
 + by move/mono2/mono1.
-+ by apply/(iscvg_sub (u := (μ1 \o ω1)^~ a) (σ := ω2)).
++ by apply/(cvgn_subseq (u := (μ1 \o ω1)^~ a) (s := ω2)).
 Qed.
 
 (* ==================================================================== *)
@@ -314,15 +263,15 @@ Qed.
 (* -------------------------------------------------------------------- *)
 Lemma sum_cLE : \sum_(a : A) c (⊤, ↓ (⇐ a)) = Ω (-ε) * dweight μ1.
 Proof.
-rewrite pr_predT psum_fin mulr_sumr; apply/eq_bigr.
-by move=> a _; rewrite ger0_norm.
+rewrite pr_finE mulr_sumr; apply/eq_bigr.
+by move=> a _; rewrite mul1r.
 Qed.
 
 (* -------------------------------------------------------------------- *)
 Lemma sum_cRE : \sum_(b : B) c (↓ (⇒ b), ⊥) = dweight μ2.
 Proof.
-rewrite pr_predT psum_fin; apply/eq_bigr.
-by move=> b _; rewrite ger0_norm.
+rewrite pr_finE; apply/eq_bigr.
+by move=> b _; rewrite mul1r.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -475,8 +424,8 @@ rewrite cweightE /= !(pr_pred0, pr_predT, big_pred0_eq).
 rewrite !Monoid.simpm -addrA addNr addr0 big_option /=.
 rewrite {1}/c /= !pr_predT -[LHS]addr0 -!addrA.
 do 2! congr+%R; apply/esym/eqP; rewrite addrC subr_eq0.
-rewrite psum_fin mulr_sumr; apply/eqP/eq_bigr.
-by move=> a _; rewrite /c /= ger0_norm.
+rewrite -pr_predT pr_finE mulr_sumr; apply/eqP/eq_bigr.
+by move=> a _; rewrite /c /= mul1r.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -488,7 +437,8 @@ Lemma cweightE_cutR : cweight predT NF = \sum_b c (↓ (→ b), ⊥).
 Proof.
 rewrite cweightE /= !(pr_pred0, pr_predT, big_pred0_eq).
 rewrite !Monoid.simpm big_option /=; congr +%R.
-by rewrite psum_fin; apply/eq_bigr=> b _; rewrite ger0_norm.
+rewrite -pr_predT pr_finE.
+by apply/eq_bigr=> b _; rewrite mul1r.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -618,8 +568,8 @@ Definition SμR_r (ab : option A * B) : R :=
 Lemma dweight_SμL : \sum_ab SμL_r ab = dweight μ1.
 Proof.
 rewrite /SμL_r; pose F a b := Ω ε * f (↓ (⇐ a), ↓ (→ b)).
-rewrite -(pair_big xpredT xpredT F) /= {}/F pr_predT psum_fin.
-apply/eq_bigr=> a _; rewrite ger0_norm // -mulr_sumr.
+rewrite -(pair_big xpredT xpredT F) /= {}/F pr_finE.
+apply/eq_bigr=> a _; rewrite mul1r -mulr_sumr.
 by rewrite -kcf_flowNFL fLE /c /= mulrA -ΩD subrr Ω0 mul1r.
 Qed.
 
@@ -627,8 +577,8 @@ Qed.
 Lemma dweight_SμR : \sum_ab SμR_r ab = dweight μ2.
 Proof.
 rewrite /SμR_r; pose F a b := f (↓ (← a), ↓ (⇒ b)).
-rewrite -(pair_big xpredT xpredT F) /= {}/F pr_predT psum_fin.
-rewrite exchange_big; apply/eq_bigr=> b _ /=; rewrite ger0_norm //.
+rewrite -(pair_big xpredT xpredT F) /= {}/F pr_finE.
+rewrite exchange_big; apply/eq_bigr=> b _ /=; rewrite mul1r.
 by rewrite -kcf_flowNFR fRE.
 Qed.
 
@@ -659,15 +609,13 @@ Arguments SμR : simpl never.
 Lemma FinWeakStrassen : elift ε δ μ1 μ2 S.
 Proof.
 exists (SμL, SμR) => /=; split.
-+ move=> a; rewrite dfstE psum_fin /= /SμL_r /=.
++ move=> a; rewrite dfstE_fin /= /SμL_r /=.
   have ->: μ1 a = Ω ε * c (⊤, ↓ (⇐ a)).
   - by rewrite /c /= mulrA -ΩD subrr Ω0 mul1r.
-  rewrite -fLE kcf_flowNFL mulr_sumr; apply/eq_bigr.
-  by move=> b _; rewrite normrM !ger0_norm // (ge0, ge0_flowNF).
-+ move=> b; rewrite dsndE psum_fin /= /SμR_r /=.
+  by rewrite -fLE kcf_flowNFL mulr_sumr.
++ move=> b; rewrite dsndE_fin /= /SμR_r /=.
   have ->: μ2 b = c (↓ (⇒ b), ⊥) by [].
-  rewrite -fRE kcf_flowNFR; apply/eq_bigr.
-  by move=> a _; rewrite ger0_norm // ge0_flowNF.
+  by rewrite -fRE kcf_flowNFR.
 + move=> a b /dinsuppP /=; rewrite /SμL_r /= => /eqP.
   rewrite mulf_eq0 gt_eqF ?gt0_Ω //=; set e := (X in f X).
   move=> nz_fe; have := le_NFfc f e; rewrite /c /=.
@@ -770,9 +718,11 @@ Definition mfinrestr (x : c) := μ (val x).
 Lemma mfinrestr_is_distr : isdistr mfinrestr.
 Proof.
 apply/isdistr_finP; split=> [x|]; first by apply/ge0_mu.
-have /gerfin_psum -/(_ c) := summable_mu μ.
-move/le_trans => /(_ _ (le1_mu μ)) /(le_trans _); apply.
-by apply/ler_sum=> /= x _; rewrite ger0_norm.
+apply: (le_trans _ (le1_rsum μ)).
+rewrite -(big_map (@fsval A c) xpredT (fun j => μ j)) /=.
+apply: gerfinseq_rsum; last exact: summable_mu.
++ by rewrite map_inj_uniq ?index_enum_uniq //; exact: val_inj.
+by move=> ?; exact: ge0_mu.
 Qed.
 
 Definition dfinrestr := locked (mkdistr (mfinrestr_is_distr)).
@@ -783,12 +733,19 @@ Proof. by unlock dfinrestr. Qed.
 Lemma pr_dfinrestr (X : pred c) :
   \P_[dfinrestr] X = \P_[μ] (rlift X false).
 Proof.
-rewrite [in RHS]/pr (psum_finseq (r := (enum_fset c))).
-+ by apply/fset_uniq.
-+ move=> x; rewrite {1}/in_mem /= mulf_eq0 negb_or => /andP[].
-  by rewrite /rlift; case: {-}_ / idP => //; rewrite eqxx.
-rewrite -big_fset_seq /= /pr psum_fin; apply/eq_bigr => /= x _.
-by rewrite dfinrestrE rlift_val.
+rewrite pr_finE.
+have -> : \P_[μ] (rlift X false)
+        = rsum (fun j => (rlift X false j)%:R * μ j) by [].
+under eq_bigr => i _ do rewrite -(rlift_val X false) dfinrestrE.
+rewrite -(big_map (@fsval A c) xpredT
+            (fun j => (rlift X false j)%:R * μ j)) /=.
+rewrite (rsum_finseq (r := [seq fsval x | x <- index_enum c])) //.
++ by rewrite map_inj_uniq ?index_enum_uniq //; exact: val_inj.
++ by move=> j; rewrite mulr_ge0 ?ler0n ?ge0_mu.
+move=> j; rewrite mulf_eq0 negb_or => /andP[].
+rewrite pnatr_eq0 eqb0 negbK /rlift.
+case: {-}_ / idP => // h _ _.
+by apply/mapP; exists [`h]%fset; rewrite ?mem_index_enum.
 Qed.
 End DistrFinRestr.
 
@@ -839,8 +796,8 @@ exists (ζ1, ζ2) => /=; split.
     apply/esym; apply/(dinsuppPn μ1); rewrite /in_mem.
     by apply/contra: ac1 => /hc1.
   have := ν1E [`ac1]%fset; rewrite dfinrestrE /= => <-.
-  rewrite dmarginE !dletE /=; apply/eq_psum=> /=.
-  by case=> [a' b'] /=; rewrite !dunit1E /=.
+  rewrite dmarginE !dletE /=; congr fine; apply/eq_esum => /=.
+  by case=> [a' b'] _ /=; rewrite !dunit1E /=.
 + move=> b; rewrite dlet_dlet; set fb := fun xy : U2 => dlet _ _.
   rewrite (eq_in_dlet (g := fun xy => dunit (val xy.2)) (nu := η2)) //=.
   * by move=> xy _ {}b; rewrite dlet_unit.
@@ -850,8 +807,8 @@ exists (ζ1, ζ2) => /=; split.
     apply/esym; apply/(dinsuppPn μ2); rewrite /in_mem.
     by apply/contra: ac2 => /hc2.
   have := ν2E [`ac2]%fset; rewrite dfinrestrE /= => <-.
-  rewrite dmarginE !dletE /=; apply/eq_psum=> /=.
-  by case=> [a' b'] /=; rewrite !dunit1E /=.
+  rewrite dmarginE !dletE /=; congr fine; apply/eq_esum => /=.
+  by case=> [a' b'] _ /=; rewrite !dunit1E /=.
 + move=> a b /dinsupp_dlet[/=] [] ha [hb|] h /=; last first.
   * by rewrite dunit1E [X in (_ (X _))%:R]eqE /= andbF eqxx.
   rewrite dunit1E  [X in (_ (X _))%:R]eqE /=; case: andP.
@@ -916,7 +873,8 @@ apply/(@le_trans _ _ (\P_[μ1] X)).
 apply/(le_trans (mono X)); rewrite addrA lerD2r.
 rewrite -mulrDr ler_wpM2l ?ge0_Ω // pr_drestr.
 rewrite -pr_or_indep => [b /andP[/=]|]; first by rewrite !inE negbK.
-by apply/le_in_pr=> b _; rewrite !inE => ->; rewrite andbT orbN.
+apply/le_in_pr=> b _ hb; rewrite inE in hb.
+by rewrite !inE (asboolT hb) andbT orbN.
 Qed.
 
 Local Notation T := (distr (A * option B) * distr (option A * B))%type.
@@ -951,161 +909,202 @@ Proof. by rewrite /ω; case: strcvg2. Qed.
 Let ξL : distr (A * option B) := dlim (ηL \o ω).
 Let ξR : distr (option A * B) := dlim (ηR \o ω).
 
-Local Lemma iscvg_ηL x : iscvg (fun n => ηL (ω n) x).
+Local Lemma iscvg_ηL x : cvgn (fun n => ηL (ω n) x).
 Proof. by rewrite /ω; case: strcvg2 => /= h _ []. Qed.
 
-Local Lemma iscvg_ηR x : iscvg (fun n => ηR (ω n) x).
+Local Lemma iscvg_ηR x : cvgn (fun n => ηR (ω n) x).
 Proof. by rewrite /ω; case: strcvg2 => /= h _ []. Qed.
 
 Lemma Strassen : elift ε δ μ1 μ2 S.
 Proof.
 pose GL a := if a is Some a then       μ1 a else 1.
 pose GR b := if b is Some b then Ω ε * μ2 b else 1.
-have sblGl: summable GL by apply/summable_option/summable_mu.
-have sblGR: summable GR by apply/summable_option/summableZ.
+have sblGl: esummable [set: option A] (EFin \o GL).
++ by apply: esummable_optionT; exact: (summable_mu μ1).
+have sblGR: esummable [set: option B] (EFin \o GR).
++ by apply: esummable_optionT; apply: esummableZ; exact: (summable_mu μ2).
 have le_μ1 n a : η1 n a <= μ1 a.
 + by rewrite drestrE; case: ifP => // _; apply/ge0_mu.
 have le_μ2 n b : η2 n b <= μ2 b.
 + by rewrite drestrE; case: ifP => // _; apply/ge0_mu.
-have hLL n a : psum (fun b => ηL n (a, b)) <= μ1 a.
-+ by rewrite -dfstE exlift_dfstL le_μ1.
-have hRR n b : psum (fun a => ηR n (a, b)) <= μ2 b.
-+ by rewrite -dsndE exlift_dsndR le_μ2.
+have hLL n a : rsum (fun b => ηL n (a, b)) <= μ1 a.
++ by rewrite -dfstE_rsum exlift_dfstL le_μ1.
+have hRR n b : rsum (fun a => ηR n (a, b)) <= μ2 b.
++ by rewrite -dsndE_rsum exlift_dsndR le_μ2.
 have hLR n a (b : option B) : ηL n (a, b) <= GR b.
 + case: b => /= [b|]; last by apply/le1_mu1.
   apply/(le_trans (exlift_leLR _ _ _)).
   rewrite ler_wpM2l ?ge0_Ω // (le_trans _ (le_μ2 n _)) //.
-  rewrite -(exlift_dsndR (elift_dfinrestr _)) -!/(ηR _) dsndE /=.
-  rewrite (le_trans _ (gerfinseq_psum (r := [:: Some a]) _ _)) //.
-  - by rewrite big_seq1 ler_norm. - by apply/summable_snd.
+  rewrite -(exlift_dsndR (elift_dfinrestr _)) -!/(ηR _) dsndE_rsum /=.
+  rewrite (le_trans _ (gerfinseq_rsum (r := [:: Some a]) _ _ _)) //.
+  - by rewrite big_seq1.
+  by apply/summable_snd.
 have hRL n (a : option A) b : ηR n (a, b) <= GL a.
 + case: a => /= [a|]; last by apply/le1_mu1.
   rewrite (le_trans (exlift_leRL _ _ _)) 1?(le_trans _ (le_μ1 n _)) //.
-  rewrite -(exlift_dfstL (elift_dfinrestr _)) -!/(ηL _) dfstE /=.
-  rewrite (le_trans _ (gerfinseq_psum (r := [:: Some b]) _ _)) //.
-  - by rewrite big_seq1 ler_norm. - by apply/summable_fst.
+  rewrite -(exlift_dfstL (elift_dfinrestr _)) -!/(ηL _) dfstE_rsum /=.
+  rewrite (le_trans _ (gerfinseq_rsum (r := [:: Some b]) _ _ _)) //.
+  - by rewrite big_seq1.
+  by apply/summable_fst.
 pose FL a n (b : option B) := ηL (ω n) (a, b).
 pose FR b n (a : option A) := ηR (ω n) (a, b).
 exists (ξL, ξR) => /=; split => [a|b|||].
-+ rewrite dfstE (eq_psum (F2 := fun b => fine (nlim ((FL a)^~ b)))) /=.
-  * by move=> b; rewrite [in LHS]dlimE.
-  transitivity (fine (nlim (fun n => psum (FL a n)))).
++ rewrite dfstE_rsum (eq_rsum (g := fun b => limn ((FL a)^~ b))) /=.
+  * by move=> b; rewrite /ξL (dlimE_cvg (@iscvg_ηL (a, b))).
+  transitivity (limn (fun n => rsum (FL a n))).
   * rewrite (@DCT_swap _ _ (fun b => ξL (a, b)) GR) => //=.
-    - move=> b; rewrite dlimE /FL; case: (iscvg_ηL (a, b)).
-      by move=> l hl; rewrite (nlimE hl).
+    - move=> b; rewrite /ξL (dlimE_cvg (@iscvg_ηL (a, b))).
+      exact: (@iscvg_ηL (a, b)).
     - by move=> n b; rewrite ger0_norm // (ge0_mu, hLR).
-  pose pa := choice.pickle a; have ->: μ1 a = fine (nlim (fun n => η1 (ω n) a)).
-  * rewrite -(nlim_lift _ pa.+1) (eq_nlim (v := (μ1 a)%:S)) ?nlimC //.
-    move=> n /=; rewrite drestrE /E /= sort_keysE mem_pmap.
-    case: mapP => // -[]; exists pa; rewrite ?choice.pickleK //.
-    rewrite mem_iota leq0n add0n (@leq_trans (n + pa.+1)) //.
-    - by rewrite leq_addl.
-    - by apply/homo_geidfun/homo_ω.
-  congr fine; apply/eq_nlim => n /=.
-  by rewrite -(exlift_dfstL (elift_dfinrestr _)) dfstE.
-+ rewrite dsndE (eq_psum (F2 := fun a => fine (nlim ((FR b)^~ a)))) /=.
-  * by move=> a; rewrite [in LHS]dlimE.
-  transitivity (fine (nlim (fun n => psum (FR b n)))).
+  pose pa := choice.pickle a.
+  have ->: μ1 a = limn (fun n => η1 (ω n) a).
+  * apply/esym/cvg_lim => //; apply: cvg_near_cst.
+    near=> n; rewrite drestrE; case: ifPn => // /negP[].
+    suff : a \in E (ω n) by [].
+    rewrite /E seq_fsetE mem_pmap; apply/mapP; exists pa; last first.
+    + by rewrite choice.pickleK.
+    rewrite mem_iota leq0n add0n; apply: (@leq_trans n).
+    + by near: n; apply: nbhs_infty_gt.
+    + by apply/homo_geidfun/homo_ω.
+  have E1 : (fun n => rsum (FL a n)) = (fun n => η1 (ω n) a).
+  * by apply/funext => n /=; rewrite -dfstE_rsum exlift_dfstL.
+  by rewrite E1.
++ rewrite dsndE_rsum (eq_rsum (g := fun a => limn ((FR b)^~ a))) /=.
+  * by move=> a; rewrite /ξR (dlimE_cvg (@iscvg_ηR (a, b))).
+  transitivity (limn (fun n => rsum (FR b n))).
   * rewrite (@DCT_swap _ _ (fun a => ξR (a, b)) GL) => //=.
-    - move=> a; rewrite dlimE /FR; case: (iscvg_ηR (a, b)).
-      by move=> l hl; rewrite (nlimE hl).
+    - move=> a; rewrite /ξR (dlimE_cvg (@iscvg_ηR (a, b))).
+      exact: (@iscvg_ηR (a, b)).
     - by move=> n a; rewrite ger0_norm // (ge0_mu, hRL).
-  pose pb := choice.pickle b; have ->: μ2 b = fine (nlim (fun n => η2 (ω n) b)).
-  * rewrite -(nlim_lift _ pb.+1) (eq_nlim (v := (μ2 b)%:S)) ?nlimC //.
-    move=> n /=; rewrite drestrE /E /= sort_keysE mem_pmap.
-    case: mapP => // -[]; exists pb; rewrite ?choice.pickleK //.
-    rewrite mem_iota leq0n add0n (@leq_trans (n + pb.+1)) //.
-    - by rewrite leq_addl.
-    - by apply/homo_geidfun/homo_ω.
-  congr fine; apply/eq_nlim => n /=.
-  by rewrite -(exlift_dsndR (elift_dfinrestr _)) dsndE.
+  pose pb := choice.pickle b.
+  have ->: μ2 b = limn (fun n => η2 (ω n) b).
+  * apply/esym/cvg_lim => //; apply: cvg_near_cst.
+    near=> n; rewrite drestrE; case: ifPn => // /negP[].
+    suff : b \in E (ω n) by [].
+    rewrite /E seq_fsetE mem_pmap; apply/mapP; exists pb; last first.
+    + by rewrite choice.pickleK.
+    rewrite mem_iota leq0n add0n; apply: (@leq_trans n).
+    + by near: n; apply: nbhs_infty_gt.
+    + by apply/homo_geidfun/homo_ω.
+  have E2 : (fun n => rsum (FR b n)) = (fun n => η2 (ω n) b).
+  * by apply/funext => n /=; rewrite -dsndE_rsum exlift_dsndR.
+  by rewrite E2.
 + by move=> a b /dinsupp_dlim [K] /(_ _ (leqnn _)) /exlift_dsuppL.
 + by move=> a b /dinsupp_dlim [K] /(_ _ (leqnn _)) /exlift_dsuppR.
 apply/edist_le_supp => //= X subX.
 pose L n : elift.R := \P_[deliftL (ηL (ω n))] X.
 pose R n : elift.R := \P_[deliftR (ηR (ω n))] X.
-have cvgL: ncvg L (\P_[deliftL ξL] X)%:E.
+have sliceL : forall (ν : distr (A * option B)) (a : option A),
+    esummable [set: option B]
+      (EFin \o (fun b => (X (a, b))%:R * deliftL ν (a, b))).
+* by move=> ν a; apply: esummable_condl; exact: (summable_fst (deliftL ν) a).
+have prL : forall ν : distr (A * option B), \P_[deliftL ν] X
+         = rsum (fun a => rsum (fun b => (X (a, b))%:R * deliftL ν (a, b))).
+* move=> ν; rewrite prE_rsum.
+  rewrite (rsum_pair (f := fun ab => (X ab)%:R * deliftL ν ab)) //.
+  by move=> ab; rewrite mulr_ge0 ?ler0n ?ge0_mu.
+have cvgL: (L @ \oo --> \P_[deliftL ξL] X)%classic.
 * pose F n a b := (X (a, b))%:R * (deliftL (ηL (ω n)) (a, b)).
-  pose G n := psum (fun a => psum (fun b => F n a b)).
-  apply/(ncvg_eq (v := G)); rewrite {}/L {}/G /=.
-  - by move=> n; rewrite /pr psum_pair //=; apply/summable_condl.
-  pose G (a : option A) b := (X (a, b))%:R * deliftL ξL (a, b).
-  rewrite /pr psum_pair /=; first by apply/summable_condl.
-  move=> [: hcv1]; apply/(@DCT_ncvg _ _ (fun a => (psum (G a))) GL) => //=.
-  - abstract: hcv1 => a /=; apply (@DCT_ncvg _ _ (G a) GR) => //=.
-    + move=> b; apply/ncvgZ; case: a => /= [a|].
-      * apply/(@ncvg_eq _ (fun n => ηL (ω n) (a, b))).
-        - by move=> n /=; rewrite deliftLE.
-        rewrite deliftLE /ξL; case: (iscvg_ηL (a, b)).
-        by move=> l hl; rewrite dlimE (nlimE hl).
-      * apply/(@ncvg_eq _ 0%:S) => [n|].
-        - by rewrite deliftLE.
-        - by rewrite deliftLE; apply/ncvgC.
-    + move=> n b; rewrite ger0_norm ?mulr_ge0 ?(ler0n, ge0_mu) //.
+  have -> : L = (fun n => rsum (fun a => rsum (fun b => F n a b))).
+  - by apply/funext => n; rewrite /L prL.
+  rewrite prL; apply/(@DCT_ncvg _ _
+    (fun a => rsum (fun b => (X (a, b))%:R * deliftL ξL (a, b))) GL) => //=.
+  - move=> a; apply/(@DCT_ncvg _ _
+      (fun b => (X (a, b))%:R * deliftL ξL (a, b)) GR) => //=.
+    + move=> b; rewrite /F; apply: cvgZl; case: a => /= [a|].
+      * have -> : (fun n => deliftL (ηL (ω n)) (Some a, b))
+                = (fun n => ηL (ω n) (a, b)).
+        - by apply/funext => n; rewrite deliftLE.
+        rewrite deliftLE /ξL (dlimE_cvg (@iscvg_ηL (a, b))).
+        exact: (@iscvg_ηL (a, b)).
+      * have -> : (fun n => deliftL (ηL (ω n)) (None, b)) = (fun _ : nat => 0).
+        - by apply/funext => n; rewrite deliftLE.
+        by rewrite deliftLE; exact: cvg_cst.
+    + move=> n b; rewrite /F ger0_norm ?mulr_ge0 ?(ler0n, ge0_mu) //.
       rewrite (@le_trans _ _ (deliftL (ηL (ω n)) (a, b))) //.
       * by rewrite ler_piMl ?ge0_mu // lern1 leq_b1.
       case: a => /= [a|]; first by rewrite deliftLE hLR.
       rewrite deliftLE /= /GR; case: b => /= [b|].
       * by rewrite mulr_ge0 ?(ge0_mu, ge0_Ω).
       * by rewrite ler01.
-  - move=> n a; rewrite ger0_norm ?ge0_psum //; case: a => /=.
-    + move=> a; apply/(le_trans _ (hLL (ω n) _))/le_psum => /=.
-      * move=> b; rewrite /F deliftLE mulr_ge0 //= ?ler0n //.
-        by rewrite ler_piMl // lern1 leq_b1.
+  - move=> n a; rewrite ger0_norm; first by
+      apply: ge0_rsum => b; rewrite /F mulr_ge0 ?ler0n ?ge0_mu.
+    case: a => /=.
+    + move=> a; apply: (le_trans _ (hLL (ω n) a)); apply: le_rsum.
+      * move=> b; rewrite /F deliftLE mulr_ge0 ?ler0n ?ge0_mu //=.
+        by rewrite ler_piMl ?ge0_mu // lern1 leq_b1.
       * by apply/summable_fst.
-    + by rewrite psum_eq0 ?ler01 //= => b; rewrite /F deliftLE mulr0.
-have cvgR: ncvg R (\P_[deliftR ξR] X)%:E.
+    + rewrite (eq_rsum (g := fun _ : option B => 0)) ?rsum0 ?ler01 //.
+      by move=> b; rewrite /F deliftLE mulr0.
+have sliceR : forall (ν : distr (option A * B)) (b : option B),
+    esummable [set: option A]
+      (EFin \o (fun a => (X (a, b))%:R * deliftR ν (a, b))).
+* by move=> ν b; apply: esummable_condl; exact: (summable_snd (deliftR ν) b).
+have prR : forall ν : distr (option A * B), \P_[deliftR ν] X
+         = rsum (fun b => rsum (fun a => (X (a, b))%:R * deliftR ν (a, b))).
+* move=> ν; rewrite prE_rsum.
+  rewrite (rsum_pair_swap (f := fun ab => (X ab)%:R * deliftR ν ab)) //.
+  by move=> ab; rewrite mulr_ge0 ?ler0n ?ge0_mu.
+have cvgR: (R @ \oo --> \P_[deliftR ξR] X)%classic.
 * pose F n a b := (X (a, b))%:R * (deliftR (ηR (ω n)) (a, b)).
-  pose G n := psum (fun b => psum (fun a => F n a b)).
-  apply/(ncvg_eq (v := G)); rewrite {}/R  {}/G /=.
-  - by move=> n; rewrite /pr psum_pair_swap //=; apply/summable_condl.
-  rewrite /pr psum_pair_swap /=; first by apply/summable_condl.
-  pose G (b : option B) a := (X (a, b))%:R * deliftR ξR (a, b).
-  move=> [: hcv1]; apply/(@DCT_ncvg _ _ (fun b => (psum (G b))) GR) => //=.
-  - abstract: hcv1 => b /=; apply (@DCT_ncvg _ _ (G b) GL) => //=.
-    + move=> a; apply/ncvgZ; case: b => /= [b|].
-      * apply/(@ncvg_eq _ (fun n => ηR (ω n) (a, b))).
-        - by move=> n /=; rewrite deliftRE.
-        rewrite deliftRE /ξR; case: (iscvg_ηR (a, b)).
-        by move=> l hl; rewrite dlimE (nlimE hl).
-      * apply/(@ncvg_eq _ 0%:S) => [n|].
-        - by rewrite deliftRE.
-        - by rewrite deliftRE; apply/ncvgC.
-    + move=> n a; rewrite ger0_norm ?mulr_ge0 ?(ler0n, ge0_mu) //.
+  have -> : R = (fun n => rsum (fun b => rsum (fun a => F n a b))).
+  - by apply/funext => n; rewrite /R prR.
+  rewrite prR; apply/(@DCT_ncvg _ _
+    (fun b => rsum (fun a => (X (a, b))%:R * deliftR ξR (a, b))) GR) => //=.
+  - move=> b; apply/(@DCT_ncvg _ _
+      (fun a => (X (a, b))%:R * deliftR ξR (a, b)) GL) => //=.
+    + move=> a; rewrite /F; apply: cvgZl; case: b => /= [b|].
+      * have -> : (fun n => deliftR (ηR (ω n)) (a, Some b))
+                = (fun n => ηR (ω n) (a, b)).
+        - by apply/funext => n; rewrite deliftRE.
+        rewrite deliftRE /ξR (dlimE_cvg (@iscvg_ηR (a, b))).
+        exact: (@iscvg_ηR (a, b)).
+      * have -> : (fun n => deliftR (ηR (ω n)) (a, None)) = (fun _ : nat => 0).
+        - by apply/funext => n; rewrite deliftRE.
+        by rewrite deliftRE; exact: cvg_cst.
+    + move=> n a; rewrite /F ger0_norm ?mulr_ge0 ?(ler0n, ge0_mu) //.
       rewrite (@le_trans _ _ (deliftR (ηR (ω n)) (a, b))) //.
       * by rewrite ler_piMl ?ge0_mu // lern1 leq_b1.
       case: b => /= [b|]; first by rewrite deliftRE hRL.
       rewrite deliftRE /= /GL; case: a => /= [a|].
       * by rewrite ge0_mu. * by rewrite ler01.
-  - move=> n b; rewrite ger0_norm ?ge0_psum //; case: b => /=.
+  - move=> n b; rewrite ger0_norm; first by
+      apply: ge0_rsum => a; rewrite /F mulr_ge0 ?ler0n ?ge0_mu.
+    case: b => /=.
     + move=> b; apply/(@le_trans _ _ (μ2 b)); last first.
       * by rewrite ler_peMl // Ω_ge1.
-      apply/(le_trans _ (hRR (ω n) _))/le_psum => /=.
-      * move=> a; rewrite /F deliftRE mulr_ge0 //= ?ler0n //.
-        by rewrite ler_piMl // lern1 leq_b1.
+      apply: (le_trans _ (hRR (ω n) b)); apply: le_rsum.
+      * move=> a; rewrite /F deliftRE mulr_ge0 ?ler0n ?ge0_mu //=.
+        by rewrite ler_piMl ?ge0_mu // lern1 leq_b1.
       * by apply/summable_snd.
-    + by rewrite psum_eq0 ?ler01 //= => b; rewrite /F deliftRE mulr0.
-rewrite addrC -lerBlDr; set V := (X in X <= _).
-suff cvgΔ: ncvg Δ δ%:E.
-* move/(ncvg_sub homo_ω)/ncvg_le: cvgΔ => /(_ (L \- Ω ε \*o R) V%:E) /=.
-  apply=> [n|]; last by apply/ncvgB/ncvgZ.
-  rewrite lerBlDr addrC /L /R.
+    + rewrite (eq_rsum (g := fun _ : option A => 0)) ?rsum0 ?ler01 //.
+      by move=> a; rewrite /F deliftRE mulr0.
+rewrite addrC -lerBlDr.
+suff cvgΔ: (Δ @ \oo --> δ)%classic.
+* have cvgΔω : ((Δ \o ω) @ \oo --> δ)%classic.
+  - exact: (cvg_comp ω Δ (cvg_homo_oo homo_ω) cvgΔ).
+  apply: (ler_cvg_to (a := (\oo)%classic)
+            (f := fun n => L n - Ω ε * R n) (g := Δ \o ω)
+            (l := \P_[deliftL ξL] X - Ω ε * \P_[deliftR ξR] X) (l' := δ)).
+  - exact: (cvgnB cvgL (cvgZl (c := Ω ε) cvgR)).
+  - exact: cvgΔω.
+  apply: nearW => n; rewrite /= lerBlDr addrC /L /R.
   have := exlift_edist (elift_dfinrestr (ω n)) => /edist_le.
   by move/(_ ge0_ε X); rewrite -/(ηL _) -/(ηR _).
-rewrite -[δ]add0r -[X in (X + _)%:E](mulr0 (Ω ε)).
-apply/ncvgD/ncvgC/ncvgZ; rewrite -[X in X%:E](@psum0 _ B).
-apply/(DCT_ncvg (g := μ2)) => //; last first.
+suff hp : ((fun n => \P_[μ2] (predC (mem (E n)))) @ \oo --> 0)%classic.
+* have h := cvgnD (cvgZl (c := Ω ε) hp) (cvg_cst (F := (\oo)%classic) δ).
+  by rewrite mulr0 add0r in h; exact: h.
+have -> : (fun n => \P_[μ2] (predC (mem (E n))))
+        = (fun n => rsum (fun b => ((predC (mem (E n))) b)%:R * μ2 b)).
+* by apply/funext => n; rewrite prE_rsum.
+rewrite -(@rsum0 _ B); apply/(DCT_ncvg (g := μ2)) => //=.
+* move=> b; apply: cvg_near_cst; near=> n.
+  have hb : b \in E n.
+  - rewrite /E seq_fsetE mem_pmap; apply/mapP; exists (choice.pickle b).
+    + rewrite mem_iota leq0n add0n; near: n; apply: nbhs_infty_gt.
+    + by rewrite choice.pickleK.
+  by rewrite /= hb /= mul0r.
 * move=> n b; rewrite ger0_norm ?mulr_ge0 ?ler0n //.
   by rewrite ler_piMl // lern1 leq_b1.
-move=> b; apply/ncvgMl; last first.
-* apply/asboolP/nboundedP; exists 2%:R => // _.
-  apply/(@le_lt_trans _ _ 1) => //; last by rewrite (@ltr_nat _ 1).
-  by rewrite ger0_norm // le1_mu1.
-elim/nbh_finW => /= e gt0_e; exists (choice.pickle b).+1 => n le_bn.
-rewrite inE subr0; apply/(le_lt_trans _ gt0_e).
-rewrite normr_le0 pnatr_eq0 eqb0 negbK /E seq_fsetE.
-rewrite mem_pmap; apply/mapP; exists (choice.pickle b).
-* by rewrite mem_iota /= add0n.
-* by rewrite choice.pickleK.
-Qed.
+Unshelve. all: end_near. Qed.
 End CountableStrassen.

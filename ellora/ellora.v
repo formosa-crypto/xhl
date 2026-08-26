@@ -1,9 +1,8 @@
 (* -------------------------------------------------------------------- *)
-(* ------- *)           Require Import Setoid Morphisms.
-From mathcomp           Require Import all_boot all_order all_algebra.
-From mathcomp.classical Require Import boolp.
+From mathcomp           Require Import boot order algebra.
+From mathcomp.classical Require Import boolp filter.
 From mathcomp.reals     Require Import reals constructive_ereal.
-From mathcomp.experimental_reals  Require Import realseq realsum distr.
+From mathcomp.analysis  Require Import counting_distr ereal.
 From xhl.pwhile Require Import notations inhabited pwhile psemantic passn range.
 From xhl.hl Require Import hl.
 
@@ -94,7 +93,7 @@ Proof. by apply/asboolP. Qed.
 Definition tclosed (P : nat -> dassn) (Pinf : dassn) :=
   forall (mu : nat -> dmem),
       (forall n, mu n \in P n)
-   -> (forall x, exists l, ncvg (fun n => mu n x) l%:E)
+   -> (forall x, cvgn (fun n => (mu n x)%:E)) (* pointwise convergent *)
    -> \dlim_(n) mu n \in Pinf.
 
 (* -------------------------------------------------------------------- *)
@@ -119,16 +118,14 @@ Qed.
 Definition uclosed (P : nat -> dassn) (Pinf : dassn) :=
   forall (mu : nat -> dmem),
       (forall n, mu n \in P n)
-   -> (forall n m, (n <= m)%N -> mu n <=1 mu m)
+   -> (forall n m, (n <= m)%N -> mu n <=1 mu m) (* pointwise nondecreasing *)
    -> \dlim_(n) mu n \in Pinf.
 
 (* -------------------------------------------------------------------- *)
 Lemma tclosed_uclosed (P : nat -> dassn) Pinf :
   tclosed P Pinf -> uclosed P Pinf.
 Proof.
-move=> uc mu h1 h2; apply/uc => // x; apply/ncvg_mono_bnd => [??/h2|] //.
-apply/asboolP/nboundedP; exists 2%:R => // n; apply/(@le_lt_trans _ _ 1).
-+ by rewrite ger0_norm ?(ge0_mu, le1_mu1). + by rewrite (@ltr_nat _ 1).
+by move=> uc mu h1 h2; apply/uc => // x; apply: cvg_dlim; exact: dhomo_dnd h2.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -150,7 +147,7 @@ Proof. by apply/tclosed_uclosed/tclosed_square. Qed.
 Definition tclosed0 P :=
    forall (mu : nat -> dmem),
      (forall n, mu n \in P)
-   -> (forall x, exists l, ncvg (fun n => mu n x) l%:E)
+   -> (forall x, cvgn (fun n => (mu n x)%:E))
    -> \dlim_(n) mu n \in P.
 
 Definition dclosed P := tclosed0 P /\
@@ -165,12 +162,9 @@ rewrite /dssem bsemE -dlim_let; first by apply/homo_whilen.
 set F := (F in \dlim_(n) F n).
 have ->: \dlim_(n) F n = \dlim_(n) F n.+1.
   by apply/distr_eqP=> m; rewrite dlim_bump.
-rewrite {}/F; apply/tcP=> [|m]; first by move=> n; apply/h.
-apply/ncvg_mono_bnd => [n p le_np|]; last first.
-  apply/asboolP/nboundedP; exists 2%:R => // n.
-  apply/(@le_lt_trans _ _ 1); last by rewrite (@ltr_nat _ 1).
-  by rewrite ger0_norm ?(ge0_mu, le1_mu1).
-by apply/le_in_dlet=> {}m _ m'; apply/homo_whilen.
+rewrite {}/F; apply/tcP=> [|x]; first by move=> n; apply/h.
+apply: cvg_dlim; apply/dhomo_dnd => n p le_np m'.
+by apply/le_in_dlet=> {}m _ m''; apply/homo_whilen.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -260,7 +254,9 @@ with sellora2: psi -> (ident -> dassn) -> (ident -> dassn2) -> dassn -> dassn2 -
    | H_call : forall pre post f ps, sellora2 ps pre post (pre f) (post f) (call f)
    | H_rec : forall P (Q: dassn2) c pre postinf pre' postinf' post ps',
        (forall p s, tclosed (fun n => post_shift (post p) n s)  (postinf p s)) ->
-       (forall p' ps n , sellora2 ps pre (fun f => post_shift (post f) n) (pre p') (post p' n) (ps' p')) ->
+       (forall p' ps n , sellora2 ps pre
+                      (fun f => post_shift (post f) n) (pre p')
+                      (post p' n) (ps' p')) ->
        (forall ps, sellora2 ps pre postinf P Q c) ->
        sellora2 ps' pre' postinf' P Q c
    | H_adapt : forall (P1 P2 : dassn) (Q1 Q2 : dassn2) c pre post ps,
@@ -373,13 +369,13 @@ Proof. by []. Qed.
 Lemma ellora_while_cond b c :
   ellora (□ predT) (□ `[{~~ b}]) (While b Do c).
 Proof.
-move=> mu _; apply/detmP=> m; rewrite /dssem bsemE => /dinsupp_dlet[m' _].
-rewrite dlimE; apply/contra=> bm; pose u0 := fun _ : nat => 0 : R.
-rewrite (@eq_nlim _ u0) ?nlimC // {}/u0 => n; elim: n m' => [|n ihn].
-  by move=> m'; rewrite ssemE dnullE.
-move=> m'; rewrite ssemE; case: ifP=> bm'; rewrite !ssemE.
-  by unlock dlet; rewrite /= /mlet psum_eq0 // => m''; rewrite ihn mulr0.
-by rewrite dunit1E (rwP eqP) pnatr_eq0 eqb0; apply/contraFN: bm' => /eqP->.
+move=> mu _; apply/detmP=> m; rewrite /dssem => /dinsupp_dlet[m' _].
+rewrite ssem_whileE; case/dinsupp_dlim=> -[|p].
++ by rewrite /= ssem_abortE in_dinsupp dnullE eqxx.
+rewrite whilen_iterc ssem_seqE => /dinsupp_dlet[m'' _].
+rewrite ssem_ifE; case: ifPn.
++ by move=> _; rewrite ssem_abortE dnullE eqxx.
+by move=> ne; rewrite ssem_skipE dunit1E pnatr_eq0 eqb0 negbK => /eqP<-.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -471,11 +467,12 @@ move=> el ds mu P0_mu; rewrite (ds _ P0_mu); apply/andP; split.
 + elim: {ds} k => [|k ih]; first by rewrite iterc0 dssem_skipE.
   by move/el: ih; rewrite -dssem_seqE -itercSr.
 apply/detmP=> m; rewrite -(ds mu) //; case/dinsupp_dlet.
-move=> m' _; rewrite ssemE -(funext (dlim_bump _)).
-case/dinsupp_dlim=> p; rewrite whilen_iterc bsemE.
-case/dinsupp_dlet=> m'' _; rewrite !bsemE; case: ifPn.
-+ by move=> _; rewrite dnullE eqxx.
-+ by move=> ne; rewrite dunit1E pnatr_eq0 eqb0 negbK => /eqP<-.
+move=> m' _; rewrite ssem_whileE; case/dinsupp_dlim=> -[|p].
++ by rewrite /= ssem_abortE in_dinsupp dnullE eqxx.
+rewrite whilen_iterc ssem_seqE => /dinsupp_dlet[m'' _].
+rewrite ssem_ifE; case: ifPn.
++ by move=> _; rewrite ssem_abortE dnullE eqxx.
+by move=> ne; rewrite ssem_skipE dunit1E pnatr_eq0 eqb0 negbK => /eqP<-.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -549,11 +546,8 @@ have E : dssem ps' (call p) s = \dlim_(n) dssem (k_inliner_ps1 n ps') (call p) s
   by apply/eq_in_dlet => // m0 _; rewrite test1.
 rewrite E; apply: (Htclosed p s).
 - by move=> n; apply: key.
-- move=> x; apply/ncvg_mono_bnd => [n1 n2 le|]; last first.
-  + apply/asboolP/nboundedP; exists 2%:R => // n.
-    apply/(@le_lt_trans _ _ 1); last by rewrite (@ltr_nat _ 1).
-    by rewrite ger0_norm ?(ge0_mu, le1_mu1).
-  + exact: (monoD n1 n2 le x).
+- move=> x; apply: cvg_dlim; apply/dhomo_dnd => n1 n2 le.
+  exact: (monoD n1 n2 le).
 Qed.
 
 (** Modular Hoare Triple Verification **)
@@ -680,7 +674,7 @@ apply/(@EConseq (eqmu mu) (R1 ⊕ R2)) => //; first move=> nu /asboolP.
   rewrite !(eq1, eq2) /dssem bsemE.
   rewrite [RHS](dlet_additive (mu1 := mu1) (mu2 := mu2)).
   - by apply/drestrD.
-  congr (_ + _); apply/distr.eq_in_dlet => //.
+  congr (_ + _); apply/distr_eqP: m; apply/eq_in_dlet => //.
   - by move=> m'; rewrite dinsupp_restr => /andP[_ ->].
   - move=> m'; rewrite dinsupp_restr => /andP[_ /=].
     by move/negbTE=> ->.
@@ -728,15 +722,15 @@ Proof.
   + move=> mu.
     apply: (EConseq _ _ (EAssign (fun d' => P mu ==> Q d') x e _ _ ps)) => //.
     move=> nu /asboolP ->; rewrite /dassn_map /=; apply/implyP => Pmu.
-    have E : ssem ps (x <<- e) = ssem ps' (x <<- e).
-      by apply/funext => m; rewrite !ssem_assnE.
-    rewrite /dssem E; exact: (Hhl mu Pmu).
+    have E : dssem ps (x <<- e) mu = dssem ps' (x <<- e) mu.
+      by rewrite /dssem; apply/eq_in_dlet => // m _; rewrite !ssem_assnE.
+    rewrite E; exact: (Hhl mu Pmu).
   + move=> mu.
     apply: (EConseq _ _ (ESample (fun d' => P mu ==> Q d') x d _ _ ps)) => //.
     move=> nu /asboolP ->; rewrite /dassn_map /=; apply/implyP => Pmu.
-    have E : ssem ps (x <$- d) = ssem ps' (x <$- d).
-      by apply/funext => m; rewrite !ssem_rndE.
-      rewrite /dssem E; exact: (Hhl mu Pmu).
+    have E : dssem ps (x <$- d) mu = dssem ps' (x <$- d) mu.
+      by rewrite /dssem; apply/eq_in_dlet => // m _; rewrite !ssem_rndE.
+    rewrite E; exact: (Hhl mu Pmu).
   + move=> mu.
     pose mu1 := drestr `[{    e }] mu.
     pose mu2 := drestr `[{ ~~ e }] mu.
@@ -749,7 +743,7 @@ Proof.
       { apply/distr_eqP=> m; rewrite eqD !(eq1, eq2) /dssem bsemE.
         rewrite [RHS](dlet_additive (mu1 := mu1) (mu2 := mu2)).
         - by apply/drestrD.
-        congr (_ + _); apply/distr.eq_in_dlet => //.
+        congr (_ + _); apply/distr_eqP: m; apply/eq_in_dlet => //.
         - by move=> m'; rewrite dinsupp_restr => /andP[_ ->].
         - move=> m'; rewrite dinsupp_restr => /andP[_ /=].
           by move/negbTE=> ->. }
@@ -840,6 +834,56 @@ apply: (EConseq _ _ (rel_complete_d (h s0) ps' s0)).
 - by move=> nu /= /implyP H; apply: H; apply/asboolP.
 Qed.
 
+(* -------------------------------------------------------------------- *)
+(* The proof system depends on the procedure contract only              *)
+(* extensionally: two pointwise-equal call contexts derive exactly the  *)
+(* same judgements.                                                     *)
+Lemma sellora_eq_post :
+  (forall ps pre post (P Q : dassn) c, sellora ps pre post P Q c ->
+     forall post', (forall f mu, post f mu = post' f mu) ->
+       sellora ps pre post' P Q c) /\
+  (forall ps pre post (P : dassn) (Q : dassn2) c, sellora2 ps pre post P Q c ->
+     forall post', (forall f mu, post f mu = post' f mu) ->
+       sellora2 ps pre post' P Q c).
+Proof.
+apply: derivable_mut.
+- (* ESkip *) by move=> *; apply: ESkip.
+- (* EAbort *) by move=> *; apply: EAbort.
+- (* ESeq *)
+  by move=> S P Q c1 c2 pre post ps _ IH1 _ IH2 post' heq;
+     apply: (ESeq (IH1 _ heq) (IH2 _ heq)).
+- (* EConseq *)
+  by move=> P' Q' P Q c pre post ps hP hQ _ IH post' heq;
+     apply: (EConseq hP hQ (IH _ heq)).
+- (* EAssign *) by move=> t P x e pre post ps post' heq; apply: EAssign.
+- (* ESample *) by move=> t P x d pre post ps post' heq; apply: ESample.
+- (* ECond *)
+  by move=> P P' Q Q' e c1 c2 ps pre post SP SQ _ IH1 _ IH2 post' heq;
+     apply: (ECond (IH1 _ heq) (IH2 _ heq)).
+- (* EWhileTClosed *)
+  move=> P Q Qinf b c pre post ps _ IH1 _ IH2 htc post' heq.
+  by apply: (EWhileTClosed (fun n => IH1 n _ heq) (fun n => IH2 n _ heq) htc).
+- (* H_khl *)
+  by move=> P Q c pre post ps _ IH post' heq; apply: (H_khl (IH _ heq)).
+- (* H_hl *)
+  by move=> P Q c pre post ps _ IH post' heq;
+     apply: H_hl => s0; exact: (IH s0 _ heq).
+- (* H_call: rebuild the axiom in the new context, then adapt the        *)
+  (* postcondition pointwise -- this is what H_adapt is for.            *)
+  move=> pre post f ps post' heq.
+  apply: (@H_adapt (pre f) (pre f) (post f) (post' f) (call f) pre post' ps).
+  - by [].
+  - by move=> m0 _ m; rewrite heq.
+  - exact: H_call.
+- (* H_rec: pre' and postinf' occur only in the conclusion, so the same  *)
+  (* premises derive the judgement in any context.                      *)
+  move=> P Q c pre postinf pre' postinf' post ps' htc Hbody _ Hc _ post' heq.
+  by apply: (@H_rec _ _ _ pre postinf pre' post' post ps' htc Hbody Hc).
+- (* H_adapt *)
+  by move=> P1 P2 Q1 Q2 c pre post ps hP hQ _ IH post' heq;
+     apply: (H_adapt hP hQ (IH _ heq)).
+Qed.
+
 Definition cl_mgt_n ps : ident -> nat -> dassn2 :=
   fun (f:ident) (n:nat) =>
     (fun mu => eqmu ((\dlet_(m <- mu) ssem_aux (ubnf ps n) (ps f) m))).
@@ -889,10 +933,10 @@ apply: (@H_rec _ _ _ pre_mgt (cl_mgt ps) _ _ (cl_mgt_n ps)).
   by rewrite (Elim (ps p) s); apply/eq_dlim => n; exact: (Hnu1 n).
 - (* body derivation at each depth, via completeness for the n-th inlining *)
   move=> p' ps0 n.
-  have -> : (fun f => post_shift (cl_mgt_n ps f) n) = cl_mgt (k_inliner_ps1 n ps).
-    by apply/funext => f; apply/funext => mu; rewrite Ha.
-  apply: (@rel_complete (ps p') (pre_mgt p') (cl_mgt_n ps p' n) (k_inliner_ps1 n ps)).
-  by move=> mu _; rewrite /cl_mgt_n /= EA; apply/asboolP.
+  apply: (proj2 sellora_eq_post _ _ (cl_mgt (k_inliner_ps1 n ps))).
+  + apply: (@rel_complete (ps p') (pre_mgt p') (cl_mgt_n ps p' n) (k_inliner_ps1 n ps)).
+    by move=> mu _; rewrite /cl_mgt_n /= EA; apply/asboolP.
+  + by move=> f mu; rewrite Ha.
 - (* the command c meets its contract assuming the exact call contract *)
   by apply: rel_complete.
 Qed.

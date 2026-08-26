@@ -1,10 +1,11 @@
 (* -------------------------------------------------------------------- *)
+From HB                 Require Import structures.
 From Stdlib             Require Import ClassicalFacts Setoid Morphisms.
-From mathcomp           Require Import all_boot all_order.
-From mathcomp.algebra   Require Import all_algebra.
-From mathcomp.classical Require Import boolp.
+From mathcomp           Require Import boot order.
+From mathcomp.algebra   Require Import algebra.
+From mathcomp.classical Require Import boolp classical_sets.
 From mathcomp.reals     Require Import reals constructive_ereal.
-From mathcomp.experimental_reals  Require Import realseq realsum distr.
+From mathcomp.analysis  Require Import counting_distr esum.
 (* ----------------- *) Require Import inhabited passn pwhile.
 
 Set Implicit Arguments.
@@ -23,13 +24,6 @@ Notation LOHS := (X in _ <= X)%pattern.
 Declare Scope sem_scope.
 
 (* -------------------------------------------------------------------- *)
-Module Ad.
-Definition dlet_lim := @__admitted__dlet_lim.
-Definition dlim_let := @__admitted__dlim_let.
-End Ad.
-Import Ad.
-
-(* -------------------------------------------------------------------- *)
 Axiom funext : forall {T U : Type} (f g : T -> U),
   (forall x, f x = g x) -> f = g.
 
@@ -37,21 +31,13 @@ Lemma funext2 : forall {T U V : Type} (f g : T -> U -> V),
   (forall x y, f x y = g x y) -> f = g.
 Proof. by move=> T U V f g eq; apply/funext=> x; apply/funext. Qed.
 
-(* -------------------------------------------------------------------- *)
-Lemma distr_eqP {T : choiceType} (f1 f2 : Distr T):
-  f1 =1 f2 <-> f1 = f2.
-Proof.
-split=> [|->] //; case: f1 f2 => [mu1 ge0_1 s1 le1_1] [mu2 ge0_2 s2 le1_2].
-move/funext => /= eq_mu; have PI (A : Prop): A \/ ~ A by case: (asboolP A); auto.
-by subst; f_equal; apply proof_irrelevance_cci.
-Qed.
 
 (* -------------------------------------------------------------------- *)
 Section DistrRecast.
 Variables (T U V : choiceType) (f g : T -> Distr U) (mu nu : Distr T).
 
 Lemma dlet_null : \dlet_(i <- dnull) f i = dnull.
-Proof. by apply/distr_eqP/dlet_null. Qed.
+Proof. apply /distr_eqP /dlet_null. Qed.
 
 Lemma dlet_unit x : \dlet_(i <- dunit x) f i = f x.
 Proof. by apply/distr_eqP/dlet_unit. Qed.
@@ -109,7 +95,7 @@ Variables (f : nat -> {distr T / R}) (h : T -> {distr U / R}).
 
 Lemma dlet_lim : (forall n m, (n <= m)%N -> f n <=1 f m) ->
   \dlet_(x <- \dlim_(n) f n) h x = \dlim_(n) \dlet_(x <- f n) h x.
-Proof. by move=> ?; apply/distr_eqP/dlet_lim. Qed.
+Proof. by move=> ?; apply/distr_eqP/dlet_lim /dhomo_dnd. Qed.
 End DLimRecast.
 
 (* -------------------------------------------------------------------- *)
@@ -118,11 +104,11 @@ Context {T : choiceType} (mu : Distr (T * T)).
 
 Lemma dprojE s x :
   dmargin (fst, snd)#s mu x =
-    psum (fun y => mu ((x, y)#s, (y, x)#s)).
+    fine (esum [set: T] (fun y => EFin (mu ((x, y)#s, (y, x)#s)))).
 Proof. by case: s => /=; rewrite ?(dfstE, dsndE). Qed.
 
 Lemma summable_proj s x1 :
-  summable (fun x2 => mu ((x1, x2)#s, (x2, x1)#s)).
+  esummable [set: T] (fun x2 => EFin (mu ((x1, x2)#s, (x2, x1)#s))).
 Proof. by case: s => /=; [apply/summable_fst | apply/summable_snd]. Qed.
 End DProj.
 
@@ -240,7 +226,7 @@ Lemma ssem_seqE c1 c2 m :
   ssem (c1 ;; c2) m = \dlet_(m' <- ssem c1 m) (ssem c2 m').
 Proof. by rewrite unlock. Qed.
 
-Lemma esem_varE {T : IhbType.type} (x : vars T) m : 
+Lemma esem_varE {T : IhbType.type} (x : vars T) m :
    esem (@var_ _ _ T x) m = m.[x].
 Proof. by []. Qed.
 
@@ -327,7 +313,8 @@ Lemma dlim_seql (C : nat -> cmd) (c : cmd) m :
   -> \dlim_(n) (ssem (C n ;; c) m)
    = \dlet_(m' <- \dlim_(n) ssem (C n) m) ssem c m'.
 Proof.
-move=> leC; rewrite dlet_lim; last by apply/leC.
+move=> leC; rewrite dlet_lim.
++ by apply/leC.
 by apply/eq_dlim=> n; rewrite semE.
 Qed.
 
@@ -345,7 +332,8 @@ Lemma dlim_ift (e : expr bool) (C : nat -> cmd) (c : cmd) m :
   = if esem e m then \dlim_(n) ssem (C n) m else ssem c m.
 Proof.
 pose F n := if esem e m then ssem (C n) m else ssem c m.
-rewrite -(@eq_dlim _ F) {}/F => [|k]; last by rewrite !semE.
+rewrite -(@eq_dlim _ F) {}/F => [k |].
++ by rewrite !semE.
 by case: ifPn => _; rewrite ?dlimC.
 Qed.
 
@@ -354,13 +342,13 @@ Lemma dlim_iff (e : expr bool) (C : nat -> cmd) (c : cmd) m :
   = if esem e m then ssem c m else \dlim_(n) ssem (C n) m.
 Proof.
 pose F n := if esem e m then ssem c m else ssem (C n) m.
-rewrite -(@eq_dlim _ F) {}/F => [|k]; last by rewrite !semE.
+rewrite -(@eq_dlim _ F) {}/F => [k|].
++ by rewrite !semE.
 by case: ifPn => _; rewrite ?dlimC.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Definition iterc n (c : cmd) :=
-  nosimpl (iterop n seqc c skip).
+Definition iterc n (c : cmd) := (iterop n seqc c skip).
 
 Arguments iterc : simpl never.
 
@@ -399,15 +387,15 @@ rewrite leq_eqVlt => /orP[/eqP->//|]; rewrite ltnS => le_np m'.
 by apply/(le_trans (ih _ le_np m'))/le_whilen.
 Qed.
 
-Lemma dcvg_whilen e c m : dcvg (fun n => ssem (whilen e c n) m).
-Proof.
-move=> m'; set u := fun n : nat => _; case: (@ncvg_mono_bnd _ u).
-+ by move=> n p le_np; apply/homo_whilen.
-+ apply/asboolP/nboundedP; exists 2%:R => // n.
-  apply/(@le_lt_trans _ _ 1%:R); rewrite ?ltr1n //.
-  by rewrite ger0_norm (ge0_mu, le1_mu1).
-by move=> l ul; exists l%:E.
-Qed.
+(* Lemma dcvg_whilen e c m : dcvg (fun n => ssem (whilen e c n) m). *)
+(* Proof. *)
+(* move=> m'; set u := fun n : nat => _; case: (@ncvg_mono_bnd _ u). *)
+(* + by move=> n p le_np; apply/homo_whilen. *)
+(* + apply/asboolP/nboundedP; exists 2%:R => // n. *)
+(*   apply/(@le_lt_trans _ _ 1%:R); rewrite ?ltr1n //. *)
+(*   by rewrite ger0_norm (ge0_mu, le1_mu1). *)
+(* by move=> l ul; exists l%:E. *)
+(* Qed. *)
 
 Lemma unroll_while_w (e e' : expr bool) c m :
      (forall m, esem e' m -> esem e m)
@@ -417,7 +405,8 @@ Proof.
 move=> impe; apply/distr_eqP=> m'; rewrite !semE.
 case: ifPn => h; last by rewrite dlet_unit -semE.
 rewrite -dlim_bump /= -ssem_seqE dlim_ift.
-rewrite dlim_seqr; last by apply/homo_whilen.
+rewrite dlim_seqr.
++ by apply/homo_whilen.
 rewrite impe // semE; apply/distr_eqP: m'.
 by apply/eq_in_dlet=> // m' _; rewrite semE.
 Qed.
@@ -451,16 +440,16 @@ Lemma unrolls_while_w (e e' : expr bool) c m :
 Proof.
 move=> impe; apply/distr_eqP=> m'; apply/eqP.
 rewrite eq_le andbC; apply/andP; split.
-  rewrite ssem_seqE (ssem_whileE e') dlet_lim; last first.
-    apply/homo_whilen.
++ rewrite ssem_seqE (ssem_whileE e') dlet_lim.
+  + apply/homo_whilen.
   apply/leub_dlim => n {}m'; rewrite -ssem_seqE.
   elim: n m m' => [|n ihn] m m' /=.
     by rewrite !semE dlet_null; apply/lef_dnull.
   rewrite sem_ifseq ssem_ifE; case: ifPn => [/impe em|].
     by rewrite ssem_whileS // sem_seqA; apply/sem_seq_le.
   by rewrite 2!semE dlet_unit.
-rewrite ssem_whileE; apply/leub_dlim; move: {m'} m => [:a] m n m'.
-case/asboolP: (esem e' m) => [|/negP]; last first.
++ rewrite ssem_whileE; apply/leub_dlim; move: {m'} m => [:a] m n m'.
+  case/asboolP: (esem e' m) => [|/negP]; last first.
   abstract: a n m m' => h; rewrite ssem_seqE (@ssem_while0 e') //.
   rewrite dlet_unit semE; apply/dlim_ub=> {m'} k p le_kp m'.
   by apply/homo_whilen.
@@ -557,7 +546,7 @@ Fixpoint mk_seqr (c1 c2 : cmd) :=
   | _           => seqc c1 c2
   end.
 
-Definition mk_seq (c1 c2 : cmd) := 
+Definition mk_seq (c1 c2 : cmd) :=
   if c1 is skip then c2 else  mk_seqr c1 c2.
  
 Fixpoint normc (c : cmd) :=
@@ -569,7 +558,7 @@ Fixpoint normc (c : cmd) :=
   end.
 
 Lemma mk_seqrP (c1 c2 : cmd) : mk_seqr c1 c2 =C seqc c1 c2.
-Proof. 
+Proof.
 elim:c2 c1=> //= [|c2 H1 c3 H2] c1;first by rewrite seq_skip_r.
 by rewrite seqA H2 H1.
 Qed.
@@ -580,7 +569,7 @@ Proof. by case:c1 => //= *;rewrite ?mk_seqrP // seq_skip_l. Qed.
 Lemma normcP (c : cmd) : c =C normc c.
 Proof.
 by elim: c=> //= [?? H1 ? H2|?? H1|? H1 ? H2];
-rewrite ?mk_seqP [in CLHS]H1 ?[in CLHS]H2. 
+rewrite ?mk_seqP [in CLHS]H1 ?[in CLHS]H2.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -641,7 +630,7 @@ Lemma le_while {J: eqType} (e : expr bool) c1 c2 m (ps: (J -> cmd_ _ _ J)):
      (forall m, esem e m -> ssem_ ps c1 m <=1 ssem_ ps c2 m)
   -> ssem_ ps (While e Do c1) m <=1 ssem_ ps (While e Do c2) m.
 Proof.
-move=> lec m'; rewrite !semE; apply/le_dlim/dcvg_whilen => n.
+move=> lec m'; rewrite !semE; apply/le_dlim => n.
 elim: n m => //= n ihn m {}m'; rewrite !semE.
 by case: ifP => // hem; apply/le_dlet => {} m' //; apply: lec.
 Qed.
@@ -669,7 +658,8 @@ rewrite unroll_while_in ssem_ifE hem 2![in X in _ <= X]semE.
 case: ifPn => he1m; first by rewrite !ssem_seqE le_dlet.
 rewrite unroll_while -!ssem_seqE -seqA 2![in X in _ <= X]semE.
 rewrite (h2 _ hem he1m) ssem_seqE le_dlet => // {m' hem he1m} m _ m'.
-rewrite 2!semE dlet_lim; last by apply: homo_whilen.
+rewrite 2!semE dlet_lim.
++ by apply: homo_whilen.
 apply: (le_trans _ (dlim_ub n _ _)); last first.
   move=> k1 k2 le_k1k2 {}m'; apply: le_dlet => //.
   by move=> {}m'; apply: homo_whilen.
@@ -688,7 +678,7 @@ rewrite ssem_seqE le_dlet => // {m' hem he1m he2m} m _ m'.
 by apply: (le_trans (le_whilen _ _ _ _ _)).
 Qed.
 
-(* -------------------------------------------------------------------- *)
+(* (* -------------------------------------------------------------------- *) *)
 Notation ssem   := (@ssem_ _ ident cmem).
 Notation mdistr := (Distr cmem).
 Notation mnull  := (@dnull R cmem.(mheap)).
@@ -768,7 +758,7 @@ Lemma mget_iE {T : IhbType.type} (m : rmem) (x : vars T) s :
 Proof. by case:s x=> -[]. Qed.
 
 Lemma mset_iE {T : IhbType.type} (m : rmem) (x : vars T) (v : T) s :
-  m.[x#s <- v] = 
+  m.[x#s <- v] =
   (((m#'1).[x <- v], m.1)#s, (m.2, (m#'2).[x <- v])#s)%M.
 Proof. by case:x m s => xid [m1 m2] []. Qed.
 
@@ -873,7 +863,15 @@ Lemma dlim_dlim_com {T: choiceType} (f : nat -> nat -> {distr T / R})
 (hmono2: (forall k n1 n2, (n1 <= n2)%N -> f k n1 <=1 f k n2)):
   \dlim_(n) (\dlim_(m) f n m) =  \dlim_(m) (\dlim_(n) f n m).
 Proof.
-  Admitted.
+ have main (g : nat -> nat -> {distr T / R}) :
+      (forall k n1 n2, (n1 <= n2)%N -> g n1 k <=1 g n2 k) ->
+      \dlim_(n) (\dlim_(m) g n m) <=1 \dlim_(m) (\dlim_(n) g n m).
+    move=> hg; apply: leub_dlim => n; apply: le_dlim => m.
+    by apply: dlim_ub => n1 n2 le_n; exact: hg.
+  apply/distr_eqP => x; apply/eqP; rewrite eq_le; apply/andP; split.
+  + exact: main f hmono1 x.
+  + exact: main (fun a b => f b a) hmono2 x.
+Qed.
 
 Lemma dlet_dlim_diag {T U : choiceType}
   (d : nat -> Distr T) (h : nat -> T -> Distr U) :
@@ -884,7 +882,8 @@ Lemma dlet_dlim_diag {T U : choiceType}
 Proof.
 move=> mono_d mono_h u; apply/eqP; rewrite eq_le; apply/andP; split.
 - rewrite dlet_lim //; apply/leub_dlim => n.
-  rewrite -dlim_let; last by move=> x k1 k2 hle; apply: mono_h.
+  rewrite -dlim_let.
+  + by move=> x k1 k2 hle; apply: mono_h.
   apply/leub_dlim => k u'.
   have hle_d : d n <=1 d (maxn k n) by apply/mono_d/leq_maxr.
   have hle_h : {in dinsupp (d n), forall x, h k x <=1 h (maxn k n) x}.
@@ -926,7 +925,6 @@ case: (`[{e}] s) => //=.
 apply: eq_in_dlet; [by move=> s' _; rewrite IHn0 | by []].
 Qed.
 
-
 Lemma le_whilen_aux (l : (Y * mem) -> {distr mem / R}) n e c m m' :
   ssem_aux l (whilen e c n) m m' <= ssem_aux l (whilen e c n.+1) m m'.
 Proof.
@@ -963,8 +961,8 @@ Proof.
     rewrite semE.
     symmetry; under eq_dlim do rewrite dlim_whilen.
     rewrite dlim_dlim_com.
-    + 2: by move => *; rewrite mono_ssem_aux // => *; rewrite homo_ubnf.
-    + 2: by move => k *; rewrite hmono_whilen .
+    + by move => *; rewrite mono_ssem_aux // => *; rewrite homo_ubnf.
+    + by move => k *; rewrite hmono_whilen .
     apply eq_dlim => n.
     move : s.
     elim n.
@@ -973,15 +971,15 @@ Proof.
       rewrite semE.
       case :(`[{e}] s); [|by rewrite semE dlimC].
       + rewrite semE -dlet_dlim_diag' //=.
-        + 2: by move => *; rewrite mono_ssem_aux // => *; rewrite homo_ubnf.
-        + 2: by move => *; rewrite mono_ssem_aux // => *; rewrite homo_ubnf.
+        + by move => *; rewrite mono_ssem_aux // => *; rewrite homo_ubnf.
+        + by move => *; rewrite mono_ssem_aux // => *; rewrite homo_ubnf.
         + apply /eq_in_dlet;[| by rewrite h].
           by move => ??;rewrite hi.
   + move => c1 hc1 c2 hc2 s //=.
     rewrite semE.
     rewrite -dlet_dlim_diag' //=.
-    + 2: by move => *; rewrite mono_ssem_aux // => *; rewrite homo_ubnf.
-    + 2: by move => *; rewrite mono_ssem_aux // => *; rewrite homo_ubnf.
+    + by move => *; rewrite mono_ssem_aux // => *; rewrite homo_ubnf.
+    + by move => *; rewrite mono_ssem_aux // => *; rewrite homo_ubnf.
     + apply eq_in_dlet;[|by rewrite hc1].
       by move => *; rewrite hc2.
   + by move => f s; rewrite semE.
@@ -1010,8 +1008,7 @@ Lemma ssem_loop_while (ps' : psi) s:
   ssem_ ps' (While true%:S Do skip) s = dnull.
 Proof.
   rewrite semE //=.
-  rewrite (eq_dlim (gn := fun _ => dnull)).
-  + by rewrite dlimC.
+  rewrite (eq_dlim (gn := fun _ => dnull)); last first. by rewrite dlimC.
   move=> k /=.
   elim k => [|{}k IHk] //=.
   +   by rewrite semE.
@@ -1054,8 +1051,7 @@ Lemma ubnf_dnull n p s:
   (ubnf false_ps) n (p, s) = dnull.
 Proof.
 case n => [|{}n] //=.
-rewrite (eq_dlim (gn := fun _ => dnull)).
-+ by rewrite dlimC.
+rewrite (eq_dlim (gn := fun _ => dnull)); last first. by rewrite dlimC.
 move=> k /=.
 elim k => [|{}k IHk] //=.
 by rewrite dlet_unit IHk.
@@ -1065,8 +1061,7 @@ Lemma ssem_false_ps p s :
   ssem_ false_ps (call p) s = dnull.
 Proof.
 rewrite semE.
-rewrite (eq_dlim (gn := fun _ => dnull)).
-+ by rewrite dlimC.
+rewrite (eq_dlim (gn := fun _ => dnull)); last first. by rewrite dlimC.
 move => n.
 exact: ubnf_dnull.
 Qed.
