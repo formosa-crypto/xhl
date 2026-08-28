@@ -136,8 +136,8 @@ Notation cmd     := (@cmd_  X cmem Y).
 Notation bexpr   := (expr bool).
 Notation dexpr T := (expr (Distr T)).
 
-Notation mdistr := (Distr cmem.(mheap)).
-Notation mnull  := (@dnull R cmem.(mheap)).
+Notation mdistr := (Distr cmem).
+Notation mnull  := (@dnull R cmem).
 
 (* -------------------------------------------------------------------- *)
 Fixpoint esem {T : Type} (e : expr T) (m : cmem) : T :=
@@ -681,7 +681,7 @@ Qed.
 (* (* -------------------------------------------------------------------- *) *)
 Notation ssem   := (@ssem_ _ ident cmem).
 Notation mdistr := (Distr cmem).
-Notation mnull  := (@dnull R cmem.(mheap)).
+Notation mnull  := (@dnull R cmem).
 
 Arguments ssem_ X Y cmem ps s%_S m%_M.
 Arguments esem X cmem T e%_X m%_M.
@@ -729,8 +729,8 @@ Reserved Notation "m .[~2 x <- v ]"
   (at level 1, x, v at level 200, format "m .[~2  x  <-  v ]").
 
 Notation rsem    := (@ssem_ _ rmem).
-Notation rmdistr := (Distr rmem.(mheap)).
-Notation rmnull  := (@dnull R rmem.(mheap)).
+Notation rmdistr := (Distr rmem).
+Notation rmnull  := (@dnull R rmem).
 
 Notation "m .[ x @ s <- v ]" := m.[x # s <- v].
 Notation "m .[~1 x <- v ]"   := m.[x @ '1 <- v].

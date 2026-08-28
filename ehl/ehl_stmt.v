@@ -51,7 +51,7 @@ Lemma kehl_ehl ps P c Q :
 Proof.
 rewrite /bound; split.
 + move=> h m0 m.
-  case_eq (m == m0).
+  case: ifP.
   - by move => /eqP <-.
   - move => _. exact : leey.
 + move => h m.
