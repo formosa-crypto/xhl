@@ -1,5 +1,6 @@
 (* -------------------------------------------------------------------- *)
 From HB                 Require Import structures.
+From elpi.apps          Require Import derive.std.
 From mathcomp           Require Import boot order.
 From mathcomp.algebra   Require Import algebra.
 From mathcomp.classical Require Import boolp.
@@ -257,30 +258,12 @@ Definition cmem : memType ident := locked {|
 Notation dmem := (Distr cmem).
 
 (* -------------------------------------------------------------------- *)
-Inductive side : predArgType := SLeft | SRight.
+#[only(eqbOK)] derive
+  Inductive side := SLeft | SRight.
 
-Coercion bool_of_side (s : side) :=
-  match s with SLeft => false | SRight => true end.
+Definition _side_list := [:: SLeft; SRight].
 
-Definition side_of_bool (b : bool) :=
-  if b then SRight else SLeft.
-
-Lemma side_of_boolK : cancel bool_of_side side_of_bool.
-Proof. by case. Qed.
-
-HB.instance Definition side_eqType :=
-  Equality.copy side (can_type side_of_boolK).
-
-(*
-HB.instance Definition side_choiceType :=
-  Choice.copy side (can_type side_of_boolK).
-*)
-
-HB.instance Definition side_countType :=
-  CanIsCountable side_of_boolK.
-
-HB.instance Definition side_finType :=
-  Finite.copy side (can_type side_of_boolK).
+HB.instance Definition _ := hasDecEq.Build side side_eqb_OK.
 
 Notation "''1'" := SLeft.
 Notation "''2'" := SRight.
