@@ -187,7 +187,7 @@ Lemma akehl_aehl l P c Q :
 Proof.
 rewrite /bound; split.
 + move=> h m0 m.
-  case_eq (m == m0).
+  case: ifP.
   - by move => /eqP <-.
   - move => _. exact : leey.
 + move => h m.
@@ -492,7 +492,7 @@ Lemma rel_complete (c : cmd) (P : cond) (Q : cond2) :
   kehl_ ps P c Q -> derivable2 ps cl_mgt P c Q.
 Proof.
 move=> h1 h2 h3 /kehl_ehl h; apply: H_hl => //= s0. apply rel_complete_d => //.
-move => m; rewrite /bound; case (m == s0) => //=.
+move => m; rewrite /bound; case: ifP => _ //=.
 exact: le0y.
 Qed.
 

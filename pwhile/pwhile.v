@@ -39,32 +39,35 @@ HB.instance Definition real_ihbType :=
 Notation Distr T := {distr T%type / R}.
 
 (* -------------------------------------------------------------------- *)
-Section MemType.
-Variable (mident : eqType).
-
-Record memType_ : Type := mkMem {
-  mheap    :> choiceType;
-  mget_    :  mheap -> forall (T : IhbType.type), mident -> T;
-  mset_    :  mheap -> forall (T : IhbType.type), mident -> T -> mheap;
-  mget_eq_  : forall T m x v, @mget_ (@mset_ m T x v) T x = v;
+HB.mixin Record isMemType (mident : eqType) M of Choice M := {
+  mget_ : M -> forall (T : IhbType.type), mident -> T;
+  mset_ : M -> forall (T : IhbType.type), mident -> T -> M;
+  mget_eq_  : forall T m x v, mget_ (mset_ m T x v) T x = v;
   mget_neq_ : forall T U m x y v, (T <> U \/ x != y) ->
-                @mget_ (@mset_ m T x v) U y = @mget_ m U y;
+                mget_ (mset_ m T x v) U y = mget_ m U y;
 }.
 
-Section GetSet.
-Variable (M : memType_) (T : IhbType.type).
+#[short(type="memType")]
+HB.structure Definition MemType (mident : eqType) :=
+  { M of Choice M & isMemType mident M }.
 
-Definition mget (m : M) (x : mident) := @mget_ M m T x.
+Section MemTheory.
+Variable (mident : eqType).
+
+Section GetSet.
+Variable (M : memType mident) (T : IhbType.type).
+
+Definition mget (m : M) (x : mident) := mget_ m T x.
 
 Arguments mget : simpl never.
 
-Definition mset (m : M) (x : mident) (v : T) := @mset_ M m T x v.
+Definition mset (m : M) (x : mident) (v : T) := mset_ m T x v.
 
 Arguments mset : simpl never.
 
 End GetSet.
 
-Variable (M : memType_) (T U : IhbType.type).
+Variable (M : memType mident) (T U : IhbType.type).
 
 Lemma mget_eq (m : M) (x : mident) (v : T) : mget T (mset m x v) x = v.
 Proof. by unlock mget mset; apply/mget_eq_. Qed.
@@ -73,10 +76,10 @@ Lemma mget_neq (m : M) (x y : mident) (v : T) : (T <> U \/ x != y) ->
   mget U (mset m x v) y = mget U m y.
 Proof. by unlock mget mset; apply/mget_neq_. Qed.
 
-Definition memType_of of phant mident := memType_.
-End MemType.
+End MemTheory.
 
-Notation memType T := (memType_of (Phant T)).
+Arguments mget : simpl never.
+Arguments mset : simpl never.
 
 (* -------------------------------------------------------------------- *)
 (* Expressions and probabilistic expressions *)
@@ -247,13 +250,10 @@ End CoreMem.
 Arguments coremem : clear implicits.
 
 (* -------------------------------------------------------------------- *)
-Definition cmem : memType ident := locked {|
-  mheap     := Choice.clone coremem _;
-  mget_     := coremem_get;
-  mset_     := coremem_set;
-  mget_eq_  := @get_set_eq;
-  mget_neq_ := @get_set_ne;
-|}.
+HB.instance Definition coremem_memType :=
+  isMemType.Build ident coremem (@get_set_eq) (@get_set_ne).
+
+Definition cmem : memType ident := coremem.
 
 Notation dmem := (Distr cmem).
 
@@ -287,7 +287,7 @@ Proof. by case: s. Qed.
 (* -------------------------------------------------------------------- *)
 Notation rident := (ident * side)%type.
 
-Definition coremem2 := (mheap cmem * mheap cmem)%type.
+Definition coremem2 := (cmem * cmem)%type.
 
 Definition coremem2_get (m : coremem2) T xs :=
   mget T (m#(xs.2))%M xs.1.
@@ -312,16 +312,14 @@ case: m x y => m1 m2 [x []] [y []] //= h; apply mget_neq => /=;
   by (elim: h => h; [left | right; apply: contra h => /eqP->]).
 Qed.
 
-Canonical coremem2_choiceType := Choice.clone coremem2 _.
+HB.instance Definition coremem2_choiceType :=
+  Choice.copy coremem2 (cmem * cmem)%type.
 
 (* -------------------------------------------------------------------- *)
-Definition rmem : memType rident := {|
-  mheap     := Choice.clone coremem2 _;
-  mget_     := coremem2_get;
-  mset_     := coremem2_set;
-  mget_eq_  := @get_set2_eq;
-  mget_neq_ := @get_set2_ne;
-|}.
+HB.instance Definition coremem2_memType :=
+  isMemType.Build rident coremem2 (@get_set2_eq) (@get_set2_ne).
+
+Definition rmem : memType rident := coremem2.
 
 Arguments rmem : simpl never.
 
