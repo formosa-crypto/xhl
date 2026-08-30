@@ -271,15 +271,13 @@ Lemma recursive_proc (ps': psi) (cl' : phi) :
 Proof.
   rewrite /cl_cond2_independent /cond2_independent.
   move => hcl h p s.
-  rewrite /espe {2}test8.
+  rewrite /espe {2}ssem_dlim_ubnf.
   apply esum_dlim_r.
   + move => ????.
     apply mono_ssem_aux.
     by apply homo_ubnf.
   + move => m. exact: post_pos.
-  move => n.
-  (*This should be a lemma*)
-  rewrite ssem_ubnf_dnull ubnf_ssem (test9 _ _ _ _ ps') test5.
+  move => n; rewrite ssem_aux_ssem_.
   under eq_esum do rewrite (hcl p _ 0%E).
   move : s p.
   elim : n => [| n Hn].

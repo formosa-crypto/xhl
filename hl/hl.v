@@ -238,7 +238,7 @@ Proof.
   move => h p s hP.
   rewrite /range.
   rewrite /dinsupp.
-  rewrite -test1.
+  rewrite -dlim_inliner_ssem.
   apply/range_dlim=> n.
   revert hP; revert p; revert s.
   elim : n => [| n Hn].
@@ -460,21 +460,6 @@ Fixpoint mod (c : cmd) : pred { t : IhbType.type & vars t } :=
   | G _ <<- _ => pred0
   | block _ _ rs => [pred y | has (fun b => `[< y = bvar b >]) rs]
 end.
-
-Fixpoint nocall (c:cmd) : Prop :=
-  match c with
-  | abort    => True
-  | skip     => True
-  | x <<- _  => True
-  | x <$- _  => True
-  | c1 ;; c2 => nocall c1 /\ nocall c2
-
-  | If _ then c1 else c2 => nocall c1 /\ nocall c2
-  | While _ Do c         => nocall c
-  | call n => False
-  | G _ <<- _   => True
-  | block _ c _ => nocall c
-  end.
 
 (* -------------------------------------------------------------------- *)
 Definition eaccess {t} (e : expr t) : pred { t : IhbType.type & vars t } :=
