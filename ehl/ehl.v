@@ -70,6 +70,18 @@ Inductive derivable : psi -> phi -> cond -> cmd -> cond -> Prop :=
     derivable ps cl f c g
 | H_khl : forall P Q c cl ps,
     derivable2 ps cl P c (fun _ _ => Q) -> derivable ps cl P c Q
+| H_GAsgn : forall {T : IhbType.type} x (e : expr_ X mem T) f cl ps,
+    derivable ps cl (fun m => f (m.{x <- `[{e}] m})) (G x <<- e) f
+(* A block's postcondition depends on both the outer memory [m] -- whose
+ * local store [mret] restores -- and the body's final memory.  So [m] is
+ * quantified outside the derivation and the body's initial state is pinned
+ * to [minit m bs] with [bound], exactly as [H_hl] does for [s0].  The value
+ * carried at the pin point is [f m], the *outer* memory's. *)
+| H_Block : forall f g bs c rs cl ps,
+    (forall m, (0 <= g m)%E) ->
+    (forall m, derivable ps cl (bound (fun _ => f m) (minit m bs)) c
+                               (fun m'' => g (mret m m'' rs))) ->
+    derivable ps cl f (block bs c rs) g
 with derivable2 : psi -> phi -> cond -> cmd -> cond2 -> Prop :=
 | H_hl: forall P Q c cl ps,
     (* (forall m mu m', (0 <= Q m mu m')%E) -> *)
@@ -153,6 +165,24 @@ Qed.
 Lemma ehl_assign {T : IhbType.type} f x (e : expr_ X mem T) :
   ehl (fun m => f m.[x <- `[{e}] m]) (x <<- e) f.
 Proof. by  move => m; rewrite ssemE eexp_dunit. Qed.
+
+(* -------------------------------------------------------------------- *)
+
+Lemma ehl_gassign {T : IhbType.type} f x (e : expr_ X mem T) :
+  ehl (fun m => f (m.{x <- `[{e}] m})) (G x <<- e) f.
+Proof. by move => m; rewrite ssem_gassnE eexp_dunit. Qed.
+
+(* -------------------------------------------------------------------- *)
+
+Lemma ehl_block f g bs c rs :
+  (forall m, (0 <= g m)%E) ->
+  (forall m, ehl (bound (fun _ => f m) (minit m bs)) c
+                 (fun m'' => g (mret m m'' rs))) ->
+  ehl f (block bs c rs) g.
+Proof.
+move=> Hg H m; rewrite ssem_blockE espe_dlet_ret //.
+by have := H m (minit m bs); rewrite /bound eqxx.
+Qed.
 
 (* -------------------------------------------------------------------- *)
 
@@ -311,6 +341,10 @@ apply: derivable_mut.
   move=> P2 Q2 P1 Q1 c cl ps ? HP HQ IH Hv.
   by apply: ehl_conseq; [ exact: HP | exact: HQ].
 - (* H_khl *) by move=> P Q c cl ? ? IH Hv; apply/ehl_kehl; exact: IH.
+- (* H_GAsgn *) by move=> *; exact: ehl_gassign.
+- (* H_Block *)
+  move=> f g bs c rs cl ps Hg _ IH Hv.
+  by apply: ehl_block; [exact: Hg | move=> m; exact: IH].
 - (* H_hl *)
   move=> P Q c cl ps ? IH Hv.
   rewrite kehl_ehl => s0.

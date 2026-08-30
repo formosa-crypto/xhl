@@ -66,6 +66,13 @@ Inductive derivable : phi -> cond -> cmd -> cond -> Prop :=
       derivable cl f c g
   | H_khl : forall P Q c cl,
      derivable2 cl P c (fun _ _ => Q) -> derivable cl P c Q
+  | H_GAsgn : forall {T : IhbType.type} x (e : expr_ X mem T) f cl,
+      derivable cl (fun m => f (m.{x <- `[{e}] m})) (G x <<- e) f
+  | H_Block : forall f g bs c rs cl,
+      (forall m, (0 <= g m)%E) ->
+      (forall m, derivable cl (bound (fun _ => f m) (minit m bs)) c
+                              (fun m'' => g (mret m m'' rs))) ->
+      derivable cl f (block bs c rs) g
   with derivable2 : phi -> cond -> cmd -> cond2 -> Prop :=
   | H_hl: forall P Q c cl,
       (forall m mu m', (0 <= Q m mu m')%E) ->
@@ -119,6 +126,20 @@ Qed.
 Lemma aehl_assgn l {T : IhbType.type} f x (e : expr_ X mem T) :
   aehl l (fun m => f m.[x <- `[{e}] m]) (x <<- e) f.
 Proof. by move => m /=; rewrite eexp_dunit. Qed.
+
+Lemma aehl_gassign l {T : IhbType.type} f x (e : expr_ X mem T) :
+  aehl l (fun m => f (m.{x <- `[{e}] m})) (G x <<- e) f.
+Proof. by move => m /=; rewrite eexp_dunit. Qed.
+
+Lemma aehl_block l f g bs c rs :
+  (forall m, (0 <= g m)%E) ->
+  (forall m, aehl l (bound (fun _ => f m) (minit m bs)) c
+                    (fun m'' => g (mret m m'' rs))) ->
+  aehl l f (block bs c rs) g.
+Proof.
+move=> Hg H m /=; rewrite espe_dlet_ret //.
+by have := H m (minit m bs); rewrite /bound eqxx.
+Qed.
 
 Lemma aehl_rnd l {T : IhbType.type} f x (d : expr_ X mem (Distr T)) :
   let g m := espe (\dlet_(v <- `[{d}] m) (dunit m.[x <- v])) f in
@@ -244,6 +265,10 @@ apply: derivable_mut.
   apply: aehl_conseq. apply: HI => //. apply H.
 - (* H_khl *)
   move => P Q c cl ? IH n Hv; rewrite -aehl_akehl; exact: IH.
+- (* H_GAsgn *) by move=> *; exact: aehl_gassign.
+- (* H_Block *)
+  move=> f g bs c rs cl Hg _ IH n Hv.
+  by apply: aehl_block; [exact: Hg | move=> m; exact: IH].
 - (* H_hl *)
   move=> P Q c cl Hpos Hmono ? IH n Hv. rewrite akehl_aehl=> s0.
   move => m.
@@ -397,7 +422,8 @@ Lemma rel_complete_d (c : cmd) (f g : cond) :
   (forall m , (0 <= g m)%E) ->
   ehl_ ps f c g -> derivable ps cl_mgt f c g.
 Proof.
-elim: c f g => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2 | f ] P Q Hf Hg Hhl.
+elim: c f g => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2
+               | f | T gx ge | bs cb ihb rs ] P Q Hf Hg Hhl.
 - (* abort *) exact: H_Abort.
 - (* skip *)
   apply: (H_Consequence _ Q Q) => //.
@@ -483,6 +509,16 @@ elim: c f g => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2 
     move: (Hhl m0); rewrite ssem_call_eq; apply: le_trans.
     rewrite /espe; apply: le_esum => s ?; apply: (lee_wpmul2l (Hg s)).
     exact: (lee_tofin (Hdom s)).
+- (* gassign *)
+  apply: (H_Consequence _ (fun m => Q (m.{gx <- `[{ge}] m})) Q).
+  + exact: H_GAsgn.
+  + move=> m mu H1; apply: (le_trans H1).
+    by move : (Hhl m); rewrite ssem_gassnE eexp_dunit.
+- (* block *)
+  apply: H_Block => // m; apply: ihb => //.
+  + by move=> m'; rewrite /bound; case: ifP => _ //; exact: le0y.
+  + move=> m'; rewrite /bound; case: ifP => [/eqP -> | _]; last exact: leey.
+    by move: (Hhl m); rewrite ssem_blockE espe_dlet_ret.
 Qed.
 
 Lemma rel_complete (c : cmd) (P : cond) (Q : cond2) :

@@ -24,13 +24,10 @@ Notation LOHS := (X in _ <= X)%pattern.
 Declare Scope sem_scope.
 
 (* -------------------------------------------------------------------- *)
-Axiom funext : forall {T U : Type} (f g : T -> U),
-  (forall x, f x = g x) -> f = g.
 
 Lemma funext2 : forall {T U V : Type} (f g : T -> U -> V),
   (forall x y, f x y = g x y) -> f = g.
 Proof. by move=> T U V f g eq; apply/funext=> x; apply/funext. Qed.
-
 
 (* -------------------------------------------------------------------- *)
 Section DistrRecast.
@@ -122,9 +119,27 @@ Fixpoint ubn {A : choiceType} (f : A -> Distr A) (t : pred A) n := fun a =>
 Reserved Notation "m .[ x <- v ]"
   (at level 1, x, v at level 200, format "m .[ x  <-  v ]").
 
+Reserved Notation "m .{ x }"
+  (at level 1, x at level 200, format "m .{ x }").
+
+Reserved Notation "m .{ x <- v }"
+  (at level 1, x, v at level 200, format "m .{ x  <-  v }").
+
+Reserved Notation "m .[+ x <- v ]"
+  (at level 1, x, v at level 200, format "m .[+  x  <-  v ]").
+
 (* -------------------------------------------------------------------- *)
 Notation "m .[ x ]"      := (@mget _ _ (vtype x%V) m (vname x%V)) : mem_scope.
 Notation "m .[ x <- v ]" := (@mset _ _ (vtype x%V) m (vname x%V) v) : mem_scope.
+
+(* the main (global) store, reached only through [gvar_]/[gassign] *)
+Notation "m .{ x }"      := (@mgetg _ _ (vtype x%V) m (vname x%V)) : mem_scope.
+Notation "m .{ x <- v }" := (@msetg _ _ (vtype x%V) m (vname x%V) v) : mem_scope.
+
+(* entering a block: a fresh local store in which only [x] is set *)
+Notation "m .[+ x <- v ]" := (@mpush _ _ (vtype x%V) m (vname x%V) v) : mem_scope.
+
+Notation "m .[+]" := (mnew m) (at level 2, format "m .[+]") : mem_scope.
 
 (* -------------------------------------------------------------------- *)
 Section Semantics.
@@ -146,7 +161,22 @@ Fixpoint esem {T : Type} (e : expr T) (m : cmem) : T :=
   | cst_ T c => c
   | prp_ P   => P m
   | app_ T U e1 e2 => (esem e1 m) (esem e2 m)
+  | gvar_ T x => m.{x}
   end.
+
+(* -------------------------------------------------------------------- *)
+(* Entering a block: a fresh local store, then one assignment per declared
+ * local.  Every initialiser is read in the *outer* memory [m]. *)
+Definition minit (m : cmem) (bs : seq binding) : cmem :=
+  foldl (fun m' b => let: existT _ (x, e) := b in m'.[x <- esem e m]) m.[+] bs.
+
+(* Leaving a block: the enclosing local store is put back while [m']'s main
+ * store is kept, then one assignment per returned value.  Every return
+ * expression is read in the *inner* memory [m'], and every assignment lands
+ * outside the scope -- so a return target may be one of the locals. *)
+Definition mret (m m' : cmem) (rs : seq binding) : cmem :=
+  foldl (fun mm b => let: existT _ (r, e') := b in mm.[r <- esem e' m'])
+        (mrestore m m') rs.
 
 (* -------------------------------------------------------------------- *)
 Fixpoint ssem_aux (l: (Y * cmem) -> mdistr) (s : cmd) (m : cmem) : mdistr :=
@@ -173,6 +203,12 @@ Fixpoint ssem_aux (l: (Y * cmem) -> mdistr) (s : cmd) (m : cmem) : mdistr :=
       \dlet_(m' <- ssem_aux l c1 m) (ssem_aux l c2 m')
 
   | call n => l (n, m)
+
+  | gassign _ x e =>
+      dunit m.{x <- esem e m}
+
+  | block bs c rs =>
+      \dlet_(m' <- ssem_aux l c (minit m bs)) dunit (mret m m' rs)
   end.
 
 Fixpoint ubnf (ps: Y -> cmd) n :=
@@ -240,6 +276,19 @@ Lemma esem_appE {T U : Type} (e1 : expr (T -> U)) (e2 : expr T) m :
   esem (app_ e1 e2) m = (esem e1 m) (esem e2 m).
 Proof. by []. Qed.
 
+Lemma esem_gvarE {T : IhbType.type} (x : vars T) m :
+   esem (@gvar_ _ _ T x) m = m.{x}.
+Proof. by []. Qed.
+
+Lemma ssem_gassnE {T} (x : vars T) (e : expr T) m :
+  ssem (G x <<- e) m = dunit m.{x <- esem e m}.
+Proof. by rewrite unlock. Qed.
+
+Lemma ssem_blockE bs c rs m :
+  ssem (Block bs Do c Return rs) m =
+    \dlet_(m' <- ssem c (minit m bs)) dunit (mret m m' rs).
+Proof. by rewrite unlock. Qed.
+
 Lemma ssem_whileE e c m :
   ssem (While e Do c) m = dlim (fun n => ssem (whilen e c n) m).
 Proof.
@@ -262,7 +311,8 @@ Qed.
 
 Definition semE :=
   (ssem_abortE, ssem_skipE, @ssem_assnE, @ssem_rndE,
-   ssem_ifE   , ssem_seqE , ssem_whileE, ssem_callE).
+   ssem_ifE   , ssem_seqE , ssem_whileE, ssem_callE,
+   @ssem_gassnE, ssem_blockE).
 
 Definition bsemE := locked (
   funext ssem_abortE,
@@ -272,7 +322,9 @@ Definition bsemE := locked (
   fun e c1 c2 => funext (ssem_ifE e c1 c2),
   fun c1 c2 => funext (ssem_seqE c1 c2),
   fun e c => funext (ssem_whileE e c),
-  fun f => funext (ssem_callE f)).
+  fun f => funext (ssem_callE f),
+  fun T (x : vars T) (e : expr _) => funext (ssem_gassnE x e),
+  fun bs c rs => funext (ssem_blockE bs c rs)).
 
 Lemma sem_seqA c1 c2 c3 :
   ssem ((c1 ;; c2) ;; c3) = ssem (c1 ;; (c2 ;; c3)).
@@ -539,6 +591,12 @@ Qed.
 Global Instance cond_m : Proper (eq ==> eqcmd ==> eqcmd ==> eqcmd) cond.
 Proof. by move=> ?? H1 ?? H2 ?? H3 m; rewrite !semE H1; case: ifP. Qed.
 
+Global Instance block_m : Proper (eq ==> eqcmd ==> eq ==> eqcmd) (@block I M J).
+Proof.
+move=> ?? <- c1 c2 hc ?? <- m.
+by rewrite !ssem_blockE hc.
+Qed.
+
 Fixpoint mk_seqr (c1 c2 : cmd) :=
   match c2 with
   | skip        => c1
@@ -551,10 +609,12 @@ Definition mk_seq (c1 c2 : cmd) :=
  
 Fixpoint normc (c : cmd) :=
   match c with
-  | abort | skip | assign _ _ _ | random _ _ _ | call _ => c
+  | abort | skip | assign _ _ _ | random _ _ _ | call _
+  | gassign _ _ _ => c
   | cond e c1 c2 => cond e (normc c1) (normc c2)
   | while e c    => while e (normc c)
   | seqc c1 c2   => mk_seq (normc c1) (normc c2)
+  | block bs c rs => block bs (normc c) rs
   end.
 
 Lemma mk_seqrP (c1 c2 : cmd) : mk_seqr c1 c2 =C seqc c1 c2.
@@ -568,7 +628,7 @@ Proof. by case:c1 => //= *;rewrite ?mk_seqrP // seq_skip_l. Qed.
 
 Lemma normcP (c : cmd) : c =C normc c.
 Proof.
-by elim: c=> //= [?? H1 ? H2|?? H1|? H1 ? H2];
+by elim: c=> //= [?? H1 ? H2|?? H1|? H1 ? H2|?? H1 ?];
 rewrite ?mk_seqP [in CLHS]H1 ?[in CLHS]H2.
 Qed.
 
@@ -741,7 +801,7 @@ Lemma mselect_mset T s s' (m : rmem) (x : vars T) (v : T) :
 Proof. by case: s s' x => [] [] []. Qed.
 
 Lemma esem_iE T s (e : expr T) (m : rmem) : esem (e#s) m = esem e m#s.
-Proof. by elim: e => {T} /= [ ?[?]| | | ??? -> ? ->]. Qed.
+Proof. by elim: e => {T} /= [ ?[?]| | | ??? -> ? ->| ?[?]]. Qed.
 
 Lemma esem_1E T (e : expr T) (m : rmem): esem (e#'1) m = esem e m.1.
 Proof. by rewrite esem_iE. Qed.
@@ -761,6 +821,22 @@ Lemma mset_iE {T : IhbType.type} (m : rmem) (x : vars T) (v : T) s :
   m.[x#s <- v] =
   (((m#'1).[x <- v], m.1)#s, (m.2, (m#'2).[x <- v])#s)%M.
 Proof. by case:x m s => xid [m1 m2] []. Qed.
+
+Lemma mgetg_iE {T : IhbType.type} (m : rmem) (x : vars T) s :
+  m.{irvar s x} = (m#s).{x}.
+Proof. by case:s x=> -[]. Qed.
+
+Lemma msetg_iE {T : IhbType.type} (m : rmem) (x : vars T) (v : T) s :
+  m.{x#s <- v} =
+  (((m#'1).{x <- v}, m.1)#s, (m.2, (m#'2).{x <- v})#s)%M.
+Proof. by case:x m s => xid [m1 m2] []. Qed.
+
+Lemma mnew_iE (m : rmem) : m.[+] = ((m#'1).[+], (m#'2).[+]).
+Proof. by case: m. Qed.
+
+Lemma mrestore_iE (m0 m : rmem) :
+  mrestore m0 m = (mrestore m0.1 m.1, mrestore m0.2 m.2).
+Proof. by case: m0 m => a1 a2 [b1 b2]. Qed.
 
 Definition rps s (ps : nat -> cmd) := fun n => ircmd s (ps n).
 
@@ -833,13 +909,15 @@ Lemma mono_ssem_aux
   (l l' : (Y * cmem) -> {distr cmem / R}) c  (m : cmem) :
   (forall x, l x <=1 l' x) -> ssem_aux l c m <=1 ssem_aux l' c m.
 Proof.
-move=> le_ll'; elim: c m => [||T x e|T x e|e c1 ih1 c2 ih2|e c ih|c1 ih1 c2 ih2|f] m m' //=.
+move=> le_ll'; elim: c m =>
+  [||T x e|T x e|e c1 ih1 c2 ih2|e c ih|c1 ih1 c2 ih2|f|???|? c ih ?] m m' //=.
 - by case: ifP => _; [exact: ih1 | exact: ih2].
 - have hb : ssem_aux l c <=2 ssem_aux l' c by move=> a a'; exact: ih.
   apply/leub_dlim => n m0.
   apply: (le_trans (@le_ubn_body _ _ _ (esem e) n hb m m0)).
   by apply/dlim_ub => n1 n2 hle; exact: homo_ubn_n.
-by apply/le_dlet => [|x _]; [exact: ih1 | exact: ih2].
+- by apply/le_dlet => [|x _]; [exact: ih1 | exact: ih2].
+by apply/le_dlet => [|m0 _]; [exact: ih | by []].
 Qed.
 
 Lemma mono_ubnf {X Y : eqType} {cmem: memType X} {ps : Y -> (@cmd_  X cmem Y)} n :
@@ -951,7 +1029,7 @@ Lemma test8 (ps' : psi) c s:
 Proof.
   move : s.
   elim c.
-  1-4: by move => * //=; rewrite /ssem_ unlock /ssem_r dlimC.
+  1-4,9: by move => * //=; rewrite /ssem_ unlock /ssem_r dlimC.
   + move => e ? hc1 ? hc2 s //=.
     rewrite semE.
     case (`[{e}] s).
@@ -983,6 +1061,12 @@ Proof.
     + apply eq_in_dlet;[|by rewrite hc1].
       by move => *; rewrite hc2.
   + by move => f s; rewrite semE.
+  + move => bs c0 h rs s //=.
+    rewrite semE.
+    rewrite -dlet_dlim_diag' //=.
+    + by move => n m le; apply: mono_ssem_aux; exact: homo_ubnf.
+    + apply eq_in_dlet; last by rewrite h.
+      by move => *; rewrite dlimC.
 Qed.
 
 Lemma ssem_call_eq (ps0 : psi) f s:
@@ -1015,6 +1099,19 @@ Proof.
   by rewrite !semE dlet_unit IHk.
 Qed.
 
+(* -------------------------------------------------------------------- *)
+(* [c] contains no [block].  The proof systems in hl/, ehl/, phl/, prhl/
+ * and ellora/ have no rule for [block] yet, so their completeness proofs,
+ * which proceed by induction on the command, are stated for such [c]. *)
+Fixpoint noblock (c : cmd_ X mem Y) : Prop :=
+  match c with
+  | abort | skip | assign _ _ _ | random _ _ _ | call _ | gassign _ _ _ => True
+  | cond _ c1 c2 => noblock c1 /\ noblock c2
+  | while _ c    => noblock c
+  | seqc c1 c2   => noblock c1 /\ noblock c2
+  | block _ _ _ => False
+  end.
+
 End MISC.
 
 Section Inliner.
@@ -1026,6 +1123,7 @@ Fixpoint inliner (c : cmd_ X mem Y) inline :=
   | cond b p1 p2 => cond b (inliner p1 inline) (inliner p2 inline)
   | while b p => while b (inliner p inline)
   | call f => inline f
+  | block bs p rs => block bs (inliner p inline) rs
   | _ => c
   end.
 
@@ -1090,6 +1188,13 @@ Proof.
   reflexivity.
 Qed.
 
+Lemma kinliner1_cblock n ps' bs p rs :
+  k_inliner1 (S n) (@block X mem Y bs p rs) ps' =
+  block bs (k_inliner1 (S n) p ps') rs.
+Proof.
+  reflexivity.
+Qed.
+
 
 Lemma kinliner2_cseq n ps' p1 p2: k_inliner2 (S n) (seqc p1 p2) ps' =
                                 seqc (k_inliner2 (S n) p1 ps') (k_inliner2 (S n) p2 ps').
@@ -1115,6 +1220,13 @@ Proof.
   reflexivity.
 Qed.
 
+Lemma kinliner2_cblock n ps' bs p rs :
+  k_inliner2 (S n) (@block X mem Y bs p rs) ps' =
+  block bs (k_inliner2 (S n) p ps') rs.
+Proof.
+  reflexivity.
+Qed.
+
 Lemma inline12_split n m (ps1 : psi) c :
   k_inliner1 (S n) (k_inliner2 m c ps1) ps1 =
   k_inliner1 ((S n) + m) c ps1.
@@ -1125,7 +1237,7 @@ Proof.
     by rewrite addn0.
   + move => {}m h n c ps1.
     elim c.
-    1-4 : move => //=.
+    1-4,9 : move => //=.
     + move => e ? hc1 ? hc2.
       rewrite kinliner2_cif.
       rewrite kinliner1_cif.
@@ -1146,6 +1258,11 @@ Proof.
       rewrite h.
       rewrite (kinliner1_ccall (n + m.+1)).
       by rewrite addSnnS.
+    + move => ? ? hc ?.
+      rewrite kinliner2_cblock.
+      rewrite kinliner1_cblock.
+      rewrite hc.
+      by rewrite (kinliner1_cblock (n + m.+1)).
 Qed.
 
 Lemma ssem_ubnf_dnull (ps' : psi) c n s:
@@ -1155,6 +1272,9 @@ Proof.
   move : c s.
   elim n => [//=|n0 h c].
   elim c .
+  10: { move => ? ? hc ? s //=.
+        by apply: eq_in_dlet. }
+  9: by move => * //=.
   1-4: move => * //=.
   + move => e ? hc1 ? hc2 s //=.
     case (`[{e}] s).
@@ -1183,6 +1303,10 @@ Lemma ubnf_ssem  c s:
 Proof.
   move :s.
   elim c.
+  10: { move => ? ? hc ? s //=.
+        rewrite semE.
+        by apply: eq_in_dlet. }
+  9: by move => * //=; rewrite !semE.
   + 1-4: by move => * //=; rewrite !semE.
   + move => e ? hc1 ? hc2 s //=.
     rewrite semE.
@@ -1227,6 +1351,10 @@ elim: n => [|n IH] c s.
 - (* n = 0 *)
   move: s.
   elim: c.
+  10: { move=> ? ? hc ? s /=.
+        rewrite !semE.
+        by apply: eq_in_dlet. }
+  9: by move=> * /=; rewrite !semE.
   1-4: by move=> * /=; rewrite !semE.
   + move=> e c1 hc1 c2 hc2 s /=.
     rewrite !semE; case: (`[{e}] s); [exact: hc1 | exact: hc2].
@@ -1244,6 +1372,10 @@ elim: n => [|n IH] c s.
 - (* n.+1 *)
   move: s.
   elim: c.
+  10: { move=> ? ? hc ? s /=.
+        rewrite !semE.
+        by apply: eq_in_dlet. }
+  9: by move=> * /=; rewrite !semE.
   1-4: by move=> * /=; rewrite !semE.
   + move=> e c1 hc1 c2 hc2 s /=.
     rewrite !semE; case: (`[{e}] s); [exact: hc1 | exact: hc2].
@@ -1268,6 +1400,10 @@ elim: n => [|n IH] ps2 c s.
 - (* n = 0 *)
   move: s.
   elim: c.
+  10: { move=> ? ? hc ? s /=.
+        rewrite !semE.
+        by apply: eq_in_dlet. }
+  9: by move=> * /=; rewrite !semE.
   1-4: by move=> * /=; rewrite !semE.
   + move=> e c1 hc1 c2 hc2 s /=.
     by rewrite !semE; case: (`[{e}] s); [exact: hc1 | exact: hc2].
@@ -1285,6 +1421,10 @@ elim: n => [|n IH] ps2 c s.
 - (* n.+1 *)
   move: s.
   elim: c.
+  10: { move=> ? ? hc ? s /=.
+        rewrite !semE.
+        by apply: eq_in_dlet. }
+  9: by move=> * /=; rewrite !semE.
   1-4: by move=> * /=; rewrite !semE.
   + move=> e c1 hc1 c2 hc2 s /=.
     by rewrite !semE; case: (`[{e}] s); [exact: hc1 | exact: hc2].
@@ -1312,6 +1452,10 @@ elim: m => [|m IH] c s.
 - by [].
 - move: s.
   elim: c.
+  10: { move=> ? ? hc ? s /=.
+        rewrite !semE.
+        by apply: eq_in_dlet. }
+  9: by move=> * /=; rewrite !semE.
   1-4: by move=> * /=; rewrite !semE.
   + move=> e c1 hc1 c2 hc2 s /=.
     by rewrite !semE; case: (`[{e}] s); [exact: hc1 | exact: hc2].

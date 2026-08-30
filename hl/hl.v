@@ -60,6 +60,14 @@ Inductive derivable : psi -> phi -> assn -> cmd -> assn -> Prop :=
       derivable ps cl P2 c Q2 -> derivable ps cl P1 c Q1
   | H_khl : forall P Q c cl ps,
      derivable2 ps cl P c (fun _ => Q) -> derivable ps cl P c Q
+  | H_GAsgn : forall {T : IhbType.type} x (e:expr_ X mem T) (Q : assn) cl ps,
+      derivable ps cl [pred m | Q (m.{x <- `[{e}]%A m})] (G x <<- e) Q
+  | H_Block : forall (P Q : assn) bs c rs cl ps,
+      (forall m, derivable ps cl
+                   [pred m' | P m && (m' == minit m bs)]
+                   c
+                   [pred m'' | Q (mret m m'' rs)]) ->
+      derivable ps cl P (block bs c rs) Q
   with derivable2 : psi -> phi -> assn -> cmd -> assn2 -> Prop :=
    | H_hl: forall P Q c cl ps,
        (forall s0, derivable ps cl (xpredI P (fun s => s == s0)) c (Q s0)) ->
@@ -118,23 +126,24 @@ Lemma hl_T (c : cmd) P: hl P c predT.
 Proof. by []. Qed.
 
 (* -------------------------------------------------------------------- *)
-
 Lemma hl_skip (P : assn) : hl P skip P.
 Proof. by move=> ??; rewrite ssemE;apply range_dunit. Qed.
 
 (* -------------------------------------------------------------------- *)
-
 Lemma hl_abort (P Q : assn) : hl P abort Q.
 Proof. by move=> ??;rewrite ssemE;apply range_dnull. Qed.
 
 (* -------------------------------------------------------------------- *)
-
 Lemma hl_assign {T : IhbType.type} x (e:expr_ X mem T) (Q : assn):
    hl [pred m | Q m.[x <- `[{e}]%A m]] (x <<- e) Q.
 Proof. by move=> m /=;rewrite !semE;apply range_dunit. Qed.
 
 (* -------------------------------------------------------------------- *)
+Lemma hl_gassign {T : IhbType.type} x (e:expr_ X mem T) (Q : assn):
+   hl [pred m | Q (m.{x <- `[{e}]%A m})] (G x <<- e) Q.
+Proof. by move=> m /=;rewrite !semE;apply range_dunit. Qed.
 
+(* -------------------------------------------------------------------- *)
 Lemma hl_random {T : IhbType.type} x (d:expr_ X mem (Distr T)) (Q : assn):
    hl `[forall v in `[{d}] | m => Q m.[x <- v]] (x <$- d) Q.
 Proof.
@@ -144,7 +153,6 @@ apply (@range_dlet _ _ [pred v | Q m.[x<- v]]) => v /=.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-
 Lemma hl_seq (R Pr Po : assn) (c1 c2:cmd):
   hl Pr c1 R -> hl R c2 Po -> hl Pr (c1;;c2) Po.
 Proof.
@@ -152,7 +160,6 @@ by move=> H1 H2 m /H1 Hm; rewrite ssemE; apply/(range_dlet Hm H2).
 Qed.
 
 (* -------------------------------------------------------------------- *)
-
 Lemma hl_if (Pr Po : assn) (e:expr_ X mem bool) (c1 c2:cmd):
   hl (Pr /\ `[{e}])%A   c1 Po ->
   hl (Pr /\ `[{~~e}])%A c2 Po ->
@@ -163,7 +170,18 @@ by move=> H1 H2 m Hm; rewrite ssemE; case: ifPn => He;
 Qed.
 
 (* -------------------------------------------------------------------- *)
+Lemma hl_block (P Q : assn) bs (c : cmd) rs :
+  (forall m, hl [pred m' | P m && (m' == minit m bs)] c
+                [pred m'' | Q (mret m m'' rs)]) ->
+  hl P (block bs c rs) Q.
+Proof.
+move=> H m Pm; rewrite ssemE.
+apply: (range_dlet (H m (minit m bs) _)); last first.
++ by move=> m'' /= Qm''; apply range_dunit.
+by rewrite /= Pm eqxx.
+Qed.
 
+(* -------------------------------------------------------------------- *)
 Lemma hl_while (I : assn) (e:expr_ X mem bool) (c:cmd):
   hl (I /\ `[{e}])%A c I ->
   hl I (While e Do c) (I /\ `[{~~e}])%A.
@@ -202,7 +220,6 @@ Proof.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-
 (** Hoare triple for a com with procedure context **)
 
 Definition hoare_triple_ctx (cl : phi) (ps: psi) (P: assn) (Q: assn2) (c: cmd) :=
@@ -271,6 +288,9 @@ apply: derivable_mut.
 - (* H_Consequence *)
   by  move=> P2 Q2 P1 Q1 c cl ? HP HQ ? IH Hv; apply: (hl_conseq HP HQ (IH Hv)).
 - (* H_khl *) by move=> P Q c cl ? ? IH Hv; apply/hl_khl; exact: IH.
+- (* H_GAsgn *) by move=> *; exact: hl_gassign.
+- (* H_Block *)
+  by move=> P Q bs c rs cl ? ? IH Hv; apply: hl_block => m; exact: IH.
 - (* H_hl *) by move=> P Q c cl ? ? IH Hv; apply/khl_hl=> s0; exact: (IH s0 Hv).
 - (* H_call *) by move=> cl f ? Hv; exact: Hv.
 - (* H_rec *)
@@ -309,7 +329,8 @@ Proof. by rewrite in_dinsupp dunit1E eqxx oner_neq0. Qed.
 Lemma rel_complete_d (c : cmd) (P Q : assn) ps' :
   hl_ ps' P c Q -> (forall ps, derivable ps (cl_mgt ps') P c Q).
 Proof.
-elim: c P Q => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2 | f ] P Q Hhl ps.
+elim: c P Q => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2
+               | f | T gx ge | bs cb ihb rs ] P Q Hhl ps.
 - (* abort *) exact: H_Abort.
 - (* skip *)
   apply: (H_Consequence (P2 := P) (Q2 := P)) => //.
@@ -362,6 +383,17 @@ elim: c P Q => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2 
   + move=> m0 Pm0 m hm; have H := Hhl m0 Pm0; rewrite ssem_call_eq in H.
     exact: (H m hm).
   + by apply: H_call; right.
+- (* gassign *)
+  apply: (H_Consequence (P2 := [pred m | Q (m.{gx <- `[{ge}]%A m})]) (Q2 := Q)).
+  + move=> m Pm /=; have H := Hhl m Pm; rewrite ssem_gassnE in H.
+    by apply: (H (m.{gx <- `[{ge}]%A m})); exact: in_dinsupp_dunit.
+  + by [].
+  + exact: H_GAsgn.
+- (* block *)
+  apply: H_Block => m; apply: ihb => m' /andP[Pm /eqP ->] m'' m''in.
+  have H := Hhl m Pm; rewrite ssem_blockE in H.
+  apply: (H (mret m m'' rs)).
+  by apply: dlet_dinsupp; [exact: m''in | exact: in_dinsupp_dunit].
 Qed.
 
 Lemma rel_complete (c : cmd) (P : assn) (Q : assn2) ps:
@@ -409,6 +441,10 @@ Definition separated X (P : pred dmem) :=
     -> mu1 \in P -> mu2 \in P.
 
 (* -------------------------------------------------------------------- *)
+Definition bvar (b : @binding ident cmem) : { t : IhbType.type & vars t } :=
+  let: existT t (x, _) := b in Tagged vars x.
+
+(* -------------------------------------------------------------------- *)
 
 Fixpoint mod (c : cmd) : pred { t : IhbType.type & vars t } :=
   match c with
@@ -421,6 +457,8 @@ Fixpoint mod (c : cmd) : pred { t : IhbType.type & vars t } :=
   | If _ then c1 else c2 => [predU mod c1 & mod c2]
   | While _ Do c         => mod c
   | call n => pred0
+  | G _ <<- _ => pred0
+  | block _ _ rs => [pred y | has (fun b => `[< y = bvar b >]) rs]
 end.
 
 Fixpoint nocall (c:cmd) : Prop :=
@@ -434,6 +472,8 @@ Fixpoint nocall (c:cmd) : Prop :=
   | If _ then c1 else c2 => nocall c1 /\ nocall c2
   | While _ Do c         => nocall c
   | call n => False
+  | G _ <<- _   => True
+  | block _ c _ => nocall c
   end.
 
 (* -------------------------------------------------------------------- *)
@@ -451,7 +491,29 @@ by move=> c1 c2 c3 eq1 eq2 x xX; rewrite eq1 ?eq2.
 Qed.
 
 (* -------------------------------------------------------------------- *)
+Definition bstep (m' : cmem) (mm : cmem) (b : @binding ident cmem) : cmem :=
+  let: existT _ (r, e) := b in mm.[r <- `[{e}] m'].
 
+Lemma mretE (m m' : cmem) rs : mret m m' rs = foldl (bstep m') (mrestore m m') rs.
+Proof. by []. Qed.
+
+Lemma mget_foldl (m' : cmem) rs y acc :
+  ~~ has (fun b => `[< y = bvar b >]) rs ->
+  (foldl (bstep m') acc rs).[tagged y] = acc.[tagged y].
+Proof.
+case: y => u y0.
+elim: rs acc => [|b rs ih] acc //=; rewrite negb_or => /andP[nb nrs].
+rewrite ih //; move: nb; case: b => t [r e] /= /asboolP.
+move/eq_vars => neq; rewrite mget_neq //.
+by case: eqP neq; intuition.
+Qed.
+
+Lemma mget_mret (m m' : cmem) rs y :
+  ~~ has (fun b => `[< y = bvar b >]) rs ->
+  (mret m m' rs).[tagged y] = m.[tagged y].
+Proof. by move=> h; rewrite mretE mget_foldl // mget_restore. Qed.
+
+(* -------------------------------------------------------------------- *)
 Lemma mod_spec c m ps :
   nocall c ->
    hl_ ps [pred m' | m == m'] c
@@ -505,6 +567,14 @@ Proof.
     by case/norP => [/= zc1 zc2]; rewrite Hm1 // Hx.
     by apply (ih2 m1) => /=.
 + by move => ?? /=.
++ move=> t x e m hcall; set Q := (Q in hl_ ps _ _ Q).
+  pose R := [pred m' | Q (m'.{x <- `[{e}] m'})].
+  apply (hl_conseq (P2 := R) (Q2 := Q))=> //; last exact/hl_gassign.
+  by move=> m' /eqP <-; apply/asboolP=> -[u y] _ /=; rewrite mget_setg.
++ move=> bs c ihc rs m _.
+  apply: hl_block => m0 m' /andP[/eqP <- _] m'' _ /=.
+  apply/asboolP => y; rewrite inE => hy.
+  by rewrite mget_mret.
 Qed.
 
 (* -------------------------------------------------------------------- *)

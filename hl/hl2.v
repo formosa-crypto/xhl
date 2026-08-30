@@ -64,6 +64,14 @@ Inductive derivable : phi -> assn -> cmd -> assn -> Prop :=
       derivable cl P2 c Q2 -> derivable cl P1 c Q1
   | H_khl : forall P Q c cl,
      derivable2 cl P c (fun _ => Q) -> derivable cl P c Q
+  | H_GAsgn : forall {T : IhbType.type} x (e:expr_ X mem T) (Q : assn) cl,
+      derivable cl [pred m | Q (m.{x <- `[{e}]%A m})] (G x <<- e) Q
+  | H_Block : forall (P Q : assn) bs c rs cl,
+      (forall m, derivable cl
+                   [pred m' | P m && (m' == minit m bs)]
+                   c
+                   [pred m'' | Q (mret m m'' rs)]) ->
+      derivable cl P (block bs c rs) Q
   with derivable2 : phi -> assn -> cmd -> assn2 -> Prop :=
    | H_hl: forall P Q c cl,
        (forall s0, derivable cl (xpredI P (fun s => s == s0)) c (Q s0)) ->
@@ -108,6 +116,21 @@ Proof. by move=> m hm /=; apply: range_dnull. Qed.
 Lemma ahl_assign l {T : IhbType.type} x (e : expr_ X mem T) (Q : assn) :
   ahl l [pred m | Q m.[x <- `[{e}]%A m]] (x <<- e) Q.
 Proof. by move=> m hm /=; apply: range_dunit. Qed.
+
+Lemma ahl_gassign l {T : IhbType.type} x (e : expr_ X mem T) (Q : assn) :
+  ahl l [pred m | Q (m.{x <- `[{e}]%A m})] (G x <<- e) Q.
+Proof. by move=> m hm /=; apply: range_dunit. Qed.
+
+Lemma ahl_block l (P Q : assn) bs (c : cmd) rs :
+  (forall m, ahl l [pred m' | P m && (m' == minit m bs)] c
+                  [pred m'' | Q (mret m m'' rs)]) ->
+  ahl l P (block bs c rs) Q.
+Proof.
+move=> H m Pm.
+apply: (range_dlet (H m (minit m bs) _)); last first.
++ by move=> m'' /= Qm''; apply range_dunit.
+by rewrite /= Pm eqxx.
+Qed.
 
 Lemma ahl_random l {T : IhbType.type} x (d : expr_ X mem (Distr T)) (Q : assn) :
   ahl l `[forall v in `[{d}] | m => Q m.[x <- v]] (x <$- d) Q.
@@ -203,6 +226,9 @@ apply: derivable_mut.
 - (* H_Consequence *)
   by move=> P2 Q2 P1 Q1 c cl HP HQ _ IH n Hv; apply: (ahl_conseq HP HQ (IH n Hv)).
 - (* H_khl *) by move=> P Q c cl _ IH n Hv; apply/ahl_khl; exact: IH.
+- (* H_GAsgn *) by move=> T x e Q cl n _; exact: ahl_gassign.
+- (* H_Block *)
+  by move=> P Q bs c rs cl _ IH n Hv; apply: ahl_block => m; exact: IH.
 - (* H_hl *) by move=> P Q c cl _ IH n Hv; apply/akhl_hl=> s0; exact: (IH s0 n Hv).
 - (* H_call *) by move=> cl f n Hv; exact: Hv.
 - (* H_rec *)
@@ -281,7 +307,8 @@ Proof. by rewrite in_dinsupp dunit1E eqxx oner_neq0. Qed.
 Lemma rel_complete_d (c : cmd) (P Q : assn) :
   hl_ ps P c Q -> derivable ps cl_mgt P c Q.
 Proof.
-elim: c P Q => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2 | f ] P Q Hhl.
+elim: c P Q => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2
+               | f | T gx ge | bs cb ihb rs ] P Q Hhl.
 - (* abort *) exact: H_Abort.
 - (* skip *)
   apply: (H_Consequence (P2 := P) (Q2 := P)) => //.
@@ -334,6 +361,17 @@ elim: c P Q => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2 
   + move=> m0 Pm0 m hm; have H := Hhl m0 Pm0; rewrite ssem_call_eq in H.
     exact: (H m hm).
   + by apply: H_call; right.
+- (* gassign *)
+  apply: (H_Consequence (P2 := [pred m | Q (m.{gx <- `[{ge}]%A m})]) (Q2 := Q)).
+  + move=> m Pm /=; have H := Hhl m Pm; rewrite ssem_gassnE in H.
+    by apply: (H (m.{gx <- `[{ge}]%A m})); exact: in_dinsupp_dunit.
+  + by [].
+  + exact: H_GAsgn.
+- (* block *)
+  apply: H_Block => m; apply: ihb => m' /andP[Pm /eqP ->] m'' m''in.
+  have H := Hhl m Pm; rewrite ssem_blockE in H.
+  apply: (H (mret m m'' rs)).
+  by apply: dlet_dinsupp; [exact: m''in | exact: in_dinsupp_dunit].
 Qed.
 
 Lemma rel_complete (c : cmd) (P : assn) (Q : assn2) :

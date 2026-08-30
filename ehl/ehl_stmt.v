@@ -64,6 +64,19 @@ Lemma ehl_kehl ps P c Q :
 Proof.  by split; move => h m; apply h. Qed.
 
 (* -------------------------------------------------------------------- *)
+(* Collapsing a block's [dlet]/[dunit].  Shared by ehl.v and ehl2.v; it
+ * is an equality, not an inequality, because the completeness proof in
+ * ehl2.v reads it in the other direction. *)
+Lemma espe_dlet_ret (mu : Distr mem) (g : cond) m rs :
+  (forall m, (0 <= g m)%E) ->
+  espe (\dlet_(m' <- mu) dunit (mret m m' rs)) g
+    = espe mu (fun m'' => g (mret m m'' rs)).
+Proof.
+move=> Hg; rewrite eexp_dlet //.
+by apply: eexp_eq => x; rewrite eexp_dunit.
+Qed.
+
+(* -------------------------------------------------------------------- *)
 (* Procedire contract                                                   *)
 (* -------------------------------------------------------------------- *)
 
