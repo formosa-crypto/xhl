@@ -83,6 +83,21 @@ Proof. by move=> ?; apply/distr_eqP/dlim_let. Qed.
 
 Lemma dlimC: \dlim_(_) mu = mu.
 Proof. by apply/distr_eqP/dlimC. Qed.
+
+Lemma dlim_dlim_com (h : nat -> nat -> {distr T / R})
+(hmono1: (forall k n1 n2, (n1 <= n2)%N -> h n1 k <=1 h n2 k))
+(hmono2: (forall k n1 n2, (n1 <= n2)%N -> h k n1 <=1 h k n2)):
+  \dlim_(n) (\dlim_(m) h n m) = \dlim_(m) (\dlim_(n) h n m).
+Proof. apply /distr_eqP; exact: dlim_dlim_com. Qed.
+
+Lemma dlet_dlim_diag
+  (d : nat -> Distr T) (h : nat -> T -> Distr U) :
+  (forall n m, (n <= m)%N -> d n <=1 d m) ->
+  (forall x n m, (n <= m)%N -> h n x <=1 h m x) ->
+  \dlet_(x <- \dlim_(n) d n) \dlim_(n) h n x =
+    \dlim_(n) \dlet_(x <- d n) h n x.
+Proof.  move => *; apply /distr_eqP; exact: dlet_dlim_diag. Qed.
+
 End DistrRecast.
 
 (* -------------------------------------------------------------------- *)
@@ -128,15 +143,15 @@ Reserved Notation "m .{ x <- v }"
 Reserved Notation "m .[+ x <- v ]"
   (at level 1, x, v at level 200, format "m .[+  x  <-  v ]").
 
+Reserved Notation "m .[+]" (at level 2, format "m .[+]").
+
 (* -------------------------------------------------------------------- *)
-Notation "m .[ x ]"      := (@mget _ _ (vtype x%V) m (vname x%V)) : mem_scope.
+Notation "m .[ x ]"     := (@mget _ _ (vtype x%V) m (vname x%V)) : mem_scope.
 Notation "m .[ x <- v ]" := (@mset _ _ (vtype x%V) m (vname x%V) v) : mem_scope.
 
-(* the main (global) store, reached only through [gvar_]/[gassign] *)
-Notation "m .{ x }"      := (@mgetg _ _ (vtype x%V) m (vname x%V)) : mem_scope.
+Notation "m .{ x }"     := (@mgetg _ _ (vtype x%V) m (vname x%V)) : mem_scope.
 Notation "m .{ x <- v }" := (@msetg _ _ (vtype x%V) m (vname x%V) v) : mem_scope.
 
-(* entering a block: a fresh local store in which only [x] is set *)
 Notation "m .[+ x <- v ]" := (@mpush _ _ (vtype x%V) m (vname x%V) v) : mem_scope.
 
 Notation "m .[+]" := (mnew m) (at level 2, format "m .[+]") : mem_scope.
@@ -165,15 +180,9 @@ Fixpoint esem {T : Type} (e : expr T) (m : cmem) : T :=
   end.
 
 (* -------------------------------------------------------------------- *)
-(* Entering a block: a fresh local store, then one assignment per declared
- * local.  Every initialiser is read in the *outer* memory [m]. *)
 Definition minit (m : cmem) (bs : seq binding) : cmem :=
   foldl (fun m' b => let: existT _ (x, e) := b in m'.[x <- esem e m]) m.[+] bs.
 
-(* Leaving a block: the enclosing local store is put back while [m']'s main
- * store is kept, then one assignment per returned value.  Every return
- * expression is read in the *inner* memory [m'], and every assignment lands
- * outside the scope -- so a return target may be one of the locals. *)
 Definition mret (m m' : cmem) (rs : seq binding) : cmem :=
   foldl (fun mm b => let: existT _ (r, e') := b in mm.[r <- esem e' m'])
         (mrestore m m') rs.
@@ -439,16 +448,6 @@ rewrite leq_eqVlt => /orP[/eqP->//|]; rewrite ltnS => le_np m'.
 by apply/(le_trans (ih _ le_np m'))/le_whilen.
 Qed.
 
-(* Lemma dcvg_whilen e c m : dcvg (fun n => ssem (whilen e c n) m). *)
-(* Proof. *)
-(* move=> m'; set u := fun n : nat => _; case: (@ncvg_mono_bnd _ u). *)
-(* + by move=> n p le_np; apply/homo_whilen. *)
-(* + apply/asboolP/nboundedP; exists 2%:R => // n. *)
-(*   apply/(@le_lt_trans _ _ 1%:R); rewrite ?ltr1n //. *)
-(*   by rewrite ger0_norm (ge0_mu, le1_mu1). *)
-(* by move=> l ul; exists l%:E. *)
-(* Qed. *)
-
 Lemma unroll_while_w (e e' : expr bool) c m :
      (forall m, esem e' m -> esem e m)
   -> ssem (While e Do c) m =
@@ -606,7 +605,7 @@ Fixpoint mk_seqr (c1 c2 : cmd) :=
 
 Definition mk_seq (c1 c2 : cmd) :=
   if c1 is skip then c2 else  mk_seqr c1 c2.
- 
+
 Fixpoint normc (c : cmd) :=
   match c with
   | abort | skip | assign _ _ _ | random _ _ _ | call _
@@ -838,7 +837,7 @@ Lemma mrestore_iE (m0 m : rmem) :
   mrestore m0 m = (mrestore m0.1 m.1, mrestore m0.2 m.2).
 Proof. by case: m0 m => a1 a2 [b1 b2]. Qed.
 
-Definition rps s (ps : nat -> cmd) := fun n => ircmd s (ps n).
+(* Definition rps s (ps : nat -> cmd) := fun n => ircmd s (ps n). *)
 
 (* Lemma ssem_iE ps s c (m : rmem): rsem (rps s ps) (ircmd s c) m = *)
 (*   \dlet_(m' <- ssem ps c m#s) dunit ((m', m.1)#s, (m.2, m')#s)%M. *)
@@ -936,58 +935,6 @@ by apply/(le_trans (ihp _ le a m'))/mono_ubnf.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma dlim_dlim_com {T: choiceType} (f : nat -> nat -> {distr T / R})
-(hmono1: (forall k n1 n2, (n1 <= n2)%N -> f n1 k <=1 f n2 k))
-(hmono2: (forall k n1 n2, (n1 <= n2)%N -> f k n1 <=1 f k n2)):
-  \dlim_(n) (\dlim_(m) f n m) =  \dlim_(m) (\dlim_(n) f n m).
-Proof.
- have main (g : nat -> nat -> {distr T / R}) :
-      (forall k n1 n2, (n1 <= n2)%N -> g n1 k <=1 g n2 k) ->
-      \dlim_(n) (\dlim_(m) g n m) <=1 \dlim_(m) (\dlim_(n) g n m).
-    move=> hg; apply: leub_dlim => n; apply: le_dlim => m.
-    by apply: dlim_ub => n1 n2 le_n; exact: hg.
-  apply/distr_eqP => x; apply/eqP; rewrite eq_le; apply/andP; split.
-  + exact: main f hmono1 x.
-  + exact: main (fun a b => f b a) hmono2 x.
-Qed.
-
-Lemma dlet_dlim_diag {T U : choiceType}
-  (d : nat -> Distr T) (h : nat -> T -> Distr U) :
-  (forall n m, (n <= m)%N -> d n <=1 d m) ->
-  (forall x n m, (n <= m)%N -> h n x <=1 h m x) ->
-  \dlet_(x <- \dlim_(n) d n) \dlim_(n) h n x =1
-    \dlim_(n) \dlet_(x <- d n) h n x.
-Proof.
-move=> mono_d mono_h u; apply/eqP; rewrite eq_le; apply/andP; split.
-- rewrite dlet_lim //; apply/leub_dlim => n.
-  rewrite -dlim_let.
-  + by move=> x k1 k2 hle; apply: mono_h.
-  apply/leub_dlim => k u'.
-  have hle_d : d n <=1 d (maxn k n) by apply/mono_d/leq_maxr.
-  have hle_h : {in dinsupp (d n), forall x, h k x <=1 h (maxn k n) x}.
-    by move=> x _; apply/mono_h/leq_maxl.
-  have h1 := le_dlet hle_d hle_h u'.
-  have h2 : (\dlet_(x <- d (maxn k n)) h (maxn k n) x) u' <=
-             dlim (fun j => \dlet_(x <- d j) h j x) u'.
-    by apply/dlim_ub => j1 j2 hj;
-       apply/le_dlet => [|x _]; [apply: mono_d | apply: mono_h].
-  exact (le_trans h1 h2).
-- apply/leub_dlim => n; apply/le_dlet.
-    by apply/dlim_ub => k1 k2; apply: mono_d.
-  by move=> x _; apply/dlim_ub => k1 k2 hle; apply: mono_h.
-Qed.
-
-Lemma dlet_dlim_diag' {T U : choiceType}
-  (d : nat -> Distr T) (h : nat -> T -> Distr U) :
-  (forall n m, (n <= m)%N -> d n <=1 d m) ->
-  (forall x n m, (n <= m)%N -> h n x <=1 h m x) ->
-  \dlet_(x <- \dlim_(n) d n) \dlim_(n) h n x =
-    \dlim_(n) \dlet_(x <- d n) h n x.
-Proof.
-  move => mono_n mono_k.
-  by apply/distr_eqP /dlet_dlim_diag.
-Qed.
-
 Section MISC.
 Context {X Y : eqType} {mem : memType X}.
 Definition psi := Y -> (@cmd_ X mem Y).
@@ -1023,7 +970,7 @@ rewrite leq_eqVlt => /orP[/eqP->//|]; rewrite ltnS => le_np m'.
 by apply/(le_trans (ih _ le_np m'))/le_whilen_aux.
 Qed.
 
-Lemma test8 (ps' : psi) c s:
+Lemma ssem_dlim_ubnf (ps' : psi) c s:
   ssem_ ps' c s =
   \dlim_(n) ssem_aux (ubnf ps' n) c s.
 Proof.
@@ -1048,14 +995,14 @@ Proof.
     + move => {}n hi s //=.
       rewrite semE.
       case :(`[{e}] s); [|by rewrite semE dlimC].
-      + rewrite semE -dlet_dlim_diag' //=.
+      + rewrite semE -dlet_dlim_diag //=.
         + by move => *; rewrite mono_ssem_aux // => *; rewrite homo_ubnf.
         + by move => *; rewrite mono_ssem_aux // => *; rewrite homo_ubnf.
         + apply /eq_in_dlet;[| by rewrite h].
           by move => ??;rewrite hi.
   + move => c1 hc1 c2 hc2 s //=.
     rewrite semE.
-    rewrite -dlet_dlim_diag' //=.
+    rewrite -dlet_dlim_diag //=.
     + by move => *; rewrite mono_ssem_aux // => *; rewrite homo_ubnf.
     + by move => *; rewrite mono_ssem_aux // => *; rewrite homo_ubnf.
     + apply eq_in_dlet;[|by rewrite hc1].
@@ -1063,7 +1010,7 @@ Proof.
   + by move => f s; rewrite semE.
   + move => bs c0 h rs s //=.
     rewrite semE.
-    rewrite -dlet_dlim_diag' //=.
+    rewrite -dlet_dlim_diag //=.
     + by move => n m le; apply: mono_ssem_aux; exact: homo_ubnf.
     + apply eq_in_dlet; last by rewrite h.
       by move => *; rewrite dlimC.
@@ -1072,7 +1019,7 @@ Qed.
 Lemma ssem_call_eq (ps0 : psi) f s:
   ssem_ ps0 (call f) s = ssem_ ps0 (ps0 f) s.
 Proof.
-rewrite [LHS]semE  [RHS]test8.
+rewrite [LHS]semE  [RHS]ssem_dlim_ubnf.
 transitivity (\dlim_(n) ubnf ps0 n.+1 (f, s)).
   by apply/distr_eqP => x; rewrite (dlim_bump (fun n => ubnf ps0 n (f, s))).
 by apply: eq_dlim => n /=.
@@ -1100,9 +1047,6 @@ Proof.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-(* [c] contains no [block].  The proof systems in hl/, ehl/, phl/, prhl/
- * and ellora/ have no rule for [block] yet, so their completeness proofs,
- * which proceed by induction on the command, are stated for such [c]. *)
 Fixpoint noblock (c : cmd_ X mem Y) : Prop :=
   match c with
   | abort | skip | assign _ _ _ | random _ _ _ | call _ | gassign _ _ _ => True
@@ -1110,6 +1054,21 @@ Fixpoint noblock (c : cmd_ X mem Y) : Prop :=
   | while _ c    => noblock c
   | seqc c1 c2   => noblock c1 /\ noblock c2
   | block _ _ _ => False
+  end.
+
+Fixpoint nocall (c:cmd) : Prop :=
+  match c with
+  | abort    => True
+  | skip     => True
+  | x <<- _  => True
+  | x <$- _  => True
+  | c1 ;; c2 => nocall c1 /\ nocall c2
+
+  | If _ then c1 else c2 => nocall c1 /\ nocall c2
+  | While _ Do c         => nocall c
+  | call n => False
+  | G _ <<- _   => True
+  | block _ c _ => nocall c
   end.
 
 End MISC.
@@ -1340,7 +1299,7 @@ Proof.
       by rewrite -while_true_null.
 Qed.
 
-Lemma test9 (ps' : psi) c n s:
+Lemma inliner_false_ps_ssem (ps' : psi) c n s:
   forall ps0,
     ssem_ false_ps (k_inliner2 n c ps') s =
     ssem_ ps0 (k_inliner1 (S n) c ps') s.
@@ -1392,7 +1351,7 @@ elim: n => [|n IH] c s.
     exact: IH.
 Qed.
 
-Lemma test5 (ps1 ps2: psi) c s n:
+Lemma inliner_inliner_ps_ssem (ps1 ps2: psi) c s n:
   ssem_ ps2 (k_inliner1 (S n) c ps1) s = ssem_ (k_inliner_ps1 n ps1) c s.
 Proof.
 move: ps2 c s.
@@ -1470,15 +1429,23 @@ elim: m => [|m IH] c s.
     by apply: eq_in_dlet; [move=> s' _; exact: hc2 | exact: hc1].
   + move=> f s /=.
     rewrite -IH ssem_call_eq /= addSn.
-    by rewrite test5.
+    by rewrite inliner_inliner_ps_ssem.
 Qed.
 
-Lemma test1 (ps' : psi) c s:
+
+Lemma ssem_aux_ssem_ ps n c s : ssem_aux (ubnf ps n) c s = ssem_ (k_inliner_ps1 n ps) c s.
+Proof.
+by rewrite ssem_ubnf_dnull ubnf_ssem
+       (inliner_false_ps_ssem _ _ _ _ ps) inliner_inliner_ps_ssem.
+Qed.
+
+
+Lemma dlim_inliner_ssem (ps' : psi) c s:
   \dlim_(n) ssem_ (k_inliner_ps1 n ps') c s =  ssem_ ps' c s.
 Proof.
-  rewrite test8.
+  rewrite ssem_dlim_ubnf.
   apply: eq_dlim.
-  + by move => ?; rewrite ssem_ubnf_dnull ubnf_ssem (test9 _ _ _ _ ps') test5.
+  + by move => ?; rewrite ssem_aux_ssem_.
 Qed.
 
 End Inliner.

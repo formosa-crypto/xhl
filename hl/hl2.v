@@ -255,7 +255,7 @@ Theorem ahl_to_hl cl P c Q :
   (forall n, valid_cl_n n cl -> ahl (ubnf ps n) P c Q) ->
   valid_cl cl -> hl_ ps P c Q.
 Proof.
-move => H Hv m Pm; rewrite test8; apply: range_dlim => n.
+move => H Hv m Pm; rewrite ssem_dlim_ubnf; apply: range_dlim => n.
  have Hvn : valid_cl_n n cl := @valid_cl_to_n cl Hv n.
 by apply: H.
 Qed.
@@ -275,7 +275,7 @@ Theorem akhl_to_khl cl P c Q :
   (forall n, valid_cl_n n cl -> akhl (ubnf ps n) P c Q) ->
   valid_cl cl -> khl_ ps P c Q.
 Proof.
-move => H Hv m Pm; rewrite test8; apply: range_dlim => n.
+move => H Hv m Pm; rewrite ssem_dlim_ubnf; apply: range_dlim => n.
  have Hvn : valid_cl_n n cl := @valid_cl_to_n cl Hv n.
 by apply: H.
 Qed.

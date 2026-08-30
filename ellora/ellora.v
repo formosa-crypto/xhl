@@ -255,13 +255,6 @@ with sellora2: psi -> (ident -> dassn) -> (ident -> dassn2) -> dassn -> dassn2 -
        (forall s0, sellora ps pre post (eqmu s0) (fun s => P s0 ==> Q s0 s) c) ->
        sellora2 ps pre post P Q c
    | H_call : forall pre post f ps, sellora2 ps pre post (pre f) (post f) (call f)
-   (* A block's output depends on the *joint* distribution of the input
-    * memory [m] and the body's final memory: [minit] wipes [m]'s local store
-    * and [mret] restores it, so the [m']-marginal is not enough.  A [sellora]
-    * conclusion cannot name that joint, but a [sellora2] one can, since its
-    * postcondition sees the input distribution [mu].  The body is taken
-    * pointwise in [m] -- [F m] is its exact output from [minit m bs] -- and
-    * the rule integrates over [mu]. *)
    | EBlock : forall (F : cmem -> dmem) bs c rs pre post ps,
        (forall m, sellora ps pre post (eqmu (dunit (minit m bs))) (eqmu (F m)) c) ->
        sellora2 ps pre post xpredT
@@ -543,7 +536,7 @@ Proof.
 move=> Htclosed Hstep.
 (* term-wise identification of the k_inliner and ubnf approximations *)
 have KU : forall n c m, ssem_ (k_inliner_ps1 n ps') c m = ssem_aux (ubnf ps' n) c m.
-  by move=> n c m; rewrite ssem_ubnf_dnull ubnf_ssem (test9 _ _ _ _ ps') test5.
+  by move=> n c m; rewrite ssem_aux_ssem_.
 (* each finite approximation satisfies the shifted contract, by induction *)
 have key : forall n p s, s \in pre p ->
     dssem (k_inliner_ps1 n ps') (call p) s \in post_shift (post p) n s.
@@ -572,7 +565,7 @@ have monoD : forall n1 n2, (n1 <= n2)%N ->
 (* the real call is the limit of its finite approximations *)
 have E : dssem ps' (call p) s = \dlim_(n) dssem (k_inliner_ps1 n ps') (call p) s.
   rewrite /dssem [RHS]dlim_let; first by move=> x n1 n2 le; exact: (mono x n1 n2 le).
-  by apply/eq_in_dlet => // m0 _; rewrite test1.
+  by apply/eq_in_dlet => // m0 _; rewrite dlim_inliner_ssem.
 rewrite E; apply: (Htclosed p s).
 - by move=> n; apply: key.
 - move=> x; apply: cvg_dlim; apply/dhomo_dnd => n1 n2 le.
@@ -963,7 +956,7 @@ Proof.
 move=> P c Q ps pre post Hvalid.
 (* term-wise identification of the k_inliner and ubnf approximations *)
 have KU : forall n c0 m, ssem_ (k_inliner_ps1 n ps) c0 m = ssem_aux (ubnf ps n) c0 m.
-  by move=> n c0 m; rewrite ssem_ubnf_dnull ubnf_ssem (test9 _ _ _ _ ps) test5.
+by move=> n c0 m; rewrite ssem_aux_ssem_.
 have EA : forall f n mu, (\dlet_(m <- mu) ssem_aux (ubnf ps n) (ps f) m)
                        = dssem (k_inliner_ps1 n ps) (ps f) mu.
   by move=> f n mu; rewrite /dssem; apply/eq_in_dlet => // m _; rewrite KU.
@@ -976,7 +969,7 @@ have mono : forall (c0 : cmd) x n1 n2, (n1 <= n2)%N ->
 have Elim : forall c0 s, dssem ps c0 s = \dlim_(n) dssem (k_inliner_ps1 n ps) c0 s.
   move=> c0 s; rewrite /dssem [RHS]dlim_let;
     first by move=> x n1 n2 le; exact: (mono c0 x n1 n2 le).
-  by apply/eq_in_dlet => // m0 _; rewrite test1.
+  by apply/eq_in_dlet => // m0 _; rewrite dlim_inliner_ssem.
 have pS : forall (F : nat -> dassn2) k, post_shift F k.+1 = F k by [].
 have p0 : forall (F : nat -> dassn2), post_shift F 0%N = (fun _ => eqmu dnull) by [].
 (* the shifted finite contract is exactly the exact contract of the n-th inlining *)

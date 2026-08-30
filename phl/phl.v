@@ -416,23 +416,17 @@ Lemma recursive_proc_l ps' cl' :
           Le
           (get_r (cl' p))).
 Proof.
-move=> H h.
-have key : forall n p s, get_pre (cl' p) s ->
-    \P_[ssem_ (k_inliner_ps1 n ps') (call p) s] (get_post (cl' p) s)
-      <= get_r (cl' p).
-+ elim=> [|n Hn] p s hP.
-  - by rewrite ssem_false_ps pr_dnull; exact: H.
-  have hcall : forall p0, kphl_ (k_inliner_ps1 n ps')
-      (get_pre (cl' p0)) (call p0) (get_post (cl' p0)) Le (get_r (cl' p0)).
-  * by move=> p0 s0 hP0; apply: Hn.
-  rewrite (inline2_split n 1) //=.
-  exact: (h p (k_inliner_ps1 n ps') hcall s hP).
-move=> p s hP /=.
-rewrite test8; apply: sum_dlim_r_r.
+move=> H h p s hP /=.
+rewrite ssem_dlim_ubnf; apply: sum_dlim_r_r.
 + by move=> ????; apply: mono_ssem_aux; apply: homo_ubnf.
-move=> n.
-rewrite ssem_ubnf_dnull ubnf_ssem (test9 _ _ _ _ ps') test5.
-exact: key.
+move => n; rewrite ssem_aux_ssem_.
+elim : n p s hP => [|n Hn] p s hP.
+- by rewrite ssem_false_ps pr_dnull; exact: H.
+have hcall : forall p0, kphl_ (k_inliner_ps1 n ps')
+    (get_pre (cl' p0)) (call p0) (get_post (cl' p0)) Le (get_r (cl' p0)).
+* by move=> p0 s0 hP0; apply: Hn.
+rewrite (inline2_split n 1) //=.
+exact: (h p (k_inliner_ps1 n ps') hcall s hP).
 Qed.
 
 (** Modular Hoare Triple Verification **)

@@ -280,7 +280,7 @@ apply: derivable_mut.
   + by rewrite lee_tofin.
   + unfold cond2_mono in Hmono.
     apply: Hmono.
-    rewrite test8.
+    rewrite ssem_dlim_ubnf.
     apply: dlim_ub => ????.
     apply mono_ssem_aux.
     by apply homo_ubnf.
@@ -314,7 +314,7 @@ Theorem hoare_sound (cl:phi) P c Q :
   valid_cl cl -> derivable ps cl P c Q -> ehl_ ps P c Q.
 Proof.
 move => HP HQ Hv Hd m.
-rewrite /espe test8.
+rewrite /espe ssem_dlim_ubnf.
 apply: esum_dlim_r => //.
 + move => ????.
   apply mono_ssem_aux.
@@ -342,7 +342,7 @@ Theorem khoare_sound (cl:phi) P c (Q: mem -> mem -> \bar R) :
   valid_cl cl -> derivable2 ps cl P c (fun s0 _ s =>Q s0 s) -> kehl_ ps P c (fun s0 _ s =>Q s0 s).
 Proof.
 move => HP HQ Hv Hd m.
-rewrite /espe test8.
+rewrite /espe ssem_dlim_ubnf.
 apply: esum_dlim_r => //.
 + move => ????.
    apply mono_ssem_aux.
