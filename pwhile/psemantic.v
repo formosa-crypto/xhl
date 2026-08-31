@@ -196,13 +196,13 @@ Fixpoint ssem_aux (l: (Y * cmem) -> mdistr) (s : cmd) (m : cmem) : mdistr :=
   | x <<- e =>
       dunit (m.[x <- esem e m])
 
-  | gassign _ x e =>
+  | G x <<- e =>
       dunit m.{x <- esem e m}
 
   | x <$- e =>
       \dlet_(v <- esem e m) (dunit m.[x <- v])
 
-  | block bs c rs =>
+  | Block bs Do c Return rs =>
       \dlet_(m' <- ssem_aux l c (minit m bs)) dunit (mret m m' rs)
 
   | If e then c1 else c2 =>

@@ -1,7 +1,7 @@
 (* -------------------------------------------------------------------- *)
-(* ----------------- *) Require Import ClassicalFacts Setoid Morphisms.
-From mathcomp.ssreflect Require Import all_ssreflect.
-From mathcomp.algebra   Require Import all_algebra.
+From Stdlib             Require Import ClassicalFacts Setoid Morphisms.
+From mathcomp           Require Import boot order.
+From mathcomp.algebra   Require Import algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals constructive_ereal.
 From mathcomp.analysis  Require Import counting_distr.
@@ -62,9 +62,12 @@ Section ParSem.
     | abort => fun _ => ITree.spin
     | skip => fun m => Ret m
     | x <<- e => fun m => Ret m.[x <- (esem e m)]
+    | G x <<- e => fun m => Ret m.{x <- esem e m}
     | x <$- e => fun m =>
                    bind (trigger (GetRnd (esem e m)))
                      (fun t => Ret m.[x <- t])
+    | Block bs Do c Return rs =>
+    fun m => bind (com_sem c (minit m bs)) (fun m' => Ret (mret m m' rs))
     | If e then c1 else c2 =>
     fun m =>
       match esem e m with
@@ -242,7 +245,7 @@ Section BindSem.
     + exact: homo_bind_dinterp'.
     + move=> n; exact: le_dinterp'_bind.
     + move=> n; exact: le_bind_dinterp'.
-  apply/esym; apply: dlet_dlim_diag'.
+  apply/esym; apply: dlet_dlim_diag.
   - by move=> n p le; apply: homo_dinterp'.
   - by move=> m n p le; apply: homo_dinterp'.
   Qed.
@@ -377,7 +380,7 @@ Section SsemLim.
     transitivity (\dlet_(x <- dlim (fun n => f n a))
                     dlim (fun n => ubn (f n) t k x)).
       by apply: eq_in_dlet; [move=> x _; apply: ih | ].
-    rewrite (dlet_dlim_diag' h1 h2).
+    rewrite (dlet_dlim_diag h1 h2).
     by apply: eq_dlim => n; rewrite ubnS He.
   Qed.
 
@@ -392,11 +395,19 @@ Section SsemLim.
     ssem_aux (fun a => dlim (fun n => l n a)) c m
       = dlim (fun n => ssem_aux (l n) c m).
   Proof.
-  elim: c m => [||T x e|T x e|e c1 ih1 c2 ih2|e c ih|c1 ih1 c2 ih2|f] m /=.
+  elim: c m => [||T x e|T x e|T x e|bs c ihc rs|e c1 ih1 c2 ih2|e c ih
+               |c1 ih1 c2 ih2|f] m /=.
   - exact: dlim_constE.
   - exact: dlim_constE.
   - exact: dlim_constE.
   - exact: dlim_constE.
+  - exact: dlim_constE.
+  - transitivity (\dlet_(m' <- dlim (fun n => ssem_aux (l n) c (minit m bs)))
+                    (dlim (fun _ : nat => dunit (mret m m' rs)))).
+      by rewrite ihc; apply: eq_in_dlet; [move=> m' _; rewrite dlimC | ].
+    apply: dlet_dlim_diag.
+    + by move=> n p le; apply: homo_ssem_aux_l.
+    + by move=> a n p le y.
   - by case: (esem e m); [apply: ih1 | apply: ih2].
   - have -> : ssem_aux (fun a => dlim (fun n => l n a)) c
             = (fun a => dlim (fun n => ssem_aux (l n) c a)).
@@ -410,7 +421,7 @@ Section SsemLim.
   - transitivity (\dlet_(m' <- dlim (fun n => ssem_aux (l n) c1 m))
                     (dlim (fun n => ssem_aux (l n) c2 m'))).
       by rewrite ih1; apply: eq_in_dlet; [move=> m' _; apply: ih2 | ].
-    apply: dlet_dlim_diag'.
+    apply: dlet_dlim_diag.
     + by move=> n p le; apply: homo_ssem_aux_l.
     + by move=> a n p le; apply: homo_ssem_aux_l.
   - by [].
@@ -486,12 +497,16 @@ Section CallSem.
   Lemma dinterp_icm_com_sem c m :
     D c m = ssem_aux (fun a => D (ps a.1) a.2) c m.
   Proof.
-  elim: c m => [||T x e|T x e|e c1 ih1 c2 ih2|e c ih|c1 ih1 c2 ih2|f] m /=.
+  elim: c m => [||T x e|T x e|T x e|bs c ihc rs|e c1 ih1 c2 ih2|e c ih
+               |c1 ih1 c2 ih2|f] m /=.
   - exact: dinterp_icm_spin.
   - by rewrite (icm_ret m) dinterp_ret.
   - by rewrite (icm_ret _) dinterp_ret.
+  - by rewrite (icm_ret _) dinterp_ret.
   - rewrite (icm_rnd x e m) dinterp_vis.
     by apply/eq_in_dlet => // v _; rewrite dinterp_tau dinterp_ret.
+  - rewrite icm_bind dinterp_bind ihc.
+    by apply/eq_in_dlet => // m' _; rewrite (icm_ret _); exact: dinterp_ret.
   - by case: (esem e m); [apply: ih1 | apply: ih2].
   - rewrite (dinterp_W (@icm_whileE c e)).
     have -> : (fun m => dinterp (ICM (CS c m)))
@@ -525,6 +540,11 @@ Section CallSem.
       = \dlet_(m' <- ssem_aux l c1 m) ssem_aux l c2 m'.
   Proof. by []. Qed.
 
+  Lemma ssem_aux_blockE (l : (ident * cmem) -> Distr cmem) bs c rs m :
+    ssem_aux l (Block bs Do c Return rs) m
+      = \dlet_(m' <- ssem_aux l c (minit m bs)) dunit (mret m m' rs).
+  Proof. by []. Qed.
+
   Lemma ssem_aux_rndE (l : (ident * cmem) -> Distr cmem) T (y : vars T)
       (a : dexpr T) m :
     ssem_aux l (y <$- a) m = \dlet_(v <- esem a m) dunit m.[y <- v].
@@ -536,6 +556,18 @@ Section CallSem.
   Lemma icm_assign T (y : vars T) (a : expr T) m :
     ICM (CS (y <<- a) m) ≅ Ret m.[y <- esem a m].
   Proof. exact: icm_ret. Qed.
+
+  Lemma icm_gassign T (y : vars T) (a : expr T) m :
+    ICM (CS (G y <<- a) m) ≅ Ret m.{y <- esem a m}.
+  Proof. exact: icm_ret. Qed.
+
+  Lemma icm_block bs c rs m :
+    ICM (CS (Block bs Do c Return rs) m)
+      ≅ ITree.bind (ICM (CS c (minit m bs))) (fun m' => Ret (mret m m' rs)).
+  Proof.
+  rewrite /= icm_bind; apply: eqit_bind; first reflexivity.
+  by move=> m'; apply: icm_ret.
+  Qed.
 
   Lemma icm_seq c1 c2 m :
     ICM (CS (c1 ;; c2) m)
@@ -550,13 +582,18 @@ Section CallSem.
     dinterp' (observe (ICM (CS c m))) n <=1 ssem_aux (ubnf ps n) c m.
   Proof.
   elim: n => [|n ihn]; first by move=> c m x; exact: lef_dnull.
-  elim=> [||T y a|T y a|a c1 ih1 c2 ih2|a c ih|c1 ih1 c2 ih2|f] m x.
+  elim=> [||T y a|T y a|T y a|bs c ihc rs|a c1 ih1 c2 ih2|a c ih
+         |c1 ih1 c2 ih2|f] m x.
   - by rewrite dinterp'_icm_abort; exact: lef_dnull.
   - by rewrite (dinterp'_eq_itree _ (icm_skip m)).
   - by rewrite (dinterp'_eq_itree _ (icm_assign y a m)).
+  - by rewrite (dinterp'_eq_itree _ (icm_gassign y a m)).
   - rewrite (dinterp'_eq_itree _ (icm_rnd y a m)) ssem_aux_rndE.
     apply/(le_trans (le_dinterp'_vis _ _ _ _)).
     by apply/le_in_dlet => // v _ z; rewrite dinterp_tau dinterp_ret.
+  - rewrite (dinterp'_eq_itree _ (icm_block bs c rs m)) ssem_aux_blockE.
+    apply/(le_trans (le_dinterp'_bind _ _ _ _)).
+    by apply: le_dlet; [exact: ihc | move=> m' _ z].
   - rewrite cs_ifE ssem_aux_ifE; case He: (esem a m).
     + exact: ih1.
     + exact: ih2.

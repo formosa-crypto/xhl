@@ -305,10 +305,10 @@ Notation "'Block' bs 'Do' c 'Return' rs"
   := (block bs c%S rs)
   (at level 0, bs at level 99, c at level 99, rs at level 99) : syn_scope.
 
-Notation "'Begin' 'Local' x := e ; c ; r := e' 'End'"
-  := (block [:: bind_of x%V e%X] c%S [:: bind_of r%V e'%X])
-  (at level 0, x at level 0, e at level 70, c at level 99,
-   r at level 0, e' at level 70) : syn_scope.
+(* Notation "'Begin' 'Local' x := e ; c ; r := e' 'End'" *)
+(*   := (block [:: bind_of x%V e%X] c%S [:: bind_of r%V e'%X]) *)
+(*   (at level 0, x at level 0, e at level 70, c at level 99, *)
+(*    r at level 0, e' at level 70) : syn_scope. *)
 
 Notation "'If' e 'then' c1 'else' c2"
   := (cond e%X c1%S c2%S) : syn_scope.
@@ -686,13 +686,13 @@ Fixpoint icmd (c : cmd1) : cmd2 :=
   | x <<- e =>
       ivar x <<- iexpr e
 
-  | gassign _ x e =>
+  | G x <<- e =>
       gassign (ivar x) (iexpr e)
 
   | x <$- e =>
       ivar x <$- iexpr e
 
-  | block bs c rs =>
+  | Block bs Do c Return rs =>
       block (map ibind bs) (icmd c) (map ibind rs)
 
   | If e then c1 else c2 =>

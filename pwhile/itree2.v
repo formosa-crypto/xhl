@@ -1,7 +1,7 @@
 (* -------------------------------------------------------------------- *)
-(* ----------------- *) Require Import ClassicalFacts Setoid Morphisms.
-From mathcomp.ssreflect Require Import all_ssreflect.
-From mathcomp.algebra   Require Import all_algebra.
+From Stdlib             Require Import ClassicalFacts Setoid Morphisms.
+From mathcomp           Require Import order boot.
+From mathcomp.algebra   Require Import algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals constructive_ereal.
 From mathcomp.analysis  Require Import counting_distr.
@@ -19,7 +19,6 @@ From ITree Require Import
   RuttFacts.
 
 Import Basics.Monads.
-
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -40,7 +39,10 @@ Variant Call : Type -> Type :=
 Variant InstrE {ident : eqType}  {mem : memType ident} : Type -> Type :=
   | Assig : forall t : IhbType.type,  vars t -> expr_ ident mem t  -> InstrE unit
   | RAssig :  forall t : IhbType.type,  vars t -> expr_ ident mem {distr t / R}  -> InstrE unit
-  | EvalCond : bexpr -> InstrE bool.
+  | EvalCond : bexpr -> InstrE bool
+  | GAssig : forall t : IhbType.type,  vars t -> expr_ ident mem t  -> InstrE unit
+  | BlockIn : seq (@binding ident mem) -> InstrE mem
+  | BlockOut : mem -> seq (@binding ident mem) -> InstrE unit.
 
 Section ParSem.
 
@@ -73,7 +75,11 @@ Section ParSem.
     | abort => ITree.spin
     | skip => Ret tt
     | x <<- e => trigger (Assig x e)
+    | G x <<- e => trigger (GAssig x e)
     | x <$- e => trigger (RAssig x e)
+    | Block bs Do c Return rs =>
+        bind (trigger (BlockIn bs))
+          (fun m0 => bind (com_sem c) (fun _ => trigger (BlockOut m0 rs)))
     | If e then c1 else c2 =>
            bind (trigger (EvalCond e))
              (fun b =>  match b with
@@ -123,6 +129,19 @@ Section InstrSem.
                     trigger (@Put cmem m)))
       | EvalCond e =>
           bind (@trigger (@Get cmem))(fun m => Ret (esem e m))
+      | GAssig _ x e =>
+            bind (trigger (@Get cmem))
+              (fun m =>
+                 let m := m.{x <- (esem e m)} in
+                 trigger (@Put cmem m))
+      | BlockIn bs =>
+            bind (trigger (@Get cmem))
+              (fun m =>
+                 bind (trigger (@Put cmem (minit m bs)))
+                   (fun _ => Ret m))
+      | BlockOut m0 rs =>
+            bind (trigger (@Get cmem))
+              (fun m' => trigger (@Put cmem (mret m0 m' rs)))
       end.
 
   Definition ext_handle_InstrE : InstrE +' E ~> itree E :=

@@ -6,6 +6,9 @@
      elpi
      elpi_elpi
      mathcomp
+     ExtLib
+     Paco
+     ITree
      micromega_plugin
      Stdlib )
   (flags -w -parsing
