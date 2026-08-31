@@ -196,8 +196,14 @@ Fixpoint ssem_aux (l: (Y * cmem) -> mdistr) (s : cmd) (m : cmem) : mdistr :=
   | x <<- e =>
       dunit (m.[x <- esem e m])
 
+  | gassign _ x e =>
+      dunit m.{x <- esem e m}
+
   | x <$- e =>
       \dlet_(v <- esem e m) (dunit m.[x <- v])
+
+  | block bs c rs =>
+      \dlet_(m' <- ssem_aux l c (minit m bs)) dunit (mret m m' rs)
 
   | If e then c1 else c2 =>
       match esem e m with
@@ -212,12 +218,6 @@ Fixpoint ssem_aux (l: (Y * cmem) -> mdistr) (s : cmd) (m : cmem) : mdistr :=
       \dlet_(m' <- ssem_aux l c1 m) (ssem_aux l c2 m')
 
   | call n => l (n, m)
-
-  | gassign _ x e =>
-      dunit m.{x <- esem e m}
-
-  | block bs c rs =>
-      \dlet_(m' <- ssem_aux l c (minit m bs)) dunit (mret m m' rs)
   end.
 
 Fixpoint ubnf (ps: Y -> cmd) n :=
@@ -319,21 +319,21 @@ Proof.
 Qed.
 
 Definition semE :=
-  (ssem_abortE, ssem_skipE, @ssem_assnE, @ssem_rndE,
-   ssem_ifE   , ssem_seqE , ssem_whileE, ssem_callE,
-   @ssem_gassnE, ssem_blockE).
+  (ssem_abortE , ssem_skipE  , @ssem_assnE, @ssem_gassnE,
+   @ssem_rndE  , ssem_blockE , ssem_ifE   , ssem_whileE ,
+   ssem_seqE   , ssem_callE).
 
 Definition bsemE := locked (
   funext ssem_abortE,
   funext ssem_skipE,
   fun T (x : vars T) (e : expr _) => funext (ssem_assnE x e),
-  fun T (x : vars T) (e : expr _) => funext (ssem_rndE x e),
-  fun e c1 c2 => funext (ssem_ifE e c1 c2),
-  fun c1 c2 => funext (ssem_seqE c1 c2),
-  fun e c => funext (ssem_whileE e c),
-  fun f => funext (ssem_callE f),
   fun T (x : vars T) (e : expr _) => funext (ssem_gassnE x e),
-  fun bs c rs => funext (ssem_blockE bs c rs)).
+  fun T (x : vars T) (e : expr _) => funext (ssem_rndE x e),
+  fun bs c rs => funext (ssem_blockE bs c rs),
+  fun e c1 c2 => funext (ssem_ifE e c1 c2),
+  fun e c => funext (ssem_whileE e c),
+  fun c1 c2 => funext (ssem_seqE c1 c2),
+  fun f => funext (ssem_callE f)).
 
 Lemma sem_seqA c1 c2 c3 :
   ssem ((c1 ;; c2) ;; c3) = ssem (c1 ;; (c2 ;; c3)).
@@ -608,12 +608,12 @@ Definition mk_seq (c1 c2 : cmd) :=
 
 Fixpoint normc (c : cmd) :=
   match c with
-  | abort | skip | assign _ _ _ | random _ _ _ | call _
-  | gassign _ _ _ => c
+  | abort | skip | assign _ _ _ | gassign _ _ _
+  | random _ _ _ | call _ => c
+  | block bs c rs => block bs (normc c) rs
   | cond e c1 c2 => cond e (normc c1) (normc c2)
   | while e c    => while e (normc c)
   | seqc c1 c2   => mk_seq (normc c1) (normc c2)
-  | block bs c rs => block bs (normc c) rs
   end.
 
 Lemma mk_seqrP (c1 c2 : cmd) : mk_seqr c1 c2 =C seqc c1 c2.
@@ -627,7 +627,7 @@ Proof. by case:c1 => //= *;rewrite ?mk_seqrP // seq_skip_l. Qed.
 
 Lemma normcP (c : cmd) : c =C normc c.
 Proof.
-by elim: c=> //= [?? H1 ? H2|?? H1|? H1 ? H2|?? H1 ?];
+by elim: c=> //= [?? H1 ?|?? H1 ? H2|?? H1|? H1 ? H2];
 rewrite ?mk_seqP [in CLHS]H1 ?[in CLHS]H2.
 Qed.
 
@@ -909,14 +909,14 @@ Lemma mono_ssem_aux
   (forall x, l x <=1 l' x) -> ssem_aux l c m <=1 ssem_aux l' c m.
 Proof.
 move=> le_ll'; elim: c m =>
-  [||T x e|T x e|e c1 ih1 c2 ih2|e c ih|c1 ih1 c2 ih2|f|???|? c ih ?] m m' //=.
+  [||T x e|???|T x e|? c ih ?|e c1 ih1 c2 ih2|e c ih|c1 ih1 c2 ih2|f] m m' //=.
+- by apply/le_dlet => [|m0 _]; [exact: ih | by []].
 - by case: ifP => _; [exact: ih1 | exact: ih2].
 - have hb : ssem_aux l c <=2 ssem_aux l' c by move=> a a'; exact: ih.
   apply/leub_dlim => n m0.
   apply: (le_trans (@le_ubn_body _ _ _ (esem e) n hb m m0)).
   by apply/dlim_ub => n1 n2 hle; exact: homo_ubn_n.
-- by apply/le_dlet => [|x _]; [exact: ih1 | exact: ih2].
-by apply/le_dlet => [|m0 _]; [exact: ih | by []].
+by apply/le_dlet => [|x _]; [exact: ih1 | exact: ih2].
 Qed.
 
 Lemma mono_ubnf {X Y : eqType} {cmem: memType X} {ps : Y -> (@cmd_  X cmem Y)} n :
@@ -976,7 +976,13 @@ Lemma ssem_dlim_ubnf (ps' : psi) c s:
 Proof.
   move : s.
   elim c.
-  1-4,9: by move => * //=; rewrite /ssem_ unlock /ssem_r dlimC.
+  1-5: by move => * //=; rewrite /ssem_ unlock /ssem_r dlimC.
+  + move => bs c0 h rs s //=.
+    rewrite semE.
+    rewrite -dlet_dlim_diag //=.
+    + by move => n m le; apply: mono_ssem_aux; exact: homo_ubnf.
+    + apply eq_in_dlet; last by rewrite h.
+      by move => *; rewrite dlimC.
   + move => e ? hc1 ? hc2 s //=.
     rewrite semE.
     case (`[{e}] s).
@@ -1008,12 +1014,6 @@ Proof.
     + apply eq_in_dlet;[|by rewrite hc1].
       by move => *; rewrite hc2.
   + by move => f s; rewrite semE.
-  + move => bs c0 h rs s //=.
-    rewrite semE.
-    rewrite -dlet_dlim_diag //=.
-    + by move => n m le; apply: mono_ssem_aux; exact: homo_ubnf.
-    + apply eq_in_dlet; last by rewrite h.
-      by move => *; rewrite dlimC.
 Qed.
 
 Lemma ssem_call_eq (ps0 : psi) f s:
@@ -1049,11 +1049,11 @@ Qed.
 (* -------------------------------------------------------------------- *)
 Fixpoint noblock (c : cmd_ X mem Y) : Prop :=
   match c with
-  | abort | skip | assign _ _ _ | random _ _ _ | call _ | gassign _ _ _ => True
+  | abort | skip | assign _ _ _ | gassign _ _ _ | random _ _ _ | call _ => True
+  | block _ _ _ => False
   | cond _ c1 c2 => noblock c1 /\ noblock c2
   | while _ c    => noblock c
   | seqc c1 c2   => noblock c1 /\ noblock c2
-  | block _ _ _ => False
   end.
 
 Fixpoint nocall (c:cmd) : Prop :=
@@ -1061,14 +1061,14 @@ Fixpoint nocall (c:cmd) : Prop :=
   | abort    => True
   | skip     => True
   | x <<- _  => True
+  | G _ <<- _ => True
   | x <$- _  => True
-  | c1 ;; c2 => nocall c1 /\ nocall c2
+  | block _ c _ => nocall c
 
   | If _ then c1 else c2 => nocall c1 /\ nocall c2
   | While _ Do c         => nocall c
+  | c1 ;; c2 => nocall c1 /\ nocall c2
   | call n => False
-  | G _ <<- _   => True
-  | block _ c _ => nocall c
   end.
 
 End MISC.
@@ -1078,11 +1078,11 @@ Section Inliner.
 
 Fixpoint inliner (c : cmd_ X mem Y) inline :=
   match c with
-  | seqc p1 p2 => seqc (inliner p1 inline) (inliner p2 inline)
+  | block bs p rs => block bs (inliner p inline) rs
   | cond b p1 p2 => cond b (inliner p1 inline) (inliner p2 inline)
   | while b p => while b (inliner p inline)
+  | seqc p1 p2 => seqc (inliner p1 inline) (inliner p2 inline)
   | call f => inline f
-  | block bs p rs => block bs (inliner p inline) rs
   | _ => c
   end.
 
@@ -1123,8 +1123,9 @@ move => n.
 exact: ubnf_dnull.
 Qed.
 
-Lemma kinliner1_cseq n ps' p1 p2: k_inliner1 (S n) (seqc p1 p2) ps' =
-                                seqc (k_inliner1 (S n) p1 ps') (k_inliner1 (S n) p2 ps').
+Lemma kinliner1_cblock n ps' bs p rs :
+  k_inliner1 (S n) (@block X mem Y bs p rs) ps' =
+  block bs (k_inliner1 (S n) p ps') rs.
 Proof.
   reflexivity.
 Qed.
@@ -1141,22 +1142,22 @@ Proof.
   reflexivity.
 Qed.
 
+Lemma kinliner1_cseq n ps' p1 p2: k_inliner1 (S n) (seqc p1 p2) ps' =
+                                seqc (k_inliner1 (S n) p1 ps') (k_inliner1 (S n) p2 ps').
+Proof.
+  reflexivity.
+Qed.
+
 Lemma kinliner1_ccall n f ps' :
   k_inliner1 (S n) (call f) ps' = k_inliner1 n (ps' f) ps'.
 Proof.
   reflexivity.
 Qed.
 
-Lemma kinliner1_cblock n ps' bs p rs :
-  k_inliner1 (S n) (@block X mem Y bs p rs) ps' =
-  block bs (k_inliner1 (S n) p ps') rs.
-Proof.
-  reflexivity.
-Qed.
 
-
-Lemma kinliner2_cseq n ps' p1 p2: k_inliner2 (S n) (seqc p1 p2) ps' =
-                                seqc (k_inliner2 (S n) p1 ps') (k_inliner2 (S n) p2 ps').
+Lemma kinliner2_cblock n ps' bs p rs :
+  k_inliner2 (S n) (@block X mem Y bs p rs) ps' =
+  block bs (k_inliner2 (S n) p ps') rs.
 Proof.
   reflexivity.
 Qed.
@@ -1173,15 +1174,14 @@ Proof.
   reflexivity.
 Qed.
 
-Lemma kinliner2_ccall n f ps' :
-  k_inliner2 (S n) (call f) ps' = k_inliner2 n (ps' f) ps'.
+Lemma kinliner2_cseq n ps' p1 p2: k_inliner2 (S n) (seqc p1 p2) ps' =
+                                seqc (k_inliner2 (S n) p1 ps') (k_inliner2 (S n) p2 ps').
 Proof.
   reflexivity.
 Qed.
 
-Lemma kinliner2_cblock n ps' bs p rs :
-  k_inliner2 (S n) (@block X mem Y bs p rs) ps' =
-  block bs (k_inliner2 (S n) p ps') rs.
+Lemma kinliner2_ccall n f ps' :
+  k_inliner2 (S n) (call f) ps' = k_inliner2 n (ps' f) ps'.
 Proof.
   reflexivity.
 Qed.
@@ -1196,7 +1196,12 @@ Proof.
     by rewrite addn0.
   + move => {}m h n c ps1.
     elim c.
-    1-4,9 : move => //=.
+    1-5 : move => //=.
+    + move => ? ? hc ?.
+      rewrite kinliner2_cblock.
+      rewrite kinliner1_cblock.
+      rewrite hc.
+      by rewrite (kinliner1_cblock (n + m.+1)).
     + move => e ? hc1 ? hc2.
       rewrite kinliner2_cif.
       rewrite kinliner1_cif.
@@ -1217,11 +1222,6 @@ Proof.
       rewrite h.
       rewrite (kinliner1_ccall (n + m.+1)).
       by rewrite addSnnS.
-    + move => ? ? hc ?.
-      rewrite kinliner2_cblock.
-      rewrite kinliner1_cblock.
-      rewrite hc.
-      by rewrite (kinliner1_cblock (n + m.+1)).
 Qed.
 
 Lemma ssem_ubnf_dnull (ps' : psi) c n s:
@@ -1231,10 +1231,9 @@ Proof.
   move : c s.
   elim n => [//=|n0 h c].
   elim c .
-  10: { move => ? ? hc ? s //=.
-        by apply: eq_in_dlet. }
-  9: by move => * //=.
-  1-4: move => * //=.
+  1-5: by move => * //=.
+  + move => ? ? hc ? s //=.
+    by apply: eq_in_dlet.
   + move => e ? hc1 ? hc2 s //=.
     case (`[{e}] s).
     + by rewrite hc1.
@@ -1262,11 +1261,10 @@ Lemma ubnf_ssem  c s:
 Proof.
   move :s.
   elim c.
-  10: { move => ? ? hc ? s //=.
-        rewrite semE.
-        by apply: eq_in_dlet. }
-  9: by move => * //=; rewrite !semE.
-  + 1-4: by move => * //=; rewrite !semE.
+  1-5: by move => * //=; rewrite !semE.
+  + move => ? ? hc ? s //=.
+    rewrite semE.
+    by apply: eq_in_dlet.
   + move => e ? hc1 ? hc2 s //=.
     rewrite semE.
     case (`[{e}] s).
@@ -1291,12 +1289,12 @@ Proof.
     apply: eq_in_dlet.
     + by move => ??; rewrite hc2.
     + by rewrite hc1.
-    + move => f s //=.
-      rewrite semE.
-      rewrite -(dlimC dnull).
-      apply eq_dlim => n0.
-      case : n0 => //= ?.
-      by rewrite -while_true_null.
+  + move => f s //=.
+    rewrite semE.
+    rewrite -(dlimC dnull).
+    apply eq_dlim => n0.
+    case : n0 => //= ?.
+    by rewrite -while_true_null.
 Qed.
 
 Lemma inliner_false_ps_ssem (ps' : psi) c n s:
@@ -1310,11 +1308,10 @@ elim: n => [|n IH] c s.
 - (* n = 0 *)
   move: s.
   elim: c.
-  10: { move=> ? ? hc ? s /=.
-        rewrite !semE.
-        by apply: eq_in_dlet. }
-  9: by move=> * /=; rewrite !semE.
-  1-4: by move=> * /=; rewrite !semE.
+  1-5: by move=> * /=; rewrite !semE.
+  + move=> ? ? hc ? s /=.
+    rewrite !semE.
+    by apply: eq_in_dlet.
   + move=> e c1 hc1 c2 hc2 s /=.
     rewrite !semE; case: (`[{e}] s); [exact: hc1 | exact: hc2].
   + move=> e c0 hc s /=.
@@ -1331,11 +1328,10 @@ elim: n => [|n IH] c s.
 - (* n.+1 *)
   move: s.
   elim: c.
-  10: { move=> ? ? hc ? s /=.
-        rewrite !semE.
-        by apply: eq_in_dlet. }
-  9: by move=> * /=; rewrite !semE.
-  1-4: by move=> * /=; rewrite !semE.
+  1-5: by move=> * /=; rewrite !semE.
+  + move=> ? ? hc ? s /=.
+    rewrite !semE.
+    by apply: eq_in_dlet.
   + move=> e c1 hc1 c2 hc2 s /=.
     rewrite !semE; case: (`[{e}] s); [exact: hc1 | exact: hc2].
   + move=> e c0 hc s /=.
@@ -1359,11 +1355,10 @@ elim: n => [|n IH] ps2 c s.
 - (* n = 0 *)
   move: s.
   elim: c.
-  10: { move=> ? ? hc ? s /=.
-        rewrite !semE.
-        by apply: eq_in_dlet. }
-  9: by move=> * /=; rewrite !semE.
-  1-4: by move=> * /=; rewrite !semE.
+  1-5: by move=> * /=; rewrite !semE.
+  + move=> ? ? hc ? s /=.
+    rewrite !semE.
+    by apply: eq_in_dlet.
   + move=> e c1 hc1 c2 hc2 s /=.
     by rewrite !semE; case: (`[{e}] s); [exact: hc1 | exact: hc2].
   + move=> e c0 hc s /=.
@@ -1380,11 +1375,10 @@ elim: n => [|n IH] ps2 c s.
 - (* n.+1 *)
   move: s.
   elim: c.
-  10: { move=> ? ? hc ? s /=.
-        rewrite !semE.
-        by apply: eq_in_dlet. }
-  9: by move=> * /=; rewrite !semE.
-  1-4: by move=> * /=; rewrite !semE.
+  1-5: by move=> * /=; rewrite !semE.
+  + move=> ? ? hc ? s /=.
+    rewrite !semE.
+    by apply: eq_in_dlet.
   + move=> e c1 hc1 c2 hc2 s /=.
     by rewrite !semE; case: (`[{e}] s); [exact: hc1 | exact: hc2].
   + move=> e c0 hc s /=.
@@ -1411,11 +1405,10 @@ elim: m => [|m IH] c s.
 - by [].
 - move: s.
   elim: c.
-  10: { move=> ? ? hc ? s /=.
-        rewrite !semE.
-        by apply: eq_in_dlet. }
-  9: by move=> * /=; rewrite !semE.
-  1-4: by move=> * /=; rewrite !semE.
+  1-5: by move=> * /=; rewrite !semE.
+  + move=> ? ? hc ? s /=.
+    rewrite !semE.
+    by apply: eq_in_dlet.
   + move=> e c1 hc1 c2 hc2 s /=.
     by rewrite !semE; case: (`[{e}] s); [exact: hc1 | exact: hc2].
   + move=> e c0 hc s /=.

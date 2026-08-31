@@ -41,16 +41,22 @@ Context (ps: psi).
 (* -------------------------------------------------------------------- *)
 
 Inductive derivable : phi -> assn -> cmd -> assn -> Prop :=
-  | H_Skip : forall P cl,
-      derivable cl P skip P
   | H_Abort : forall P Q cl,
       derivable cl P abort Q
+  | H_Skip : forall P cl,
+      derivable cl P skip P
   | H_Asgn : forall {T : IhbType.type} x (e:expr_ X mem T) (Q : assn) cl,
       derivable cl [pred m | Q m.[x <- `[{e}]%A m]] (x <<- e) Q
+  | H_GAsgn : forall {T : IhbType.type} x (e:expr_ X mem T) (Q : assn) cl,
+      derivable cl [pred m | Q (m.{x <- `[{e}]%A m})] (G x <<- e) Q
   | H_Random : forall {T : IhbType.type} x (d:expr_ X mem (Distr T)) (Q : assn) cl,
       derivable cl `[forall v in `[{d}] | m => Q m.[x <- v]]%A (x <$- d) Q
-  | H_Seq : forall P c Q d R cl,
-      derivable cl Q d R -> derivable cl P c Q -> derivable cl P (c;;d) R
+  | H_Block : forall (P Q : assn) bs c rs cl,
+      (forall m, derivable cl
+                   [pred m' | P m && (m' == minit m bs)]
+                   c
+                   [pred m'' | Q (mret m m'' rs)]) ->
+      derivable cl P (block bs c rs) Q
   | H_If : forall (Pr Po : assn) (e:expr_ X mem bool) (c1 c2:cmd) cl,
       derivable cl (Pr /\ `[{e}])%A   c1 Po ->
       derivable cl (Pr /\ `[{~~e}])%A c2 Po ->
@@ -58,20 +64,14 @@ Inductive derivable : phi -> assn -> cmd -> assn -> Prop :=
   | H_While : forall (I : assn) (e:expr_ X mem bool) (c:cmd) cl,
       derivable cl (I /\ `[{e}])%A c I ->
       derivable cl I (While e Do c) (I /\ `[{~~e}])%A
+  | H_Seq : forall P c Q d R cl,
+      derivable cl Q d R -> derivable cl P c Q -> derivable cl P (c;;d) R
   | H_Consequence : forall (P2 Q2 P1 Q1 : assn)(c : cmd) cl,
       (forall m, P1 m -> P2 m) ->
       (forall m, Q2 m -> Q1 m) ->
       derivable cl P2 c Q2 -> derivable cl P1 c Q1
   | H_khl : forall P Q c cl,
      derivable2 cl P c (fun _ => Q) -> derivable cl P c Q
-  | H_GAsgn : forall {T : IhbType.type} x (e:expr_ X mem T) (Q : assn) cl,
-      derivable cl [pred m | Q (m.{x <- `[{e}]%A m})] (G x <<- e) Q
-  | H_Block : forall (P Q : assn) bs c rs cl,
-      (forall m, derivable cl
-                   [pred m' | P m && (m' == minit m bs)]
-                   c
-                   [pred m'' | Q (mret m m'' rs)]) ->
-      derivable cl P (block bs c rs) Q
   with derivable2 : phi -> assn -> cmd -> assn2 -> Prop :=
    | H_hl: forall P Q c cl,
        (forall s0, derivable cl (xpredI P (fun s => s == s0)) c (Q s0)) ->
@@ -213,22 +213,22 @@ Lemma soundness_n :
      forall n, valid_cl_n n cl -> akhl (ubnf ps n) P c Q).
 Proof.
 apply: derivable_mut.
-- (* H_Skip *) by move=> P cl n _; exact: ahl_skip.
 - (* H_Abort *) by move=> P Q cl n _; exact: ahl_abort.
+- (* H_Skip *) by move=> P cl n _; exact: ahl_skip.
 - (* H_Asgn *) by move=> T x e Q cl n _; exact: ahl_assign.
+- (* H_GAsgn *) by move=> T x e Q cl n _; exact: ahl_gassign.
 - (* H_Random *) by move=> T x d Q cl n _; exact: ahl_random.
-- (* H_Seq *)
-  by move=> P c Q d R cl _ IHd _ IHc n Hv; apply: (ahl_seq (IHc n Hv) (IHd n Hv)).
+- (* H_Block *)
+  by move=> P Q bs c rs cl _ IH n Hv; apply: ahl_block => m; exact: IH.
 - (* H_If *)
   by move=> Pr Po e c1 c2 cl _ IH1 _ IH2 n Hv;
      apply: ahl_if; [exact: IH1 | exact: IH2].
 - (* H_While *) by move=> I e c cl _ IH n Hv; apply: ahl_while; exact: IH.
+- (* H_Seq *)
+  by move=> P c Q d R cl _ IHd _ IHc n Hv; apply: (ahl_seq (IHc n Hv) (IHd n Hv)).
 - (* H_Consequence *)
   by move=> P2 Q2 P1 Q1 c cl HP HQ _ IH n Hv; apply: (ahl_conseq HP HQ (IH n Hv)).
 - (* H_khl *) by move=> P Q c cl _ IH n Hv; apply/ahl_khl; exact: IH.
-- (* H_GAsgn *) by move=> T x e Q cl n _; exact: ahl_gassign.
-- (* H_Block *)
-  by move=> P Q bs c rs cl _ IH n Hv; apply: ahl_block => m; exact: IH.
 - (* H_hl *) by move=> P Q c cl _ IH n Hv; apply/akhl_hl=> s0; exact: (IH s0 n Hv).
 - (* H_call *) by move=> cl f n Hv; exact: Hv.
 - (* H_rec *)
@@ -307,8 +307,8 @@ Proof. by rewrite in_dinsupp dunit1E eqxx oner_neq0. Qed.
 Lemma rel_complete_d (c : cmd) (P Q : assn) :
   hl_ ps P c Q -> derivable ps cl_mgt P c Q.
 Proof.
-elim: c P Q => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2
-               | f | T gx ge | bs cb ihb rs ] P Q Hhl.
+elim: c P Q => [ | | T x e | T gx ge | T x d | bs cb ihb rs
+               | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2 | f ] P Q Hhl.
 - (* abort *) exact: H_Abort.
 - (* skip *)
   apply: (H_Consequence (P2 := P) (Q2 := P)) => //.
@@ -321,6 +321,12 @@ elim: c P Q => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2
     by apply: (H (m.[x <- `[{e}]%A m])); exact: in_dinsupp_dunit.
   + by [].
   + exact: H_Asgn.
+- (* gassign *)
+  apply: (H_Consequence (P2 := [pred m | Q (m.{gx <- `[{ge}]%A m})]) (Q2 := Q)).
+  + move=> m Pm /=; have H := Hhl m Pm; rewrite ssem_gassnE in H.
+    by apply: (H (m.{gx <- `[{ge}]%A m})); exact: in_dinsupp_dunit.
+  + by [].
+  + exact: H_GAsgn.
 - (* random *)
   apply: (H_Consequence
             (P2 := `[forall v in `[{d}] | m => Q m.[x <- v]]%A) (Q2 := Q)).
@@ -329,6 +335,11 @@ elim: c P Q => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2
     exact: in_dinsupp_dunit.
   + by [].
   + exact: H_Random.
+- (* block *)
+  apply: H_Block => m; apply: ihb => m' /andP[Pm /eqP ->] m'' m''in.
+  have H := Hhl m Pm; rewrite ssem_blockE in H.
+  apply: (H (mret m m'' rs)).
+  by apply: dlet_dinsupp; [exact: m''in | exact: in_dinsupp_dunit].
 - (* if *)
   apply: H_If.
   + apply: ih1 => m /andP[Pm em]; have H := Hhl m Pm.
@@ -361,17 +372,6 @@ elim: c P Q => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2
   + move=> m0 Pm0 m hm; have H := Hhl m0 Pm0; rewrite ssem_call_eq in H.
     exact: (H m hm).
   + by apply: H_call; right.
-- (* gassign *)
-  apply: (H_Consequence (P2 := [pred m | Q (m.{gx <- `[{ge}]%A m})]) (Q2 := Q)).
-  + move=> m Pm /=; have H := Hhl m Pm; rewrite ssem_gassnE in H.
-    by apply: (H (m.{gx <- `[{ge}]%A m})); exact: in_dinsupp_dunit.
-  + by [].
-  + exact: H_GAsgn.
-- (* block *)
-  apply: H_Block => m; apply: ihb => m' /andP[Pm /eqP ->] m'' m''in.
-  have H := Hhl m Pm; rewrite ssem_blockE in H.
-  apply: (H (mret m m'' rs)).
-  by apply: dlet_dinsupp; [exact: m''in | exact: in_dinsupp_dunit].
 Qed.
 
 Lemma rel_complete (c : cmd) (P : assn) (Q : assn2) :

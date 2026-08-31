@@ -37,16 +37,22 @@ Notation phi := (@phi X Y mem).
 Section Logic.
 
 Inductive derivable : psi -> phi -> assn -> cmd -> assn -> Prop :=
-  | H_Skip : forall P cl ps,
-      derivable ps cl P skip P
   | H_Abort : forall P Q cl ps,
       derivable ps cl P abort Q
+  | H_Skip : forall P cl ps,
+      derivable ps cl P skip P
   | H_Asgn : forall {T : IhbType.type} x (e:expr_ X mem T) (Q : assn) cl ps,
       derivable ps cl [pred m | Q m.[x <- `[{e}]%A m]] (x <<- e) Q
+  | H_GAsgn : forall {T : IhbType.type} x (e:expr_ X mem T) (Q : assn) cl ps,
+      derivable ps cl [pred m | Q (m.{x <- `[{e}]%A m})] (G x <<- e) Q
   | H_Random : forall {T : IhbType.type} x (d:expr_ X mem (Distr T)) (Q : assn) cl ps,
       derivable ps cl `[forall v in `[{d}] | m => Q m.[x <- v]]%A (x <$- d) Q
-  | H_Seq : forall P c Q d R cl ps,
-      derivable ps cl Q d R -> derivable ps cl P c Q -> derivable ps cl P (c;;d) R
+  | H_Block : forall (P Q : assn) bs c rs cl ps,
+      (forall m, derivable ps cl
+                   [pred m' | P m && (m' == minit m bs)]
+                   c
+                   [pred m'' | Q (mret m m'' rs)]) ->
+      derivable ps cl P (block bs c rs) Q
   | H_If : forall (Pr Po : assn) (e:expr_ X mem bool) (c1 c2:cmd) cl ps,
       derivable ps cl (Pr /\ `[{e}])%A   c1 Po ->
       derivable ps cl (Pr /\ `[{~~e}])%A c2 Po ->
@@ -54,20 +60,14 @@ Inductive derivable : psi -> phi -> assn -> cmd -> assn -> Prop :=
   | H_While : forall (I : assn) (e:expr_ X mem bool) (c:cmd) cl ps,
       derivable ps cl (I /\ `[{e}])%A c I ->
       derivable ps cl I (While e Do c) (I /\ `[{~~e}])%A
+  | H_Seq : forall P c Q d R cl ps,
+      derivable ps cl Q d R -> derivable ps cl P c Q -> derivable ps cl P (c;;d) R
   | H_Consequence : forall (P2 Q2 P1 Q1 : assn)(c : cmd) cl ps,
       (forall m, P1 m -> P2 m) ->
       (forall m, Q2 m -> Q1 m) ->
       derivable ps cl P2 c Q2 -> derivable ps cl P1 c Q1
   | H_khl : forall P Q c cl ps,
      derivable2 ps cl P c (fun _ => Q) -> derivable ps cl P c Q
-  | H_GAsgn : forall {T : IhbType.type} x (e:expr_ X mem T) (Q : assn) cl ps,
-      derivable ps cl [pred m | Q (m.{x <- `[{e}]%A m})] (G x <<- e) Q
-  | H_Block : forall (P Q : assn) bs c rs cl ps,
-      (forall m, derivable ps cl
-                   [pred m' | P m && (m' == minit m bs)]
-                   c
-                   [pred m'' | Q (mret m m'' rs)]) ->
-      derivable ps cl P (block bs c rs) Q
   with derivable2 : psi -> phi -> assn -> cmd -> assn2 -> Prop :=
    | H_hl: forall P Q c cl ps,
        (forall s0, derivable ps cl (xpredI P (fun s => s == s0)) c (Q s0)) ->
@@ -275,29 +275,29 @@ Lemma soundness :
      valid_cl cl ps -> khl_ ps P c Q).
 Proof.
 apply: derivable_mut.
-- (* H_Skip *)  by move=> *; exact: hl_skip.
 - (* H_Abort *) by move=> *; exact: hl_abort.
+- (* H_Skip *)  by move=> *; exact: hl_skip.
 - (* H_Asgn *) by move=> *; exact: hl_assign.
+- (* H_GAsgn *) by move=> *; exact: hl_gassign.
 - (* H_Random *) by move=> *; exact: hl_random.
-- (* H_Seq *)
-   by move=> P c Q d R cl ? ? IHd ? IHc Hv; apply: (hl_seq (IHc Hv) (IHd Hv)).
+- (* H_Block *)
+  by move=> P Q bs c rs cl ? ? IH Hv; apply: hl_block => m; exact: IH.
 - (* H_If *)
   by move=> Pr Po e c1 c2 cl ? ? IH1 ? IH2 Hv;
      apply: hl_if; [exact: IH1 | exact: IH2].
 - (* H_While *)by  move=> I e c cl ? ? IH Hv; apply: hl_while; exact: IH.
+- (* H_Seq *)
+   by move=> P c Q d R cl ? ? IHd ? IHc Hv; apply: (hl_seq (IHc Hv) (IHd Hv)).
 - (* H_Consequence *)
   by  move=> P2 Q2 P1 Q1 c cl ? HP HQ ? IH Hv; apply: (hl_conseq HP HQ (IH Hv)).
 - (* H_khl *) by move=> P Q c cl ? ? IH Hv; apply/hl_khl; exact: IH.
-- (* H_GAsgn *) by move=> *; exact: hl_gassign.
-- (* H_Block *)
-  by move=> P Q bs c rs cl ? ? IH Hv; apply: hl_block => m; exact: IH.
 - (* H_hl *) by move=> P Q c cl ? ? IH Hv; apply/khl_hl=> s0; exact: (IH s0 Hv).
 - (* H_call *) by move=> cl f ? Hv; exact: Hv.
 - (* H_rec *)
--  move=> P Q c cl cl' ps' IH_body ? ? HI Hv.
-   apply: (recursion_hoare_triple (cl:=cl)) => //.
-   rewrite /hoare_triple_ctx.
-   by move => h; apply: HI.
+  move=> P Q c cl cl' ps' IH_body ? ? HI Hv.
+  apply: (recursion_hoare_triple (cl:=cl)) => //.
+  rewrite /hoare_triple_ctx.
+  by move => h; apply: HI.
 - (* H_adapt *)
   move=> P1 P2 Q1 Q2 c cl ? Hpre Hpost ?  IH Hv m P1m.
   have := (IH Hv m (Hpre m P1m)).
@@ -329,8 +329,8 @@ Proof. by rewrite in_dinsupp dunit1E eqxx oner_neq0. Qed.
 Lemma rel_complete_d (c : cmd) (P Q : assn) ps' :
   hl_ ps' P c Q -> (forall ps, derivable ps (cl_mgt ps') P c Q).
 Proof.
-elim: c P Q => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2
-               | f | T gx ge | bs cb ihb rs ] P Q Hhl ps.
+elim: c P Q => [ | | T x e | T gx ge | T x d | bs cb ihb rs
+               | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2 | f ] P Q Hhl ps.
 - (* abort *) exact: H_Abort.
 - (* skip *)
   apply: (H_Consequence (P2 := P) (Q2 := P)) => //.
@@ -343,6 +343,12 @@ elim: c P Q => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2
     by apply: (H (m.[x <- `[{e}]%A m])); exact: in_dinsupp_dunit.
   + by [].
   + exact: H_Asgn.
+- (* gassign *)
+  apply: (H_Consequence (P2 := [pred m | Q (m.{gx <- `[{ge}]%A m})]) (Q2 := Q)).
+  + move=> m Pm /=; have H := Hhl m Pm; rewrite ssem_gassnE in H.
+    by apply: (H (m.{gx <- `[{ge}]%A m})); exact: in_dinsupp_dunit.
+  + by [].
+  + exact: H_GAsgn.
 - (* random *)
   apply: (H_Consequence
             (P2 := `[forall v in `[{d}] | m => Q m.[x <- v]]%A) (Q2 := Q)).
@@ -351,6 +357,11 @@ elim: c P Q => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2
     exact: in_dinsupp_dunit.
   + by [].
   + exact: H_Random.
+- (* block *)
+  apply: H_Block => m; apply: ihb => m' /andP[Pm /eqP ->] m'' m''in.
+  have H := Hhl m Pm; rewrite ssem_blockE in H.
+  apply: (H (mret m m'' rs)).
+  by apply: dlet_dinsupp; [exact: m''in | exact: in_dinsupp_dunit].
 - (* if *)
   apply: H_If.
   + apply: ih1 => m /andP[Pm em]; have H := Hhl m Pm.
@@ -383,17 +394,6 @@ elim: c P Q => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2
   + move=> m0 Pm0 m hm; have H := Hhl m0 Pm0; rewrite ssem_call_eq in H.
     exact: (H m hm).
   + by apply: H_call; right.
-- (* gassign *)
-  apply: (H_Consequence (P2 := [pred m | Q (m.{gx <- `[{ge}]%A m})]) (Q2 := Q)).
-  + move=> m Pm /=; have H := Hhl m Pm; rewrite ssem_gassnE in H.
-    by apply: (H (m.{gx <- `[{ge}]%A m})); exact: in_dinsupp_dunit.
-  + by [].
-  + exact: H_GAsgn.
-- (* block *)
-  apply: H_Block => m; apply: ihb => m' /andP[Pm /eqP ->] m'' m''in.
-  have H := Hhl m Pm; rewrite ssem_blockE in H.
-  apply: (H (mret m m'' rs)).
-  by apply: dlet_dinsupp; [exact: m''in | exact: in_dinsupp_dunit].
 Qed.
 
 Lemma rel_complete (c : cmd) (P : assn) (Q : assn2) ps:
@@ -451,14 +451,14 @@ Fixpoint mod (c : cmd) : pred { t : IhbType.type & vars t } :=
   | abort    => pred0
   | skip     => pred0
   | x <<- _  => [pred y | `[<y = Tagged _ x>]]
+  | G _ <<- _ => pred0
   | x <$- _  => [pred y | `[<y = Tagged _ x>]]
-  | c1 ;; c2 => [predU mod c1 & mod c2]
+  | block _ _ rs => [pred y | has (fun b => `[< y = bvar b >]) rs]
 
   | If _ then c1 else c2 => [predU mod c1 & mod c2]
   | While _ Do c         => mod c
+  | c1 ;; c2 => [predU mod c1 & mod c2]
   | call n => pred0
-  | G _ <<- _ => pred0
-  | block _ _ rs => [pred y | has (fun b => `[< y = bvar b >]) rs]
 end.
 
 (* -------------------------------------------------------------------- *)
@@ -515,12 +515,20 @@ Proof.
   move=> m' /eqP <-; apply/asboolP=> -[u y] /asboolP /=.
   move/eq_vars=> neq; rewrite mget_neq //.
   by case: eqP neq; intuition.
++ move=> t x e m hcall; set Q := (Q in hl_ ps _ _ Q).
+  pose R := [pred m' | Q (m'.{x <- `[{e}] m'})].
+  apply (hl_conseq (P2 := R) (Q2 := Q))=> //; last exact/hl_gassign.
+  by move=> m' /eqP <-; apply/asboolP=> -[u y] _ /=; rewrite mget_setg.
 + move=> t x d m hcall; set Q := (Q in hl_ ps _ _ Q).
   pose R := forall_in `[{d}] (fun v m => Q m.[x <- v]).
   apply (hl_conseq (P2 := R) (Q2 := Q)) => //; last exact/hl_random.
   move=> m' /= /eqP <-; apply/asboolP => z.
   move=> zQ; apply/asboolP => -[u y] /asboolP /eq_vars /= neq.
   by rewrite mget_neq //; case: eqP neq; intuition.
++ move=> bs c ihc rs m _.
+  apply: hl_block => m0 m' /andP[/eqP <- _] m'' _ /=.
+  apply/asboolP => y; rewrite inE => hy.
+  by rewrite mget_mret.
 + move=> e c1 ih1 c2 ih2 m /= [hcall1 hcall2]; apply hl_if.
   * pose P := [pred m' | m == m'].
     pose Q := [pred m' | `[<eqon (predC (mod c1)) m m'>]].
@@ -552,14 +560,6 @@ Proof.
     by case/norP => [/= zc1 zc2]; rewrite Hm1 // Hx.
     by apply (ih2 m1) => /=.
 + by move => ?? /=.
-+ move=> t x e m hcall; set Q := (Q in hl_ ps _ _ Q).
-  pose R := [pred m' | Q (m'.{x <- `[{e}] m'})].
-  apply (hl_conseq (P2 := R) (Q2 := Q))=> //; last exact/hl_gassign.
-  by move=> m' /eqP <-; apply/asboolP=> -[u y] _ /=; rewrite mget_setg.
-+ move=> bs c ihc rs m _.
-  apply: hl_block => m0 m' /andP[/eqP <- _] m'' _ /=.
-  apply/asboolP => y; rewrite inE => hy.
-  by rewrite mget_mret.
 Qed.
 
 (* -------------------------------------------------------------------- *)

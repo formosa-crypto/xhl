@@ -277,38 +277,26 @@ Inductive cmd_ : Type :=
 | abort
 | skip
 | assign {t}    of vars t & expr_ t
+| gassign {t}   of vars t & expr_ t
 | random {t}    of vars t & dexpr t
+| block         of seq binding & cmd_ & seq binding
 | cond          of bexpr & cmd_ & cmd_
 | while         of bexpr & cmd_
 | seqc          of cmd_ & cmd_
-| call          of fname
-| gassign {t}   of vars t & expr_ t
-| block         of seq binding & cmd_ & seq binding.
+| call          of fname.
 
 Bind Scope syn_scope with cmd_.
 End Syntax.
 
 (* -------------------------------------------------------------------- *)
-Notation "'If' e 'then' c1 'else' c2"
-  := (cond e%X c1%S c2%S) : syn_scope.
-
-Notation "'IfT' e 'then' c1"
-  := (cond e%X c1%S skip) : syn_scope.
-
-Notation "'While' e 'Do' c"
-  := (while e%X c%S) : syn_scope.
-
 Notation "x <<- e"
   := (assign x%V e%X) : syn_scope.
 
-Notation "x <$- d"
-  := (random x%V d%X) : syn_scope.
-
-Notation "c1 ;; c2"
-  := (seqc c1%S c2%S) : syn_scope.
-
 Notation "'G' x <<- e"
   := (gassign x%V e%X) (at level 0, x at level 0, e at level 70) : syn_scope.
+
+Notation "x <$- d"
+  := (random x%V d%X) : syn_scope.
 
 Notation "x <<= e"
   := (bind_of x%V e%X) (at level 65, e at level 70) : syn_scope.
@@ -321,6 +309,18 @@ Notation "'Begin' 'Local' x := e ; c ; r := e' 'End'"
   := (block [:: bind_of x%V e%X] c%S [:: bind_of r%V e'%X])
   (at level 0, x at level 0, e at level 70, c at level 99,
    r at level 0, e' at level 70) : syn_scope.
+
+Notation "'If' e 'then' c1 'else' c2"
+  := (cond e%X c1%S c2%S) : syn_scope.
+
+Notation "'IfT' e 'then' c1"
+  := (cond e%X c1%S skip) : syn_scope.
+
+Notation "'While' e 'Do' c"
+  := (while e%X c%S) : syn_scope.
+
+Notation "c1 ;; c2"
+  := (seqc c1%S c2%S) : syn_scope.
 
 Local Open Scope syn_scope.
 
@@ -686,8 +686,14 @@ Fixpoint icmd (c : cmd1) : cmd2 :=
   | x <<- e =>
       ivar x <<- iexpr e
 
+  | gassign _ x e =>
+      gassign (ivar x) (iexpr e)
+
   | x <$- e =>
       ivar x <$- iexpr e
+
+  | block bs c rs =>
+      block (map ibind bs) (icmd c) (map ibind rs)
 
   | If e then c1 else c2 =>
       If iexpr e then icmd c1 else icmd c2
@@ -699,12 +705,6 @@ Fixpoint icmd (c : cmd1) : cmd2 :=
       seqc (icmd c1) (icmd c2)
 
   | call n => call n
-
-  | gassign _ x e =>
-      gassign (ivar x) (iexpr e)
-
-  | block bs c rs =>
-      block (map ibind bs) (icmd c) (map ibind rs)
   end.
 End SynInject.
 

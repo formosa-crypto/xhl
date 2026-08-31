@@ -41,21 +41,25 @@ Definition cl_cond2_independent (cl:phi) :=
   forall (f: Y), cond2_independent (get_post (cl f)).
 
 Inductive derivable : psi -> phi -> cond -> cmd -> cond -> Prop :=
-| H_Skip : forall f cl ps,
-    derivable ps cl f skip f
 | H_Abort : forall f g cl ps,
     (forall m, (0 <= f m)%E) ->
     derivable ps cl f abort g
+| H_Skip : forall f cl ps,
+    derivable ps cl f skip f
 | H_Asgn : forall {T : IhbType.type} x (e : expr_ X mem T) f cl ps,
     derivable ps cl (fun m => f m.[x <- `[{e}] m]) (x <<- e) f
+| H_GAsgn : forall {T : IhbType.type} x (e : expr_ X mem T) f cl ps,
+    derivable ps cl (fun m => f (m.{x <- `[{e}] m})) (G x <<- e) f
 | H_Random : forall {T : IhbType.type} x (d:expr_ X mem (Distr T))  f cl ps,
     let g m :=
       espe (\dlet_(v <- `[{d}] m) (dunit m.[x <- v])) f
     in
     derivable ps cl g (x <$- d) f
-| H_Seq : forall f c d g h cl ps,
+| H_Block : forall f g bs c rs cl ps,
     (forall m, (0 <= g m)%E) ->
-    derivable ps cl h d g -> derivable ps cl f c h -> derivable ps cl f (c;;d) g
+    (forall m, derivable ps cl (bound (fun _ => f m) (minit m bs)) c
+                               (fun m'' => g (mret m m'' rs))) ->
+    derivable ps cl f (block bs c rs) g
 | H_If : forall f g (e:expr_ X mem bool) c1 c2 cl ps,
     derivable ps cl (lift (esem e) f) c1 g ->
     derivable ps cl (lift (fun m => negb (esem e m)) f) c2 g ->
@@ -64,24 +68,15 @@ Inductive derivable : psi -> phi -> cond -> cmd -> cond -> Prop :=
     (forall m, 0 <= f m)%E ->
     derivable ps cl (lift (esem e) f) c f ->
     derivable ps cl f (While e Do c) (lift (fun m => negb (esem e m)) f)
+| H_Seq : forall f c d g h cl ps,
+    (forall m, (0 <= g m)%E) ->
+    derivable ps cl h d g -> derivable ps cl f c h -> derivable ps cl f (c;;d) g
 | H_Consequence : forall f' g' f g (c : cmd) cl ps,
     derivable ps cl f' c g' ->
     (forall m mu,  espe mu g' <= f' m -> espe mu g <= f m)%E ->
     derivable ps cl f c g
 | H_khl : forall P Q c cl ps,
     derivable2 ps cl P c (fun _ _ => Q) -> derivable ps cl P c Q
-| H_GAsgn : forall {T : IhbType.type} x (e : expr_ X mem T) f cl ps,
-    derivable ps cl (fun m => f (m.{x <- `[{e}] m})) (G x <<- e) f
-(* A block's postcondition depends on both the outer memory [m] -- whose
- * local store [mret] restores -- and the body's final memory.  So [m] is
- * quantified outside the derivation and the body's initial state is pinned
- * to [minit m bs] with [bound], exactly as [H_hl] does for [s0].  The value
- * carried at the pin point is [f m], the *outer* memory's. *)
-| H_Block : forall f g bs c rs cl ps,
-    (forall m, (0 <= g m)%E) ->
-    (forall m, derivable ps cl (bound (fun _ => f m) (minit m bs)) c
-                               (fun m'' => g (mret m m'' rs))) ->
-    derivable ps cl f (block bs c rs) g
 with derivable2 : psi -> phi -> cond -> cmd -> cond2 -> Prop :=
 | H_hl: forall P Q c cl ps,
     (* (forall m mu m', (0 <= Q m mu m')%E) -> *)
@@ -323,26 +318,26 @@ Lemma soundness :
      valid_cl cl ps -> kehl_ ps P c Q).
 Proof.
 apply: derivable_mut.
-- (* H_Skip *)  by move=> *; exact: ehl_skip.
 - (* H_Abort *) by move=> *; exact: ehl_abort.
+- (* H_Skip *)  by move=> *; exact: ehl_skip.
 - (* H_Asgn *) by move=> *; exact: ehl_assign.
+- (* H_GAsgn *) by move=> *; exact: ehl_gassign.
 - (* H_Random *) by move=> *; exact: ehl_random.
-- (* H_Seq *)
-  move=> P c Q d R cl ps Hpos ? IHd ? IHc Hv.
-  by apply: ehl_seq; [exact: Hpos | exact: (IHc Hv) | exact: (IHd Hv)].
+- (* H_Block *)
+  move=> f g bs c rs cl ps Hg _ IH Hv.
+  by apply: ehl_block; [exact: Hg | move=> m; exact: IH].
 - (* H_If *)
   move=> Pr Po e c1 c2 cl ? ? IH1 ? IH2 Hv.
   by apply: ehl_if; [exact: IH1 | exact: IH2].
 - (* H_While *)
   by move=> I e c cl ? Hpos ? IH Hv; apply: ehl_while; [exact: Hpos | exact: IH].
+- (* H_Seq *)
+  move=> P c Q d R cl ps Hpos ? IHd ? IHc Hv.
+  by apply: ehl_seq; [exact: Hpos | exact: (IHc Hv) | exact: (IHd Hv)].
 - (* H_Consequence *)
   move=> P2 Q2 P1 Q1 c cl ps ? HP HQ IH Hv.
   by apply: ehl_conseq; [ exact: HP | exact: HQ].
 - (* H_khl *) by move=> P Q c cl ? ? IH Hv; apply/ehl_kehl; exact: IH.
-- (* H_GAsgn *) by move=> *; exact: ehl_gassign.
-- (* H_Block *)
-  move=> f g bs c rs cl ps Hg _ IH Hv.
-  by apply: ehl_block; [exact: Hg | move=> m; exact: IH].
 - (* H_hl *)
   move=> P Q c cl ps ? IH Hv.
   rewrite kehl_ehl => s0.
