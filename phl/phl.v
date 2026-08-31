@@ -125,10 +125,10 @@ Definition empty_phi: phi := fun _ => empty_clause.
 Section Logic.
 
 Inductive derivable : psi -> phi -> assn -> cmd -> assn -> bd -> R -> Prop :=
-| H_Skip : forall P ps cl,
-    derivable ps cl P skip P '= 1
 | H_Abort ps cl:
   derivable ps cl predT abort pred0 '= 0
+| H_Skip : forall P ps cl,
+    derivable ps cl P skip P '= 1
 | H_Asgn : forall {T : IhbType.type} x (e:expr T) (Q : assn) ps cl,
     derivable ps cl (fun m => Q m.[x <- `[{e}] m]) (x <<- e) Q '= 1
 | H_Random : forall {T : IhbType.type} x (e:dexpr T) (Q : assn) d ps cl,
@@ -136,6 +136,10 @@ Inductive derivable : psi -> phi -> assn -> cmd -> assn -> bd -> R -> Prop :=
       \P_[\dlet_(v <- `[{e}] m) (dunit m.[x <- v])] Q == d
     in
     derivable ps cl P (x <$- e) Q '= d
+| H_If : forall  P (e : bexpr) c1 c2 Q r d ps cl,
+    derivable ps cl (P /\   `[{e}])%A c1 Q r d
+    -> derivable ps cl (P /\ ~ `[{e}])%A c2 Q r d
+    -> derivable ps cl P (If e then c1 else c2) Q r d
 | H_Seq : forall (R P Q:assn) c1 c2 dR dNR dRQ dNRQ d ps cl,
     d = dR * dRQ + dNR * dNRQ
     -> derivable ps cl P     c1 R     '= dR
@@ -143,10 +147,6 @@ Inductive derivable : psi -> phi -> assn -> cmd -> assn -> bd -> R -> Prop :=
     -> derivable ps cl R     c2 Q     '= dRQ
     -> derivable ps cl (~ R)%A c2 Q     '= dNRQ
     -> derivable ps cl P (c1 ;; c2) Q '= d
-| H_If : forall  P (e : bexpr) c1 c2 Q r d ps cl,
-    derivable ps cl (P /\   `[{e}])%A c1 Q r d
-    -> derivable ps cl (P /\ ~ `[{e}])%A c2 Q r d
-    -> derivable ps cl P (If e then c1 else c2) Q r d
 | H_ge0: forall P c Q ps cl, derivable ps cl P c Q '>= 0
 | H_le1: forall P c Q ps cl, derivable ps cl P c Q '<= 1
 | H_conseq_lege_eq: forall P c Q d ps cl,
@@ -445,8 +445,12 @@ Qed.
 
 End Rules.
 
-Hint Resolve phl_skip             : phl.
 Hint Resolve phl_abort            : phl.
+Hint Resolve phl_skip             : phl.
+Hint Resolve phl_assgn            : phl.
+Hint Resolve phl_rnd              : phl.
+Hint Resolve phl_if               : phl.
+Hint Resolve phl_seq_eq           : phl.
 Hint Resolve phl_conseq_eq        : phl.
 Hint Resolve phl_conseq_le        : phl.
 Hint Resolve phl_conseq_ge        : phl.
@@ -455,10 +459,6 @@ Hint Resolve phl_conseq_eq_ge     : phl.
 Hint Resolve phl_conseq_lege_eq   : phl.
 Hint Resolve phl_ge0              : phi.
 Hint Resolve phl_le1              : phi.
-Hint Resolve phl_seq_eq           : phl.
-Hint Resolve phl_assgn            : phl.
-Hint Resolve phl_rnd              : phl.
-Hint Resolve phl_if               : phl.
 
 Definition valid_cl (cl:phi) (ps:psi) :=
   forall f, kphl_ ps (get_pre (cl f)) (call f) (get_post (cl f)) Le (get_r (cl f)).
@@ -472,31 +472,35 @@ Lemma soundness :
      valid_cl cl ps -> kphl_ ps P c Q r d).
 Proof.
 apply: derivable_mut.
-+ eauto 2 with phl.
-+ eauto 2 with phl.
-+ eauto 2 with phl.
-+ move => *; exact: phl_rnd.
-+ move => R P Q c1 c2 sR dNR sRQ sNRQ ??? H1 ? H2 ? H3 ? H4 ? H5 Hv.
++ (* H_Abort *) eauto 2 with phl.
++ (* H_Skip *) eauto 2 with phl.
++ (* H_Asgn *) eauto 2 with phl.
++ (* H_Random *) move => *; exact: phl_rnd.
++ (* H_If *) eauto 4 with phl.
++ (* H_Seq *)
+  move => R P Q c1 c2 sR dNR sRQ sNRQ ??? H1 ? H2 ? H3 ? H4 ? H5 Hv.
   by apply: (@phl_seq_eq _ R P Q _ _ sR dNR sRQ sNRQ);auto.
-+ eauto 4 with phl.
-+ move => *; exact: phl_ge0.
-+ move => *; exact: phl_le1.
-+ eauto 4 with phl.
-+ eauto 4 with phl.
-+ eauto 4 with phl.
-+ eauto 4 with phl.
-+ eauto 4 with phl.
-+ eauto 4 with phl.
-+ eauto 4 with phl.
-+ move => ???????? H Hv.
++ (* H_ge0 *) move => *; exact: phl_ge0.
++ (* H_le1 *) move => *; exact: phl_le1.
++ (* H_conseq_lege_eq *) eauto 4 with phl.
++ (* H_conseq_eq_ge *) eauto 4 with phl.
++ (* H_conseq_eq_le *) eauto 4 with phl.
++ (* H_conseq_ge *) eauto 4 with phl.
++ (* H_conseq_le *) eauto 4 with phl.
++ (* H_conseq_eq *) eauto 4 with phl.
++ (* H_kphl *) eauto 4 with phl.
++ (* H_hl *)
+  move => ???????? H Hv.
   apply /khl_hl => ?.
   by apply H.
-+ move => ??? Hv; exact: Hv.
-+ move=> P Q c cl cl' ps' r Hpos IH_body ? ? HI Hv.
++ (* H_call *) move => ??? Hv; exact: Hv.
++ (* H_rec *)
+  move=> P Q c cl cl' ps' r Hpos IH_body ? ? HI Hv.
    apply: (recursion_hoare_triple_l (cl:=cl)) => //.
    rewrite /hoare_triple_ctx_l.
    by move => h; apply: HI.
-+ move=> ????????? leP leQ + ? ih Hv m Pm => /(le_trans _) ; apply.
++ (* H_adapt *)
+  move=> ????????? leP leQ + ? ih Hv m Pm => /(le_trans _) ; apply.
 apply/(le_trans _ (ih Hv m _))/leP => //.
 by apply/le_in_pr => m' _; apply/leQ.
 Qed.

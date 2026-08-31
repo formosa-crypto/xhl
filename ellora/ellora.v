@@ -211,29 +211,18 @@ Definition post_shift (post : nat -> dassn2) n : dassn2 :=
  if n is n'.+1 then post n' else (fun _ => eqmu dnull).
 
 Inductive sellora : psi -> (ident -> dassn) -> (ident -> dassn2) -> dassn -> dassn -> cmd -> Prop :=
-| ESkip P pre post  ps : sellora ps pre post P P skip
-
 | EAbort P pre post ps : sellora ps pre post P (□ pred0) abort
 
-| ESeq S P Q c1 c2 pre post ps :
-  sellora ps pre post P S c1 ->
-  sellora ps pre post S Q c2 ->
-  sellora ps pre post P Q (c1 ;; c2)
-
-| EConseq P' Q' P Q c pre post ps :
-       (forall mu, mu \in P  -> mu \in P')
-    -> (forall mu, mu \in Q' -> mu \in Q )
-    -> sellora ps pre post P' Q' c
-    -> sellora ps pre post P  Q  c
+| ESkip P pre post  ps : sellora ps pre post P P skip
 
 | EAssign {t : IhbType.type} P (x : vars t) (e : expr t) pre post ps:
     sellora ps pre post (P.[fun mu => dssem ps (x <<- e) mu])%A P (x <<- e)
 
-| ESample {t : IhbType.type} P (x : vars t) (d : dexpr t) pre post ps:
-    sellora ps pre post (P.[fun mu => dssem ps (x <$- d) mu])%A P (x <$- d)
-
 | EGAssign {t : IhbType.type} P (x : vars t) (e : expr t) pre post ps:
     sellora ps pre post (P.[fun mu => dssem ps (G x <<- e) mu])%A P (G x <<- e)
+
+| ESample {t : IhbType.type} P (x : vars t) (d : dexpr t) pre post ps:
+    sellora ps pre post (P.[fun mu => dssem ps (x <$- d) mu])%A P (x <$- d)
 
 | ECond P P' Q Q' e c1 c2 ps pre post :
     let SP := (P /\ □ [pred m | `[{    e }] m])%A in
@@ -248,18 +237,29 @@ Inductive sellora : psi -> (ident -> dassn) -> (ident -> dassn2) -> dassn -> das
     -> tclosed Q Qinf
     -> sellora ps pre post (P 0%N) (Qinf /\ □ `[{~~ b}])%A (While b Do c)
 
+| ESeq S P Q c1 c2 pre post ps :
+  sellora ps pre post P S c1 ->
+  sellora ps pre post S Q c2 ->
+  sellora ps pre post P Q (c1 ;; c2)
+
+| EConseq P' Q' P Q c pre post ps :
+       (forall mu, mu \in P  -> mu \in P')
+    -> (forall mu, mu \in Q' -> mu \in Q )
+    -> sellora ps pre post P' Q' c
+    -> sellora ps pre post P  Q  c
+
 | H_khl : forall P Q c pre post ps,
      sellora2 ps pre post P (fun _ => Q) c -> sellora ps pre post P Q c
 with sellora2: psi -> (ident -> dassn) -> (ident -> dassn2) -> dassn -> dassn2 -> cmd -> Prop :=
    | H_hl: forall P (Q:dassn2) c pre post ps,
        (forall s0, sellora ps pre post (eqmu s0) (fun s => P s0 ==> Q s0 s) c) ->
        sellora2 ps pre post P Q c
-   | H_call : forall pre post f ps, sellora2 ps pre post (pre f) (post f) (call f)
    | EBlock : forall (F : cmem -> dmem) bs c rs pre post ps,
        (forall m, sellora ps pre post (eqmu (dunit (minit m bs))) (eqmu (F m)) c) ->
        sellora2 ps pre post xpredT
          (fun mu => eqmu (\dlet_(m <- mu) \dlet_(m' <- F m) dunit (mret m m' rs)))
          (block bs c rs)
+   | H_call : forall pre post f ps, sellora2 ps pre post (pre f) (post f) (call f)
    | H_rec : forall P (Q: dassn2) c pre postinf pre' postinf' post ps',
        (forall p s, tclosed (fun n => post_shift (post p) n s)  (postinf p s)) ->
        (forall p' ps n , sellora2 ps pre
@@ -591,14 +591,17 @@ Qed.
 End Rules.
 
 (* -------------------------------------------------------------------- *)
-Hint Resolve ellora_skip             : ellora.
 Hint Resolve ellora_abort            : ellora.
-Hint Resolve ellora_seq              : ellora.
-Hint Resolve ellora_conseq           : ellora.
-Hint Resolve ellora_sem              : ellora.
-Hint Resolve ellora_cond             : ellora.
+Hint Resolve ellora_skip             : ellora.
+(* [ellora_semmap] is the pullback rule for an arbitrary [c]: it is what
+ * discharges assign / gassign / sample alike, so it sits with them. *)
 Hint Resolve ellora_semmap           : ellora.
+Hint Resolve ellora_cond             : ellora.
 Hint Resolve ellora_while_tclosed    : ellora.
+Hint Resolve ellora_seq              : ellora.
+(* structural, not syntax-directed *)
+Hint Resolve ellora_sem              : ellora.
+Hint Resolve ellora_conseq           : ellora.
 
 Definition valid_cl pre post (ps:psi) :=
   forall f, kellora_ ps (pre f) (post f) (call f).
@@ -610,38 +613,45 @@ Lemma soundness:
       sellora2 ps pre post P Q c -> valid_cl pre post ps -> kellora_ ps P Q c).
 Proof.
 apply derivable_mut.
-+ eauto 2 using ellora_cond with ellora.
-+ eauto 2 using ellora_cond with ellora.
-+ move => S P Q c1 c2 pre post ps ? Hc1 ? Hc2 Hv.
-  apply: ellora_seq;[exact: Hc1 | exact: Hc2].
-+ move => P' Q' P Q c pre post ps HP HQ ? HI Hv m HPre.
-  apply: HQ.
-  apply: (HI Hv).
-  by apply: HP.
-+ eauto 2 using ellora_cond with ellora.
-+ eauto 2 using ellora_cond with ellora.
++ (* EAbort *) eauto 2 using ellora_cond with ellora.
++ (* ESkip *) eauto 2 using ellora_cond with ellora.
++ (* EAssign *) eauto 2 using ellora_cond with ellora.
 + (* EGAssign *) by move => *; apply: ellora_semmap.
-+ move => P P' Q Q' e c1 c2 ps ????? Hc1 ? Hc2 Hv.
++ (* ESample *) eauto 2 using ellora_cond with ellora.
++ (* ECond *)
+  move => P P' Q Q' e c1 c2 ps ????? Hc1 ? Hc2 Hv.
   by apply: ellora_cond;[ exact: (Hc1 Hv) | exact: (Hc2 Hv)].
-+ move =>  P Q Qinf b c ?? ps ? HI ? Ha Hclose Hv.
++ (* EWhileTClosed *)
+  move =>  P Q Qinf b c ?? ps ? HI ? Ha Hclose Hv.
   apply: ellora_while_tclosed.
   + move => n.  by apply: HI.
   + move => n.  by apply: Ha.
   + exact: Hclose.
-+ eauto 2 using ellora_cond with ellora.
-+ move => P Q c cl ps ?? HI Hv.
++ (* ESeq *)
+  move => S P Q c1 c2 pre post ps ? Hc1 ? Hc2 Hv.
+  apply: ellora_seq;[exact: Hc1 | exact: Hc2].
++ (* EConseq *)
+  move => P' Q' P Q c pre post ps HP HQ ? HI Hv m HPre.
+  apply: HQ.
+  apply: (HI Hv).
+  by apply: HP.
++ (* H_khl *) eauto 2 using ellora_cond with ellora.
++ (* H_hl *)
+  move => P Q c cl ps ?? HI Hv.
   apply /kellora_ellora.
   by move => s0; apply HI.
-+ move => ?? f ps Hv. exact: (Hv f).
 + (* EBlock *)
   move => F bs c rs pre post ps ? IH Hv.
   by apply: ellora_block => m; exact: IH.
-+ move => P Q c pre postinf pre' postinf' post ps' Hclose ? Hf ? IHc Hv.
++ (* H_call *) move => ?? f ps Hv. exact: (Hv f).
++ (* H_rec *)
+  move => P Q c pre postinf pre' postinf' post ps' Hclose ? Hf ? IHc Hv.
   apply: recursion_hoare_triple.
   - exact: Hclose.
   - by move=> p ps n Hpre; exact: (Hf p ps n Hpre).
   - by move=> Hcall; exact: (IHc ps' Hcall).
-+ move => P1 p2 Q1 Q2 c ?? ps HP HQ ? HI Hv m HPre.
++ (* H_adapt *)
+  move => P1 p2 Q1 Q2 c ?? ps HP HQ ? HI Hv m HPre.
   have := (HI Hv m (HP m HPre)).
   exact: HQ.
 Qed.
@@ -732,8 +742,8 @@ Lemma rel_complete_d (c : cmd) P Q ps' :
   (forall ps, iscomplete' ps (pre_mgt) (cl_mgt ps') c (fun d d' => P d ==> Q d')).
 Proof.
   elim: c P Q =>
-        [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2 | f
-        | T gx ge | bs cb ihb rs ]
+        [ | | T x e | T gx ge | T x d | bs cb ihb rs
+        | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2 | f ]
           P Q  Hhl ps.
   + move=> mu.
     apply: (@EConseq (eqmu mu) (□ pred0)) => //; last by apply/EAbort.
@@ -752,12 +762,43 @@ Proof.
     have E : dssem ps (x <<- e) mu = dssem ps' (x <<- e) mu.
       by rewrite /dssem; apply/eq_in_dlet => // m _; rewrite !ssem_assnE.
     rewrite E; exact: (Hhl mu Pmu).
+  + (* gassign: the semantics of a global assignment does not mention [ps],
+     * so the pullback rule applies exactly as it does for [assign]. *)
+    move=> mu.
+    apply: (EConseq _ _ (EGAssign (fun d' => P mu ==> Q d') gx ge _ _ ps)) => //.
+    move=> nu /asboolP ->; rewrite /dassn_map /=; apply/implyP => Pmu.
+    have E : dssem ps (G gx <<- ge) mu = dssem ps' (G gx <<- ge) mu.
+      by rewrite /dssem; apply/eq_in_dlet => // m _; rewrite !ssem_gassnE.
+    rewrite E; exact: (Hhl mu Pmu).
   + move=> mu.
     apply: (EConseq _ _ (ESample (fun d' => P mu ==> Q d') x d _ _ ps)) => //.
     move=> nu /asboolP ->; rewrite /dassn_map /=; apply/implyP => Pmu.
     have E : dssem ps (x <$- d) mu = dssem ps' (x <$- d) mu.
       by rewrite /dssem; apply/eq_in_dlet => // m _; rewrite !ssem_rndE.
     rewrite E; exact: (Hhl mu Pmu).
+  + (* block: the body's behaviour is taken pointwise in the input memory --
+     * that is what the induction hypothesis provides -- and [EBlock]
+     * integrates it over [mu]. *)
+    move=> mu.
+    pose F m := ssem_ ps' cb (minit m bs).
+    have Hbody : forall m, sellora ps pre_mgt (cl_mgt ps')
+                     (eqmu (dunit (minit m bs))) (eqmu (F m)) cb.
+    { move=> m.
+      have Hsem : ellora_ ps' (eqmu (dunit (minit m bs))) (eqmu (F m)) cb.
+        by move=> nu /asboolP ->; apply/asboolP; rewrite /dssem dlet_unit.
+      apply: (EConseq _ _ (ihb _ _ Hsem ps (dunit (minit m bs)))) => //.
+      by move=> nu /= /implyP H; apply: H; apply/asboolP. }
+    apply: H_khl.
+    apply: (H_adapt (P2 := xpredT)
+              (Q2 := fun mu0 =>
+                 eqmu (\dlet_(m <- mu0) \dlet_(m' <- F m) dunit (mret m m' rs)))).
+    - by [].
+    - move=> m0 /asboolP -> d /asboolP ->.
+      apply/implyP => Pmu; have hQ := Hhl mu Pmu.
+      suff -> : (\dlet_(m <- mu) \dlet_(m' <- F m) dunit (mret m m' rs))
+              = dssem ps' (block bs cb rs) mu by exact: hQ.
+      by rewrite /dssem; apply/eq_in_dlet => // m _; rewrite ssem_blockE.
+    - by apply: EBlock; exact: Hbody.
   + move=> mu.
     pose mu1 := drestr `[{    e }] mu.
     pose mu2 := drestr `[{ ~~ e }] mu.
@@ -840,46 +881,16 @@ Proof.
         have Hd : nu = dssem ps' c2 d1 by apply/asboolP; apply: H; apply/asboolP.
         by apply/implyP => Pmu; rewrite Hd /d1 -dssem_seqE; exact: (Hhl mu Pmu).
       * by move=> nu /asboolP ->; apply/asboolP.
- + move=> mu.
-   apply: H_khl.
-   apply: (H_adapt (P2 := pre_mgt f) (Q2 := cl_mgt ps' f)).
-   - by [].
-   - move=> m0 /asboolP -> m /asboolP ->.
-     apply/implyP => Pmu; have hQ := Hhl mu Pmu.
-     suff -> : dssem ps' (ps' f) mu = dssem ps' (call f) mu by exact: hQ.
-     by rewrite /dssem; apply/eq_in_dlet => // m1 _; rewrite ssem_call_eq.
-   - exact: H_call.
- + (* gassign: the semantics of a global assignment does not mention [ps],
-    * so the pullback rule applies exactly as it does for [assign]. *)
-   move=> mu.
-   apply: (EConseq _ _ (EGAssign (fun d' => P mu ==> Q d') gx ge _ _ ps)) => //.
-   move=> nu /asboolP ->; rewrite /dassn_map /=; apply/implyP => Pmu.
-   have E : dssem ps (G gx <<- ge) mu = dssem ps' (G gx <<- ge) mu.
-     by rewrite /dssem; apply/eq_in_dlet => // m _; rewrite !ssem_gassnE.
-   rewrite E; exact: (Hhl mu Pmu).
- + (* block: the body's behaviour is taken pointwise in the input memory --
-    * that is what the induction hypothesis provides -- and [EBlock]
-    * integrates it over [mu]. *)
-   move=> mu.
-   pose F m := ssem_ ps' cb (minit m bs).
-   have Hbody : forall m, sellora ps pre_mgt (cl_mgt ps')
-                    (eqmu (dunit (minit m bs))) (eqmu (F m)) cb.
-   { move=> m.
-     have Hsem : ellora_ ps' (eqmu (dunit (minit m bs))) (eqmu (F m)) cb.
-       by move=> nu /asboolP ->; apply/asboolP; rewrite /dssem dlet_unit.
-     apply: (EConseq _ _ (ihb _ _ Hsem ps (dunit (minit m bs)))) => //.
-     by move=> nu /= /implyP H; apply: H; apply/asboolP. }
-   apply: H_khl.
-   apply: (H_adapt (P2 := xpredT)
-             (Q2 := fun mu0 =>
-                eqmu (\dlet_(m <- mu0) \dlet_(m' <- F m) dunit (mret m m' rs)))).
-   - by [].
-   - move=> m0 /asboolP -> d /asboolP ->.
-     apply/implyP => Pmu; have hQ := Hhl mu Pmu.
-     suff -> : (\dlet_(m <- mu) \dlet_(m' <- F m) dunit (mret m m' rs))
-             = dssem ps' (block bs cb rs) mu by exact: hQ.
-     by rewrite /dssem; apply/eq_in_dlet => // m _; rewrite ssem_blockE.
-   - by apply: EBlock; exact: Hbody.
+  + (* call *)
+    move=> mu.
+    apply: H_khl.
+    apply: (H_adapt (P2 := pre_mgt f) (Q2 := cl_mgt ps' f)).
+    - by [].
+    - move=> m0 /asboolP -> m /asboolP ->.
+      apply/implyP => Pmu; have hQ := Hhl mu Pmu.
+      suff -> : dssem ps' (ps' f) mu = dssem ps' (call f) mu by exact: hQ.
+      by rewrite /dssem; apply/eq_in_dlet => // m1 _; rewrite ssem_call_eq.
+    - exact: H_call.
 Qed.
 
 Lemma rel_complete (c : cmd) (P : dassn) (Q : dassn2) ps:
@@ -905,28 +916,31 @@ Lemma sellora_eq_post :
        sellora2 ps pre post' P Q c).
 Proof.
 apply: derivable_mut.
-- (* ESkip *) by move=> *; apply: ESkip.
 - (* EAbort *) by move=> *; apply: EAbort.
-- (* ESeq *)
-  by move=> S P Q c1 c2 pre post ps _ IH1 _ IH2 post' heq;
-     apply: (ESeq (IH1 _ heq) (IH2 _ heq)).
-- (* EConseq *)
-  by move=> P' Q' P Q c pre post ps hP hQ _ IH post' heq;
-     apply: (EConseq hP hQ (IH _ heq)).
+- (* ESkip *) by move=> *; apply: ESkip.
 - (* EAssign *) by move=> t P x e pre post ps post' heq; apply: EAssign.
-- (* ESample *) by move=> t P x d pre post ps post' heq; apply: ESample.
 - (* EGAssign *) by move=> t P x e pre post ps post' heq; apply: EGAssign.
+- (* ESample *) by move=> t P x d pre post ps post' heq; apply: ESample.
 - (* ECond *)
   by move=> P P' Q Q' e c1 c2 ps pre post SP SQ _ IH1 _ IH2 post' heq;
      apply: (ECond (IH1 _ heq) (IH2 _ heq)).
 - (* EWhileTClosed *)
   move=> P Q Qinf b c pre post ps _ IH1 _ IH2 htc post' heq.
   by apply: (EWhileTClosed (fun n => IH1 n _ heq) (fun n => IH2 n _ heq) htc).
+- (* ESeq *)
+  by move=> S P Q c1 c2 pre post ps _ IH1 _ IH2 post' heq;
+     apply: (ESeq (IH1 _ heq) (IH2 _ heq)).
+- (* EConseq *)
+  by move=> P' Q' P Q c pre post ps hP hQ _ IH post' heq;
+     apply: (EConseq hP hQ (IH _ heq)).
 - (* H_khl *)
   by move=> P Q c pre post ps _ IH post' heq; apply: (H_khl (IH _ heq)).
 - (* H_hl *)
   by move=> P Q c pre post ps _ IH post' heq;
      apply: H_hl => s0; exact: (IH s0 _ heq).
+- (* EBlock: [post] occurs only through the body's premise *)
+  move=> F bs c rs pre post ps _ IH post' heq.
+  by apply: EBlock => m; exact: (IH m _ heq).
 - (* H_call: rebuild the axiom in the new context, then adapt the        *)
   (* postcondition pointwise -- this is what H_adapt is for.            *)
   move=> pre post f ps post' heq.
@@ -934,9 +948,6 @@ apply: derivable_mut.
   - by [].
   - by move=> m0 _ m; rewrite heq.
   - exact: H_call.
-- (* EBlock: [post] occurs only through the body's premise *)
-  move=> F bs c rs pre post ps _ IH post' heq.
-  by apply: EBlock => m; exact: (IH m _ heq).
 - (* H_rec: pre' and postinf' occur only in the conclusion, so the same  *)
   (* premises derive the judgement in any context.                      *)
   move=> P Q c pre postinf pre' postinf' post ps' htc Hbody _ Hc _ post' heq.

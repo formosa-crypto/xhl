@@ -37,21 +37,25 @@ Section Logic.
 Context (ps: psi).
 
 Inductive derivable : phi -> cond -> cmd -> cond -> Prop :=
-  | H_Skip : forall f cl,
-      derivable cl f skip f
   | H_Abort : forall f g cl,
       (forall m, (0 <= f m)%E) ->
       derivable cl f abort g
+  | H_Skip : forall f cl,
+      derivable cl f skip f
   | H_Asgn : forall {T : IhbType.type} x (e : expr_ X mem T) f cl,
       derivable cl (fun m => f m.[x <- `[{e}] m]) (x <<- e) f
+  | H_GAsgn : forall {T : IhbType.type} x (e : expr_ X mem T) f cl,
+      derivable cl (fun m => f (m.{x <- `[{e}] m})) (G x <<- e) f
   | H_Random : forall {T : IhbType.type} x (d:expr_ X mem (Distr T)) f cl,
     let g m :=
       espe (\dlet_(v <- `[{d}] m) (dunit m.[x <- v])) f
     in
     derivable cl g (x <$- d) f
-  | H_Seq : forall f c d g h cl,
+  | H_Block : forall f g bs c rs cl,
       (forall m, (0 <= g m)%E) ->
-      derivable cl h d g -> derivable cl f c h -> derivable cl f (c;;d) g
+      (forall m, derivable cl (bound (fun _ => f m) (minit m bs)) c
+                              (fun m'' => g (mret m m'' rs))) ->
+      derivable cl f (block bs c rs) g
   | H_If : forall f g (e:expr_ X mem bool) (c1 c2:cmd) cl,
       derivable cl (lift (esem e) f) c1 g ->
       derivable cl (lift (fun m => negb (esem e m)) f) c2 g ->
@@ -60,19 +64,15 @@ Inductive derivable : phi -> cond -> cmd -> cond -> Prop :=
       (forall m, 0 <= f m)%E ->
       derivable cl (lift (esem e) f) c f ->
       derivable cl f (While e Do c) (lift (fun m => negb (esem e m)) f)
+  | H_Seq : forall f c d g h cl,
+      (forall m, (0 <= g m)%E) ->
+      derivable cl h d g -> derivable cl f c h -> derivable cl f (c;;d) g
   | H_Consequence : forall f' g' f g (c : cmd) cl,
       derivable cl f' c g' ->
       (forall m mu,  espe mu g' <= f' m -> espe mu g <= f m)%E ->
       derivable cl f c g
   | H_khl : forall P Q c cl,
      derivable2 cl P c (fun _ _ => Q) -> derivable cl P c Q
-  | H_GAsgn : forall {T : IhbType.type} x (e : expr_ X mem T) f cl,
-      derivable cl (fun m => f (m.{x <- `[{e}] m})) (G x <<- e) f
-  | H_Block : forall f g bs c rs cl,
-      (forall m, (0 <= g m)%E) ->
-      (forall m, derivable cl (bound (fun _ => f m) (minit m bs)) c
-                              (fun m'' => g (mret m m'' rs))) ->
-      derivable cl f (block bs c rs) g
   with derivable2 : phi -> cond -> cmd -> cond2 -> Prop :=
   | H_hl: forall P Q c cl,
       (forall m mu m', (0 <= Q m mu m')%E) ->
@@ -248,27 +248,27 @@ Lemma soundness_n :
      forall n, valid_cl_n n cl -> akehl (ubnf ps n) P c Q).
 Proof.
 apply: derivable_mut.
-- (* H_Skip *) by move=> *; exact: aehl_skip.
 - (* H_Abort *) by move=> *; exact: aehl_abort.
+- (* H_Skip *) by move=> *; exact: aehl_skip.
 - (* H_Asgn *) by move=> *; exact: aehl_assgn.
+- (* H_GAsgn *) by move=> *; exact: aehl_gassign.
 - (* H_Random *) by move=> *; exact: aehl_rnd.
-- (* H_Seq *)
-  move=> f c d g h cl Hg ? IHd ? IHc n Hv.
-  by apply: (aehl_seq _ _ _ _ _ _ Hg (IHc n Hv) (IHd n Hv)).
+- (* H_Block *)
+  move=> f g bs c rs cl Hg _ IH n Hv.
+  by apply: aehl_block; [exact: Hg | move=> m; exact: IH].
 - (* H_If *)
   move => f g e c1 c2 cl ? IH1 ? IH2 n Hv.
   by apply: aehl_if;[exact: IH1 | exact: IH2].
 - (* H_While *)
   move => f e c cl m ? IH n Hv; apply: aehl_while => //;  exact: IH.
+- (* H_Seq *)
+  move=> f c d g h cl Hg ? IHd ? IHc n Hv.
+  by apply: (aehl_seq _ _ _ _ _ _ Hg (IHc n Hv) (IHd n Hv)).
 - (* H_Consequence *)
   move => f' g' f g c cl ? HI H n Hv.
   apply: aehl_conseq. apply: HI => //. apply H.
 - (* H_khl *)
   move => P Q c cl ? IH n Hv; rewrite -aehl_akehl; exact: IH.
-- (* H_GAsgn *) by move=> *; exact: aehl_gassign.
-- (* H_Block *)
-  move=> f g bs c rs cl Hg _ IH n Hv.
-  by apply: aehl_block; [exact: Hg | move=> m; exact: IH].
 - (* H_hl *)
   move=> P Q c cl Hpos Hmono ? IH n Hv. rewrite akehl_aehl=> s0.
   move => m.
@@ -422,8 +422,8 @@ Lemma rel_complete_d (c : cmd) (f g : cond) :
   (forall m , (0 <= g m)%E) ->
   ehl_ ps f c g -> derivable ps cl_mgt f c g.
 Proof.
-elim: c f g => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2
-               | f | T gx ge | bs cb ihb rs ] P Q Hf Hg Hhl.
+elim: c f g => [ | | T x e | T gx ge | T x d | bs cb ihb rs
+               | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2 | f ] P Q Hf Hg Hhl.
 - (* abort *) exact: H_Abort.
 - (* skip *)
   apply: (H_Consequence _ Q Q) => //.
@@ -435,12 +435,22 @@ elim: c f g => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2
     + exact: H_Asgn.
     + move=> m mu H1; apply:  (le_trans H1).
       by move : (Hhl m); rewrite ssem_assnE eexp_dunit.
+- (* gassign *)
+  apply: (H_Consequence _ (fun m => Q (m.{gx <- `[{ge}] m})) Q).
+  + exact: H_GAsgn.
+  + move=> m mu H1; apply: (le_trans H1).
+    by move : (Hhl m); rewrite ssem_gassnE eexp_dunit.
 - (* random *)
   apply: (H_Consequence _
             (fun m => espe (\dlet_(v <- `[{d}] m) (dunit m.[x <- v])) Q) Q).
   + exact: H_Random.
   + move=> m mu H1; apply: (le_trans H1).
     by move : (Hhl m); rewrite ssem_rndE.
+- (* block *)
+  apply: H_Block => // m; apply: ihb => //.
+  + by move=> m'; rewrite /bound; case: ifP => _ //; exact: le0y.
+  + move=> m'; rewrite /bound; case: ifP => [/eqP -> | _]; last exact: leey.
+    by move: (Hhl m); rewrite ssem_blockE espe_dlet_ret.
 - (* if *)
   apply: H_If.
   + rewrite /lift.
@@ -509,16 +519,6 @@ elim: c f g => [ | | T x e | T x d | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2
     move: (Hhl m0); rewrite ssem_call_eq; apply: le_trans.
     rewrite /espe; apply: le_esum => s ?; apply: (lee_wpmul2l (Hg s)).
     exact: (lee_tofin (Hdom s)).
-- (* gassign *)
-  apply: (H_Consequence _ (fun m => Q (m.{gx <- `[{ge}] m})) Q).
-  + exact: H_GAsgn.
-  + move=> m mu H1; apply: (le_trans H1).
-    by move : (Hhl m); rewrite ssem_gassnE eexp_dunit.
-- (* block *)
-  apply: H_Block => // m; apply: ihb => //.
-  + by move=> m'; rewrite /bound; case: ifP => _ //; exact: le0y.
-  + move=> m'; rewrite /bound; case: ifP => [/eqP -> | _]; last exact: leey.
-    by move: (Hhl m); rewrite ssem_blockE espe_dlet_ret.
 Qed.
 
 Lemma rel_complete (c : cmd) (P : cond) (Q : cond2) :
