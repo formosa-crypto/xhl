@@ -1,7 +1,7 @@
 (* -------------------------------------------------------------------- *)
 From HB                 Require Import structures.
-From mathcomp           Require Import all_boot all_order.
-From mathcomp.algebra   Require Import all_algebra.
+From mathcomp           Require Import boot order.
+From mathcomp.algebra   Require Import algebra.
 (* ----------------- *) Require Import misc.
 
 Set Implicit Arguments.

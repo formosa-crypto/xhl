@@ -6,6 +6,7 @@
      elpi
      elpi_elpi
      mathcomp
+     micromega_plugin
      Stdlib )
   (flags -w -parsing
          -w -projection-no-head-constant

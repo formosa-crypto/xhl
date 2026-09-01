@@ -1,13 +1,13 @@
 (* -------------------------------------------------------------------- *)
-From mathcomp           Require Import all_boot.
-From mathcomp.algebra   Require Import all_algebra.
+From mathcomp           Require Import boot.
+From mathcomp.algebra   Require Import algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals.
 From mathcomp.experimental_reals Require Import realsum distr.
 (* ------- *)           Require Import notations.
 
 (* -------------------------------------------------------------------- *)
-CoInductive or_spec (a b : bool) : bool -> bool -> Type :=
+Inductive or_spec (a b : bool) : bool -> bool -> Type :=
 | OrT of a    : or_spec a b true  true
 | OrF of ~~ a : or_spec a b false b.
 

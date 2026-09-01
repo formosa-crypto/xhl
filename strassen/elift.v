@@ -1,10 +1,10 @@
 (* -------------------------------------------------------------------- *)
-From mathcomp Require Import all_boot all_order all_algebra finmap.
-From mathcomp.classical Require Import boolp classical_sets.
+From mathcomp Require Import boot order algebra finmap.
+From mathcomp.classical Require Import boolp classical_sets fsbigop.
 From mathcomp.reals Require Import reals.
-From mathcomp.experimental_reals Require Import realsum distr xfinmap.
+From mathcomp.analysis Require Import counting_distr ereal esum.
 
-Require Import xbigops misc.
+Require Import xbigops misc rsum.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -21,7 +21,7 @@ Local Notation simpm := Monoid.simpm.
 (* ==================================================================== *)
 Parameter (R : realType).
 
-Local Notation distr T := {distr T / R}.
+Local Notation distr T := {distr T%type / R}.
 
 (* ==================================================================== *)
 Section SensitivityTx.
@@ -135,43 +135,55 @@ Qed.
 (* -------------------------------------------------------------------- *)
 Lemma edist_le_pp ε δ (μ1 μ2 : distr A) : 0 <= ε -> 0 <= δ ->
   reflect
-    (exists2 di, (summable di /\ psum di <= δ) &
+    (exists2 di,
+        (esummable [set: A] (EFin \o di)
+         /\ (\esum_(x in [set: A]) (di x)%:E <= δ%:E)%E) &
        [/\ forall x, 0 <= di x & forall x, μ1 x <= Ω ε * μ2 x + di x])
     (edist ε μ1 μ2 <= δ).
 Proof.
 move=> ge0_e ge0_d; apply: (iffP idP) => [led|].
 * pose di x := \P_[μ1] (pred1 x) - Ω ε * \P_[μ2] (pred1 x).
-  have h S: uniq S -> \sum_(i <- S) `|Num.max 0 (di i)| <= δ.
+  have h S: uniq S -> \sum_(i <- S) Num.max 0 (di i) <= δ.
     move=> uqS; pose S' := [seq x <- S | 0 < di x].
     rewrite (bigID [pred x | 0 < di x]) /= addrC big1 ?add0r.
-      by move=> x lt0_dix; rewrite max_l 1?leNgt ?normr0.
+      by move=> x lt0_dix; rewrite max_l 1?leNgt.
     rewrite (eq_bigr di) => [x gt0_dix|].
-      by rewrite max_r ?ger0_norm 1?ltW.
+      by rewrite max_r 1?ltW.
     rewrite -big_filter -/S'; apply/(le_trans _ led).
     rewrite edistE //; apply/sup_upper_bound.
       by apply/has_sup_edistp.
     exists (ssrbool.mem S'); rewrite !pr_mem ?filter_uniq //.
     rewrite mulr_sumr -sumrB; apply/eq_bigr.
-    by move=> i _; rewrite !pr_pred1.    
-  exists (fun x => Num.max 0 (di x)); first (move=> [:a]; split).
-  + by abstract: a; apply/summable_seqP; exists δ.
-  + rewrite /psum; case: ifP=> _ //; apply/ge_sup.
-      by exists 0; exists fset0; rewrite big_fset0.
-    apply/ubP=> _ [S ->]; pose F x := `|Num.max 0 (di x)|.
-    rewrite (big_fset_seq F) /=; apply/h.
-    by case: S => S /= /canonical_uniq.
-  split=> x; first by rewrite le_max lexx.
-  by rewrite -lerBlDl le_max /di !pr_pred1 lexx orbT.
-case=> di [sm_di led] [ge0_di lemu]; rewrite edistE 1?ge_sup //.
-* by exists 0; exists pred0; rewrite !pr_pred0 mulr0 subr0.
-apply/ubP=> _ [S ->]; rewrite /pr.
-set v1 := psum _; set v2 := psum _; apply/(le_trans _ led).
-rewrite lerBlDr -psumZ ?ge0_Ω // -psumD //=.
-+ by move=> x; rewrite !mulr_ge0 ?(ler0n, ge0_Ω).
-+ by apply/summableZ/summable_pr.
-apply/le_psum/summableD => //; last by apply/summableZ/summable_pr.
-move=> x; rewrite mulr_ge0 ?ler0n //=; case: (S x) => /=.
-  by rewrite !mul1r addrC. by rewrite !(mulr0, mul0r) addr0.
+    by move=> i _; rewrite !pr_pred1.
+  pose dd x := Num.max 0 (di x).
+  have ge0_dd x : 0 <= dd x by rewrite /dd le_max lexx.
+  (* the finite-subsum bound [h] is exactly the [ereal_sup] bound *)
+  have key : (\esum_(x in [set: A]) (dd x)%:E <= δ%:E)%E.
+    rewrite ge0_esum; first by move=> x _; rewrite lee_fin.
+    apply: ge_ereal_sup => _ [B [finB _] <-].
+    rewrite fsbig_finite; first exact: finB.
+    by rewrite sumEFin lee_fin; apply/h/fset_uniq.
+  exists dd; last first.
+  + split=> x; first exact: ge0_dd.
+    by rewrite -lerBlDl /dd le_max /di !pr_pred1 lexx orbT.
+  split=> //; rewrite esummableE.
+  rewrite (eq_esum _ _ (fun x => (dd x)%:E)).
+  + by move=> x _ /=; rewrite (ger0_norm (ge0_dd x)).
+  rewrite ge0_fin_numE; first by apply: esum_ge0 => x _; rewrite lee_fin.
+  by apply: (le_lt_trans key); rewrite ltry.
+case=> di [sm_di led] [ge0_di lemu]; apply/edist_le => // S.
+rewrite -lee_fin EFinD EFinM !prE.
+rewrite -esumZ; first by move=> t _; rewrite lee_fin mulr_ge0 ?ler0n.
+apply: (@le_trans _ _ (\esum_(t in [set: A])
+   ((Ω ε)%:E * ((S t)%:R * μ2 t)%:E + ((S t)%:R * di t)%:E))%E).
++ apply: le_esum => t _; rewrite -EFinM -EFinD lee_fin mulrCA -mulrDr.
+  by apply: ler_wpM2l; [exact: ler0n | exact: lemu].
+rewrite esumD.
++ by move=> t _; rewrite mule_ge0 ?lee_fin ?ge0_Ω // mulr_ge0 ?ler0n.
++ by move=> t _; rewrite lee_fin mulr_ge0 ?ler0n.
+apply: leeD2l; apply: (le_trans _ led).
+apply: le_esum => t _; rewrite lee_fin.
+by case: (S t); rewrite /= ?mul1r ?mul0r ?ge0_di.
 Qed.
 End EDistTheory.
 
@@ -192,24 +204,28 @@ Definition deliftR (μ : distr (option A * B)) :=
 Lemma deliftLE (μ : distr (A * option B)) a b :
   deliftL μ (a, b) = if a is Some a then μ (a, b) else 0.
 Proof.                  (* FIXME: general lemma when f is injective *)
-rewrite dletE; case: a => /= [a|]; last first.
-+ by rewrite psum_eq0 //= => ab; rewrite dunit1E mulr0.
-rewrite (psum_finseq (r := [:: (a, b)])) //.
-+ case=> [a' b']; rewrite !inE dunit1E /= mulf_eq0 => /norP[_].
-  by rewrite pnatr_eq0 eqb0 negbK => /eqP[-> ->].
-by rewrite big_seq1 dunit1E eqxx mulr1 ger0_norm.
+rewrite dmargin_psumE; case: a => /= [a|]; last first.
++ rewrite (eq_esum _ _ (fun _ => 0%E)); first by move=> x _ /=; rewrite mul0r.
+  by rewrite esum0.
+rewrite (eq_esum _ _ (fun x => if (a, b) == x then (μ x)%:E else 0%E)).
++ move=> [x1 x2] _; rewrite !xpair_eqE /=.
+  rewrite [a == x1]eq_sym [b == x2]eq_sym.
+  by case: ((x1 == a) && (x2 == b)); rewrite ?mul1r ?mul0r.
+by rewrite esum_if_eq_op_set1.
 Qed.
 
 Lemma deliftRE (μ : distr (option A * B)) a b :
   deliftR μ (a, b) = if b is Some b then μ (a, b) else 0.
 Proof.
-rewrite dletE; case: b => /= [b|]; last first.
-+ rewrite psum_eq0 //= => ab; rewrite dunit1E.
-  by rewrite eqE /= andbF mulr0.
-rewrite (psum_finseq (r := [:: (a, b)])) //.
-+ case=> [a' b']; rewrite !inE dunit1E /= mulf_eq0 => /norP[_].
-  by rewrite pnatr_eq0 eqb0 negbK => /eqP[-> ->].
-by rewrite big_seq1 dunit1E eqxx mulr1 ger0_norm.
+rewrite dmargin_psumE; case: b => /= [b|]; last first.
++ rewrite (eq_esum _ _ (fun _ => 0%E)).
+  * by move=> [x1 x2] _; rewrite xpair_eqE /= andbF mul0r.
+  by rewrite esum0.
+rewrite (eq_esum _ _ (fun x => if (a, b) == x then (μ x)%:E else 0%E)).
++ move=> [x1 x2] _; rewrite !xpair_eqE /=.
+  rewrite [a == x1]eq_sym [b == x2]eq_sym.
+  by case: ((x1 == a) && (x2 == b)); rewrite ?mul1r ?mul0r.
+by rewrite esum_if_eq_op_set1.
 Qed.
 
 Local Notation elift_r μ :=
@@ -293,38 +309,43 @@ case=> -[ηL ηR] /= [eqL eqR hSL hSR hD].
 pose ML a b := Num.min (ηL (a, Some b)) (Ω ε * ηR (Some a, b)).
 pose MR a b := Num.min (ηL (a, Some b)) (ηR (Some a, b)).
 pose ξL (ab : _ * _) := let (a, b) := ab in
-  if b is Some b then ML a b else μ1 a - psum (fun b => ML a b).
+  if b is Some b then ML a b else μ1 a - rsum (fun b => ML a b).
 pose ξR (ab : _ * _) := let (a, b) := ab in
-  if a is Some a then MR a b else μ2 b - psum (fun a => MR a b).
+  if a is Some a then MR a b else μ2 b - rsum (fun a => MR a b).
 have ge0_ML a b : 0 <= ML a b.
 + by rewrite le_min ge0_mu /= mulr_ge0 ?(ge0_Ω, ge0_mu).
 have ge0_MR a b : 0 <= MR a b by rewrite le_min !ge0_mu.
-have sblML a : summable (ML a).
-+ apply/(le_summable _ (summableZ (Ω ε) (summable_fst ηR (Some a)))).
-  by move=> b; rewrite ge0_ML /=; rewrite ge_min lexx orbT.
-have sblMR b : summable (MR^~ b).
-+ apply/(le_summable _ (summable_snd ηL (Some b))).
-  by move=> a; rewrite ge0_MR /=; rewrite ge_min lexx orTb.
+(* [dfst]/[dsnd] are [rsum]s of the corresponding slices *)
+have dfstL a : dfst ηL a = rsum (fun y => ηL (a, y)) by rewrite dfstE.
+have dsndR b : dsnd ηR b = rsum (fun x => ηR (x, b)) by rewrite dsndE.
+have sblML a : esummable [set: B] (EFin \o ML a).
++ apply: (le_esummable (g := fun b => ((Ω ε)%:E * (ηR (Some a, b))%:E)%E)).
+  * move=> b _; rewrite /= lee_fin ge0_ML /= -EFinM lee_fin.
+    by rewrite ge_min lexx orbT.
+  apply: esummableZl => //; exact: (summable_fst ηR (Some a)).
+have sblMR b : esummable [set: A] (EFin \o MR^~ b).
++ apply: (le_esummable (g := fun a => (ηL (a, Some b))%:E)).
+  * move=> a _; rewrite /= !lee_fin ge0_MR /=.
+    by rewrite ge_min lexx orTb.
+  exact: (summable_snd ηL (Some b)).
 have ge0_ξL a b : 0 <= ξL (a, b).
 + case: b => [b|] /=; first by apply/ge0_ML.
-  rewrite subr_ge0 -eqL dfstE /=; apply/psum_le => J uqJ.
-  apply/(@le_trans _ _ (\sum_(j <- J) ηL (a, Some j))).
-  - apply/ler_sum=> b _; rewrite ger0_norm ?ge0_ML //.
-    by rewrite ge_min lexx orTb.
-  apply/(le_trans _ (gerfinseq_psum (r := map some J) _ _)).
-  - by rewrite big_map; apply/ler_sum=> b _; apply/ler_norm.
-  - by rewrite map_inj_uniq // => x y [].
-  - by apply/summable_fst.
+  rewrite subr_ge0; apply: rsum_le => [{}b|J uqJ]; first exact: ge0_ML.
+  apply: (@le_trans _ _ (\sum_(j <- J) ηL (a, Some j))).
+  * by apply: ler_sum => {}b _; rewrite ge_min lexx orTb.
+  rewrite -eqL dfstL -(big_map some predT (fun y => ηL (a, y))).
+  apply: gerfinseq_rsum; last exact: (summable_fst ηL a).
+  * by rewrite map_inj_uniq // => x y [].
+  by move=> ?; exact: ge0_mu.
 have ge0_ξR a b : 0 <= ξR (a, b).
 + case: a => [a|] /=; first by apply/ge0_MR.
-  rewrite subr_ge0 -eqR dsndE /=; apply/psum_le => J uqJ.
-  apply/(@le_trans _ _ (\sum_(j <- J) ηR (Some j, b))).
-  - apply/ler_sum=> a _; rewrite ger0_norm ?ge0_MR //.
-    by rewrite ge_min lexx orbT.
-  apply/(le_trans _ (gerfinseq_psum (r := map some J) _ _)).
-  - by rewrite big_map; apply/ler_sum=> a _; apply/ler_norm.
-  - by rewrite map_inj_uniq // => x y [].
-  - by apply/summable_snd.
+  rewrite subr_ge0; apply: rsum_le => [{}a|J uqJ]; first exact: ge0_MR.
+  apply: (@le_trans _ _ (\sum_(j <- J) ηR (Some j, b))).
+  * by apply: ler_sum => {}a _; rewrite ge_min lexx orbT.
+  rewrite -eqR dsndR -(big_map some predT (fun x => ηR (x, b))).
+  apply: gerfinseq_rsum; last exact: (summable_snd ηR b).
+  * by rewrite map_inj_uniq // => x y [].
+  by move=> ?; exact: ge0_mu.
 have hL: isdistr ξL; first split => /= [[]//|J uqJ].
 + rewrite (partition_big_seq fst (fun j _ => ξL j)) //=; set K := undup _.
   rewrite (@le_trans _ _ (\sum_(a <- K) μ1 a)) //; last first.
@@ -333,16 +354,17 @@ have hL: isdistr ξL; first split => /= [[]//|J uqJ].
   rewrite (eq_bigr (fun i => ξL (a, i.2))).
   - by case=> x y /= /eqP->.
   rewrite -big_filter -(big_map _ predT (fun b => ξL (a, b))).
-  set K := map _ _; rewrite (eq_bigr (fun b => `|ξL (a, b)|)).
-  - by move=> b _; rewrite ger0_norm.
-  apply/(le_trans (gerfinseq_psum _ _)).
+  set K := map _ _.
+  have sξL : esummable [set: option B] (EFin \o (fun b => ξL (a, b))).
+  * by apply: esummable_optionT; exact: sblML.
+  apply: (le_trans (gerfinseq_rsum _ _ _)).
   * rewrite map_inj_in_uniq ?filter_uniq //.
     case=> /= [x1 y1] [x2 y2]; rewrite !mem_filter /=.
     by move=> /andP[/eqP-> _] /andP[/eqP-> _] <-.
-  * by apply/summable_option/sblML.
-  rewrite psum_option /=; first by apply/summable_option/sblML.
-  rewrite ger0_norm ?(ge0_ξL a None) // addrCA.
-  by rewrite addrA lerBlDr lerD2l lexx.
+  * by move=> ?; exact: ge0_ξL.
+  * exact: sξL.
+  rewrite (rsum_option sξL) /=.
+  by rewrite addrCA addrA lerBlDr lerD2l lexx.
 have hR: isdistr ξR; first split => /= [[]//|J uqJ].
 + rewrite (partition_big_seq snd (fun j _ => ξR j)) //=; set K := undup _.
   rewrite (@le_trans _ _ (\sum_(b <- K) μ2 b)) //; last first.
@@ -351,16 +373,17 @@ have hR: isdistr ξR; first split => /= [[]//|J uqJ].
   rewrite (eq_bigr (fun i => ξR (i.1, b))).
   - by case=> x y /= /eqP->.
   rewrite -big_filter -(big_map _ predT (fun a => ξR (a, b))).
-  set K := map _ _; rewrite (eq_bigr (fun a => `|ξR (a, b)|)).
-  - by move=> a _; rewrite ger0_norm.
-  apply/(le_trans (gerfinseq_psum _ _)).
+  set K := map _ _.
+  have sξR : esummable [set: option A] (EFin \o (fun a => ξR (a, b))).
+  * by apply: esummable_optionT; exact: sblMR.
+  apply: (le_trans (gerfinseq_rsum _ _ _)).
   * rewrite map_inj_in_uniq ?filter_uniq //.
     case=> /= [x1 y1] [x2 y2]; rewrite !mem_filter /=.
     by move=> /andP[/eqP-> _] /andP[/eqP-> _] <-.
-  * by apply/summable_option/sblMR.
-  rewrite psum_option /=; first by apply/summable_option/sblMR.
-  rewrite ger0_norm ?(ge0_ξR None b) // addrCA.
-  by rewrite addrA lerBlDr lerD2l lexx.
+  * by move=> ?; exact: ge0_ξR.
+  * exact: sξR.
+  rewrite (rsum_option sξR) /=.
+  by rewrite addrCA addrA lerBlDr lerD2l lexx.
 pose θL : distr (A * option B) := mkdistr hL.
 pose θR : distr (option A * B) := mkdistr hR.
 have le1 a b: θR (Some a, b) <= θL (a, Some b).
@@ -370,16 +393,14 @@ have le2 a b: θL (a, Some b) <= Ω ε * θR (Some a, b).
 + rewrite minr_pMr ?ge0_Ω // le_min !ge_min.
   by rewrite lexx orbT andbT ler_peMl // (ge0_mu, Ω_ge1).
 exists (θL, θR); split; [split | by move=> a b; apply/andP].
-+ move=> a; rewrite dfstE /= psum_option.
-  * by apply/(summable_fst (mkdistr hL) a).
-  rewrite ger0_norm ?(ge0_mu (mkdistr hL) (a, None)) //.
-  apply/eqP; rewrite eq_sym -subr_eq opprB addrCA.
-  by rewrite subrr addr0; apply/eqP/eq_psum.
-+ move=> b; rewrite dsndE /= psum_option /=.
-  * by apply/(summable_snd (mkdistr hR) b).
-  rewrite ger0_norm ?(ge0_mu (mkdistr hR) (None, b)) //.
-  apply/eqP; rewrite eq_sym -subr_eq opprB addrCA.
-  by rewrite subrr addr0; apply/eqP/eq_psum.
++ move=> a.
+  have -> : dfst θL a = rsum (fun y => θL (a, y)) by rewrite dfstE.
+  rewrite (rsum_option (summable_fst θL a)) /θL /=.
+  by rewrite addrCA subrr addr0.
++ move=> b.
+  have -> : dsnd θR b = rsum (fun x => θR (x, b)) by rewrite dsndE.
+  rewrite (rsum_option (summable_snd θR b)) /θR /=.
+  by rewrite addrCA subrr addr0.
 + move=> a b h; apply/hSL; move/dinsuppP/eqP: h => /=.
   rewrite eq_le ge0_ML andbT -ltNge /ML lt_min => /andP.
   case=> h _; apply/dinsuppP/eqP; rewrite eq_le.
@@ -391,9 +412,9 @@ exists (θL, θR); split; [split | by move=> a b; apply/andP].
 apply/edist_le => //= X; rewrite (prID _ (isSome \o snd)).
 set E : pred (option A * option B) := (X in \P_[_] X + _).
 have: \P_[deliftL θL] E <= Ω ε * \P_[deliftR θR] E.
-- rewrite /pr /= -psumZ ?ge0_Ω //; apply/le_psum => /=; last first.
-  * by apply/summableZ/summable_condl/summable_mu.
-  case=> a b; rewrite mulr_ge0 ?(ler0n, ge0_mu) //=.
+- rewrite -lee_fin EFinM !prE.
+  rewrite -esumZ; first by move=> t _; rewrite lee_fin mulr_ge0 ?ler0n.
+  apply: le_esum => -[a b] _; rewrite -EFinM lee_fin.
   rewrite mulrCA; case/boolP: (E (a, b)); rewrite ?(mul0r, mul1r) //.
   rewrite deliftLE deliftRE; case: a b => [a|] [b|] //.
   * by rewrite /E !inE andbF.
@@ -413,60 +434,85 @@ have MLE a b : ML a b = ηL (a, Some b) - ζ (Some a) (Some b).
   * rewrite max_r !(deliftLE, deliftRE) ?subKr //.
     by rewrite subr_ge0 // leNgt.
 pose h a : option A * option B := (a, None).
-rewrite /pr (reindex_psum (h := h) (P := Z)) /=.
-- case=> [a b]; rewrite mulf_eq0 => /norP[].
-  by rewrite pnatr_eq0 eqb0 negbK.
-- by exists fst => // -[a b] /eqP /= ->.
-rewrite (eq_psum (F2 := deliftL θL \o h)).
-- by move=> a; rewrite mul1r.
-pose F a := μ1 a - psum [eta ML a].
-rewrite psum_option /=; first by apply/summable_snd.
-rewrite deliftLE normr0 addr0 /= (eq_psum (F2 := F)) {}/F.
-- by move=> a /=; rewrite deliftLE.
-pose F a := psum (fun b => ζ (Some a) b).
-rewrite {h}(eq_psum (F2 := F)) => [a|].
-- rewrite (eq_psum (MLE a)) -eqL dfstE /= psum_option.
-  * by apply/summable_fst.
-  rewrite addrAC -psumB /= => [b||].
-  * by rewrite -MLE ge0_ML /= ge_min lexx.
-  * apply/(@summable_option _ _ (fun b => ηL (a, b))).
-    by apply/summable_fst.
-  rewrite (eq_psum (F2 := fun b => ζ (Some a) (Some b))).
-  * by move=> b /=; rewrite subKr.
-  rewrite [X in `|X|](_ : _ = ζ (Some a) None).
-  * rewrite /ζ /= max_r !(deliftLE, deliftRE).
-    - by rewrite mulr0 subr0 ge0_mu.
-    - by rewrite mulr0 subr0.
-  rewrite -psum_option //; apply/summable_option.
-  apply/(le_summable (F2 := fun b => ηL (a, Some b))).
-  * move=> b; rewrite le_max lexx /= /ζ ge_max.
-    rewrite ge0_mu /= !(deliftLE, deliftRE) lerBlDr.
-    by rewrite lerDl mulr_ge0 ?(ge0_Ω, ge0_mu).
-  apply/(@summable_option _ _ (fun b => ηL (a, b))).
-  by apply/summable_fst.
+pose FZ ab := (Z ab)%:R * deliftL θL ab.
+have hinj : injective h by move=> x y [->].
+have FZ0 x : (forall u, h u <> x) -> FZ x = 0.
+- case: x => [a b] hx; rewrite /FZ /Z /=.
+  have -> : (b == None) = false.
+  * by apply/negbTE/eqP => e; apply: (hx a); rewrite /h e.
+  by rewrite mul0r.
+have ge0_FZ x : 0 <= FZ x.
+- by rewrite /FZ mulr_ge0 ?ler0n ?ge0_mu.
+have -> : \P_[deliftL θL] Z = rsum FZ by [].
+rewrite (rsum_image hinj FZ0 ge0_FZ).
+rewrite (eq_rsum (g := fun a => deliftL θL (a, None))).
+- by move=> a; rewrite /FZ /Z /h /= mul1r.
+(* the deficit in row [a] is exactly the ζ-mass of that row *)
+have ζle a b : ζ (Some a) b <= ηL (a, b).
+- rewrite /ζ ge_max ge0_mu /= deliftLE lerBlDr lerDl.
+  by rewrite mulr_ge0 ?ge0_Ω ?ge0_mu.
+have ζE a : μ1 a - rsum (fun b => ML a b) = rsum (fun b => ζ (Some a) b).
+- have leζ b : 0 <= ζ (Some a) (Some b) <= ηL (a, Some b).
+  * by rewrite le_max lexx /= ζle.
+  have sηL : esummable [set: B] (EFin \o (fun b => ηL (a, Some b))).
+  * by apply: (esummable_option (S := EFin \o (fun y => ηL (a, y))));
+      exact: (summable_fst ηL a).
+  have sζ : esummable [set: option B] (EFin \o (fun b => ζ (Some a) b)).
+  * apply: (le_esummable (g := fun b => (ηL (a, b))%:E)).
+    + by move=> b _; rewrite /= !lee_fin le_max lexx /= ζle.
+    exact: (summable_fst ηL a).
+  rewrite (rsum_option sζ) /=.
+  have -> : ζ (Some a) None = ηL (a, None).
+  * rewrite /ζ !(deliftLE, deliftRE) mulr0 subr0 max_r //; exact: ge0_mu.
+  rewrite -eqL dfstL (rsum_option (summable_fst ηL a)) /=.
+  have -> : rsum (fun b => ML a b)
+          = rsum (fun b => ηL (a, Some b) - ζ (Some a) (Some b)).
+  * by apply: eq_rsum => b; exact: MLE a b.
+  rewrite (rsumB leζ sηL).
+  by rewrite opprB addrAC addrCA subrr addr0.
+rewrite (eq_rsum (g := fun a : option A => rsum (fun b => ζ a b))).
+- case=> [a|]; first by rewrite deliftLE /θL /= ζE.
+  rewrite deliftLE; symmetry.
+  rewrite (eq_rsum (g := fun _ : option B => 0)) ?rsum0 //.
+  move=> b; rewrite /ζ deliftLE sub0r.
+  have h0 : - (Ω ε * deliftR ηR (None, b)) <= 0.
+  * by rewrite oppr_le0 mulr_ge0 ?ge0_Ω ?ge0_mu.
+  by rewrite (max_l h0).
 pose S (ab : option A * option B) :=
   deliftL ηL ab > Ω ε * deliftR ηR ab.
+have ζ0 ab : 0 <= ζ ab.1 ab.2 by rewrite le_max lexx.
+have ζleD ab : ζ ab.1 ab.2 <= deliftL ηL ab.
+- case: ab => a b /=; rewrite /ζ ge_max ge0_mu /= lerBlDr lerDl.
+  by rewrite mulr_ge0 ?ge0_Ω ?ge0_mu.
+have sζsl x : esummable [set: option B] (EFin \o (fun y => ζ x y)).
+- apply: (le_esummable (g := fun y => (deliftL ηL (x, y))%:E)).
+  * by move=> y _; rewrite /= !lee_fin (ζ0 (x, y)) (ζleD (x, y)).
+  exact: (summable_fst (deliftL ηL) x).
+(* [ζ] is the positive part of the deficit, supported on [S] *)
+have ζS ab : ζ ab.1 ab.2
+           = (S ab)%:R * deliftL ηL ab - (S ab)%:R * (Ω ε * deliftR ηR ab).
+- case: ab => a b; rewrite /ζ /S /=.
+  case/boolP: (Ω ε * deliftR ηR (a, b) < deliftL ηL (a, b)) => hS.
+  * by rewrite !mul1r max_r // subr_ge0 ltW.
+  by rewrite !mul0r subrr max_l // subr_le0 leNgt.
+have leSζ ab : 0 <= (S ab)%:R * (Ω ε * deliftR ηR ab)
+                 <= (S ab)%:R * deliftL ηL ab.
+- rewrite mulr_ge0 ?ler0n ?mulr_ge0 ?ge0_Ω ?ge0_mu //=.
+  case/boolP: (S ab) => hS; last by rewrite !mul0r.
+  by rewrite !mul1r ltW.
+have skey : esummable [set: (option A * option B)%type]
+              (EFin \o (fun ab => (S ab)%:R * deliftL ηL ab)).
+- by apply: esummable_condl; exact: (summable_mu (deliftL ηL)).
+have key : rsum (fun ab => ζ ab.1 ab.2)
+         = \P_[deliftL ηL] S - Ω ε * \P_[deliftR ηR] S.
+- rewrite (eq_rsum ζS) (rsumB leSζ skey).
+  congr (_ - _).
+  rewrite (eq_rsum (g := fun ab => Ω ε * ((S ab)%:R * deliftR ηR ab))).
+  * by move=> ab; rewrite mulrCA.
+  by rewrite rsumZ // => ab; rewrite mulr_ge0 ?ler0n ?ge0_mu.
+rewrite -(rsum_pair ζ0 sζsl) key lerBlDl.
 move/edist_le: (hD) => -/(_ ge0_ε) -/(_ S).
-rewrite -lerBlDl => /(le_trans _); apply.
-rewrite /pr /= -psumZ ?ge0_Ω // -psumB /=.
-* case=> a b; rewrite mulr_ge0 ?ge0_Ω //=.
-  - by rewrite mulr_ge0 ?ler0n.
-  case/boolP: (S (a, b)); last by rewrite !(mulr0,mul0r).
-  by rewrite !(mulr1,mul1r) => /ltW.
-* by apply/summable_condl/summable_mu.
-rewrite (eq_psum (F2 := fun ab => ζ ab.1 ab.2)) /= ?psum_pair /=.
-* case=> a b /=; rewrite /ζ /=; case/boolP: (S (a, b)) => h.
-  - by rewrite !(mul1r,mulr1) max_r // subr_ge0 ltW.
-  - by rewrite !(mul0r,mulr0) subrr max_l // subr_le0 leNgt.
-* apply/(le_summable (F2 := fun ab => deliftL ηL ab))/summable_mu.
-  case=> /= a b; rewrite /ζ /Num.max; case: ifPn; last first.
-  - by rewrite lexx ge0_mu.
-  move/ltW => ->/=; rewrite lerBlDr.
-  by rewrite lerDl mulr_ge0 ?(ge0_Ω, ge0_mu).
-case/asboolP: (summable F) => h; last first.
-* by rewrite psum_out // ge0_psum.
-rewrite psum_option; first by apply/summable_option.
-by rewrite lerDl normr_ge0.
+by rewrite addrC.
 Qed.
 
 (* -------------------------------------------------------------------- *)

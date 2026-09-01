@@ -1,9 +1,9 @@
 (* -------------------------------------------------------------------- *)
 From Stdlib             Require Import Setoid Morphisms.
-From mathcomp           Require Import all_boot all_order all_algebra.
+From mathcomp           Require Import boot order algebra.
 From mathcomp.reals     Require Import reals.
 From mathcomp.classical Require Import boolp.
-From mathcomp.experimental_reals  Require Import realseq realsum distr.
+From mathcomp.analysis Require Import counting_distr.
 From xhl.pwhile Require Import notations inhabited pwhile psemantic passn range.
 
 Set   Implicit Arguments.
@@ -85,27 +85,87 @@ End CouplingsTheory.
 Implicit Types P Q S I : rassn.
 Implicit Types c       : cmd.
 
-(* -------------------------------------------------------------------- *)
-Definition prhl P c1 c2 Q :=
+Definition psi := ident -> (@cmd_ ident cmem ident).
+
+Section prhl.
+
+Definition prhl_  (ps: psi) P c1 c2 Q  :=
   forall m : rmem, P m ->
     exists2 ν,
-        iscoupling (ssem c1 m.1) (ssem c2 m.2) ν
+        iscoupling (ssem_ ps c1 m.1) (ssem_ ps c2 m.2) ν
       & range Q ν.
+
+Section Logic.
+
+Inductive derivable : pred rmem -> cmd -> cmd -> pred rmem -> Prop :=
+| H_Skip : forall P, derivable P skip skip P
+| H_abort P c1 c2 Q : derivable P abort abort Q
+| H_case P A c1 c2 Q :
+     derivable (P /\   A)%A c1 c2 Q
+  -> derivable (P /\ ~ A)%A c1 c2 Q
+  -> derivable P c1 c2 Q
+| H_swap P c1 c2 Q :
+  derivable (pswap P) c2 c1 (pswap Q) -> derivable P c1 c2 Q
+| H_conseq P P' c1 c2 Q Q' :
+     (forall m, P' m -> P  m)
+  -> (forall m, Q  m -> Q' m)
+  -> derivable P  c1 c2 Q
+  -> derivable P' c1 c2 Q'
+| H_assignL {t : IhbType.type} (x : vars t) (e : expr t) Q :
+  derivable [pred m : rmem | Q m.[~1 x <- `[{ e }] m.1]] (x <<- e) skip Q
+| H_rndL {t : IhbType.type} P (x : vars t) (d : dexpr t) Q :
+     P =1 [pred m : rmem
+       |  dweight (`[{ d }] m.1) == 1
+       & `[< range [pred v | Q m.[~1 x <- v]] (`[{ d }] m.1) >]]
+     -> derivable P (x <$- d) skip Q
+| H_if P e1 e2 c1 c'1 c2 c'2 Q :
+     derivable (P /\ `[{    e1#'1 &&    e2#'2 }])%A c1  c2  Q
+  -> derivable (P /\ `[{ ~~ e1#'1 && ~~ e2#'2 }])%A c'1 c'2 Q
+  -> derivable (P /\ `[{ e1#'1 =b e2#'2 }])%A
+       (If e1 then c1 else c'1)
+       (If e2 then c2 else c'2)
+       Q
+| H_ifL P e c1 c2 c Q :
+     derivable (P /\ `[{    e#'1 }])%A c1 c Q
+  -> derivable (P /\ `[{ ~~ e#'1 }])%A c2 c Q
+  -> derivable P (If e then c1 else c2) c Q
+| H_seq R P c1 c1' c2 c2' Q :
+     derivable P c1  c2  R
+  -> derivable R c1' c2' Q
+  -> derivable P (c1 ;; c1') (c2 ;; c2') Q
+| H_while I e1 e2 c1 c2 :
+     (forall m : rmem, I m -> `[{ e1#'1 =b e2#'2 }] m)
+  -> (derivable (I /\ `[{ e1#'1 && e2#'2 }])%A c1 c2 I)
+  ->  derivable
+    I
+      (While e1 Do c1)
+      (While e2 Do c2)
+    (I /\ `[{ ~~ e1#'1}] /\ `[{ ~~ e2#'2 }])%A.
+
+Scheme derivable_min := Minimality for derivable Sort Prop.
+
+End Logic.
+
+Section Sound.
+Section Rules.
+Context {ps: psi}.
+
+Notation prhl   := (prhl_ ps).
 
 (* -------------------------------------------------------------------- *)
 Lemma prhlw P c1 c2 Q m :
   prhl P c1 c2 Q -> P m ->
-    { ν | iscoupling (ssem c1 m.1) (ssem c2 m.2) ν & range Q ν }.
+    { ν | iscoupling (ssem_ ps c1 m.1) (ssem_ ps c2 m.2) ν & range Q ν }.
 Proof. move=> h Pm.
-have: exists ν, iscoupling (ssem c1 m.1) (ssem c2 m.2) ν /\ range Q ν.
+have: exists ν, iscoupling (ssem_ ps c1 m.1) (ssem_ ps c2 m.2) ν /\ range Q ν.
 + by case: (h _ Pm) => ν h1 h2; exists ν; split.
 by case/cid=> ν [h1 h2]; exists ν.
 Qed.
 
 (* -------------------------------------------------------------------- *)
 Lemma prhl_sem P c1 c2 c'1 c'2 Q :
-     (forall m, P m -> ssem c1 m.1 = ssem c'1 m.1)
-  -> (forall m, P m -> ssem c2 m.2 = ssem c'2 m.2)
+     (forall m, P m -> ssem_ ps c1 m.1 = ssem_ ps c'1 m.1)
+  -> (forall m, P m -> ssem_ ps c2 m.2 = ssem_ ps c'2 m.2)
   -> prhl P c1  c2  Q
   -> prhl P c'1 c'2 Q.
 Proof.
@@ -140,7 +200,7 @@ Qed.
 Lemma prhl_lepr P c1 c2 (E1 E2 : assn) m:
      P m
   -> prhl P c1 c2 [pred m | E1 m.1 ==> E2 m.2]
-  -> \P_[ssem c1 m.1] E1 <= \P_[ssem c2 m.2] E2.
+  -> \P_[ssem_ ps c1 m.1] E1 <= \P_[ssem_ ps c2 m.2] E2.
 Proof.
 case: m => /= m1 m2 Pm h; case/h: Pm => {h} /= ν [<- <-] h.
 by rewrite !pr_dmargin le_in_pr //= => m /h /implyP.
@@ -150,7 +210,7 @@ Qed.
 Lemma prhl_eqpr P c1 c2 (E1 E2 : assn) m:
      P m
   -> prhl P c1 c2 [pred m | E1 m.1 == E2 m.2]
-  -> \P_[ssem c1 m.1] E1 = \P_[ssem c2 m.2] E2.
+  -> \P_[ssem_ ps c1 m.1] E1 = \P_[ssem_ ps c2 m.2] E2.
 Proof.
 case: m => [m1 m2] Pm h; rewrite (rwP eqP) eq_le (@prhl_lepr P) //=.
 + apply/prhl_conseq: h => // {m1 m2 Pm} -[m1 m2] /=.
@@ -271,9 +331,7 @@ Qed.
 Lemma prhl_while I e1 e2 c1 c2 :
      (forall m : rmem, I m -> `[{ e1#'1 =b e2#'2 }] m)
   -> (prhl (I /\ `[{ e1#'1 && e2#'2 }])%A c1 c2 I)
-  -> 
-
-  prhl
+  ->  prhl
     I
       (While e1 Do c1)
       (While e2 Do c2)
@@ -310,17 +368,52 @@ exists (dlim ν).
     rewrite !ssemE => /eqP <-; case: ifPn => _.
     - by apply/iscoupling_dnull.
     - by case: m' => a b; apply/iscoupling_dunit.
-  elim: n => /= [|n ihn]; rewrite !(iterc0, itercSr) !ssemE.
+  elim: n => [|n ihn]; rewrite !(iterc0, itercSr) !ssemE.
   * by case: {+}m => a b; apply/iscoupling_dunit.
   apply/iscoupling_dlet => //= m' /rg_νn Im'; move/hs: (Im').
   rewrite !ssemE => /eqP eqe; rewrite -eqe /ν1.
   case: {-}_ / idP => /= [p|]; first case/and3P: {+}p.
   * by rewrite !ssemE => _ -> _; case: prhlw.
   rewrite !ssemE -eqe Im' /= andbb => /negP/negbTE => ->/=.
-  by case: {+}m' => a b; apply/iscoupling_dunit.  
+  by case: {+}m' => a b; apply/iscoupling_dunit.
 + apply/range_dlim => n; apply/(range_dlet (rg_νn n)) => m' Im'.
   case: ifPn => [he1|hNe1]; first by apply/range_dnull.
   apply/range_dunit=> /=; rewrite Im' /= !ssemE.
   by move: (hs _ Im'); rewrite !ssemE => /eqP <-; rewrite hNe1.
 Qed.
+End Rules.
 
+Hint Resolve prhl_skip             : prhl.
+Hint Resolve prhl_abort            : prhl.
+Hint Resolve prhl_case             : prhl.
+Hint Resolve prhl_swap             : prhl.
+Hint Resolve prhl_conseq           : prhl.
+Hint Resolve prhl_assignL          : prhl.
+Hint Resolve prhl_rndL             : prhl.
+Hint Resolve prhl_if               : prhl.
+Hint Resolve prhl_ifL              : prhl.
+Hint Resolve prhl_seq              : prhl.
+Hint Resolve prhl_while            : prhl.
+
+Lemma soundness :
+  (forall ps P c1 c2 Q,
+      derivable P c1 c2 Q ->
+       prhl_ ps P c1 c2 Q).
+Proof.
+intros ps.
+apply: derivable_min.
++ eauto 2 with prhl.
++ eauto 2 with prhl.
++ eauto 2 with prhl.
++ intros ??????;  apply prhl_swap; auto.
++ eauto 2 with prhl.
++ eauto 2 with prhl.
++ eauto 2 with prhl.
++ eauto 2 with prhl.
++ eauto 2 with prhl.
++ eauto 2 with prhl.
++ eauto 2 with prhl.
+Qed.
+
+End Sound.
+End prhl.
