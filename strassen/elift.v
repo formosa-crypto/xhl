@@ -3,9 +3,8 @@ From mathcomp Require Import boot order algebra finmap.
 From mathcomp.classical Require Import boolp classical_sets fsbigop.
 From mathcomp.reals Require Import reals.
 From mathcomp.analysis Require Import counting_distr ereal esum.
-(* From mathcomp.experimental_reals Require Import realsum distr xfinmap. *)
 
-Require Import xbigops misc.
+Require Import xbigops misc rsum.
 
 Set Implicit Arguments.
 Unset Strict Implicit.

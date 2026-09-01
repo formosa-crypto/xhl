@@ -6,6 +6,7 @@ From mathcomp.reals     Require Import reals constructive_ereal.
 From mathcomp.analysis  Require Import esum ereal counting_distr.
 From mathcomp           Require finmap.
 From xhl.pwhile         Require Import notations inhabited pwhile psemantic range.
+From xhl.prhl           Require Import prhl.
 From xhl.ehl            Require Import ehl_stmt.
 
 Import GRing.Theory Order.Theory Num.Theory.
@@ -399,8 +400,6 @@ fun (f:Y) => ((fun _ => 0)%E,
 End Complete.
 
 Section prhl.
-
-From xhl.prhl Require Import prhl.
 
 Notation cmd := (@cmd ident ident cmem).
 

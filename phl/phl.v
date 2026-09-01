@@ -5,8 +5,8 @@ From mathcomp.algebra   Require Import algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals constructive_ereal.
 From mathcomp.analysis  Require Import esum counting_distr.
-From xhl.pwhile Require Import notations inhabited pwhile psemantic passn range.
-From xhl Require Import misc.
+From xhl.pwhile         Require Import notations inhabited pwhile psemantic passn range.
+From xhl                Require Import misc.
 
 Set   Implicit Arguments.
 Unset Strict Implicit.
@@ -284,7 +284,6 @@ Lemma phl_le1 P c Q : phl P c Q '<= 1.
 Proof. by move=> m _ /=; apply/le1_pr. Qed.
 
 (* -------------------------------------------------------------------- *)
-(* ----------------  This would go in distr.v  ------------------------ *)
 Lemma has_esp_pr P Q c1 c2 m: \E?_[ssem_ ps c1 m] (fun x : cmem => \P_[ssem_ ps c2 x] Q).
 Proof.
   apply bounded_has_exp.
@@ -292,31 +291,6 @@ Proof.
   + exact: ge0_pr.
   by exact: le1_pr.
 Qed.
-
-Lemma espcE {T: choiceType} mu (f : T -> R)  A :
-   \E?_[mu] f ->
-   espc mu f A = esp (drestr A mu) f / \P_[mu] A .
-Proof.
-move=> sm.
-have key : \P_[mu] A * espc mu f A = esp (drestr A mu) f.
-+ rewrite (pr_esp_sum A sm) /esp; congr fine.
-  apply: eq_esum => x _ /=.
-  by rewrite drestrE; case: (A x); rewrite ?mul1r ?mul0r ?mulr0.
-have [z|nz] := eqVneq (\P_[mu] A) 0.
-+ rewrite z invr0 mulr0 /espc (eq_esum _ _ (fun _ => 0%E)).
-  - by move=> x _; rewrite prc_pred1 z invr0 !mulr0.
-  - by rewrite esum0.
-by rewrite -key mulrAC divff // mul1r.
-Qed.
-
-
-Lemma mass_drestr {T: choiceType} (mu : {distr T / R}) A  :
-  \P_[drestr A mu] predT = \P_[mu] A.
-Proof.
-by rewrite pr_drestr; apply: eq_pr => x; rewrite !inE andbT.
-Qed.
-
-(* -------------------------------------------------------------------- *)
 
 Lemma phl_seq_eq R P Q c1 c2 dR dNR dRQ dNRQ d :
      d = dR * dRQ + dNR * dNRQ

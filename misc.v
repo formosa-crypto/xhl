@@ -538,15 +538,6 @@ have hsum : esum [set: option T] S
 by rewrite hsum e1 e2 addeC.
 Qed.
 
-(* ==================================================================== *)
-(* Real-valued sums, replacing [realsum]'s [psum].                       *)
-(*                                                                      *)
-(* [rsum f] reads the [esum] of [f] back into [R].  For a non-negative   *)
-(* [f] this agrees with [psum] even off the summable case: there         *)
-(* [esum f = +oo] and [fine +oo = 0], matching [psum_out].               *)
-(* The converse of [esummable_option].  It needs an [EFin]-valued family: *)
-(* for a general [S] the value [S None] could be infinite, which defeats  *)
-(* summability on [option T] while leaving it intact on [T].              *)
 Lemma esummable_optionT {R : realType} {T : choiceType} (f : option T -> R) :
   esummable [set: T] (EFin \o (f \o some)) ->
   esummable [set: option T] (EFin \o f).
@@ -557,10 +548,29 @@ rewrite setTI esum_set1 hset esum_image; first by move=> x y _ _ [->].
 by move=> h; rewrite fin_numD; apply/andP; split.
 Qed.
 
-(* Scaling commutes with [fine] unconditionally: on every non-finite     *)
-(* value both sides are [0].  [fineM] instead needs both arguments to be  *)
-(* [fin_num], which is what [rsumZ] must avoid in order to match          *)
-(* [realsum]'s hypothesis-free [psumZ].                                   *)
+Lemma esummableZ {R : realType} {T : choiceType} (f : T -> R) (c : R) :
+  esummable [set: T] (EFin \o f) ->
+  esummable [set: T] (EFin \o (fun x => c * f x)).
+Proof.
+move=> sf; apply: (eq_esummable (f := fun x => (c%:E * (f x)%:E)%E)).
++ by move=> x _ /=; rewrite EFinM.
+by apply: esummableZl => //; exact: sf.
+Qed.
+
+Lemma esummable_condl {R : realType} {T : choiceType}
+    (f : T -> R) (P : pred T) :
+  esummable [set: T] (EFin \o f) ->
+  esummable [set: T] (EFin \o (fun x => (P x)%:R * f x)).
+Proof.
+move=> sf.
+apply: (eq_esummable (f := ((fun x => ((P x)%:R)%:E) \* (EFin \o f))%E)).
++ by move=> x _ /=; rewrite EFinM.
+apply: esummableMl; last exact: sf.
+exists 1%:E => [x|]; last by [].
+by rewrite gee0_abs ?lee_fin ?ler0n// lern1 leq_b1.
+Qed.
+
+(* -------------------------------------------------------------------- *)
 Lemma fineMl {R : realType} (c : R) (x : \bar R) :
   fine (c%:E * x) = c * fine x.
 Proof.
@@ -573,180 +583,10 @@ case: x => [r||] /=; first by [].
   * by rewrite (gt0_muleNy (x := c%:E)) // lte_fin.
 Qed.
 
-Section RSum.
-Context {R : realType} {T : choiceType}.
-
-Implicit Types (f g : T -> R).
-
-Definition rsum f : R := fine (\esum_(x in [set: T]) (f x)%:E).
-
-Lemma eq_rsum f g : f =1 g -> rsum f = rsum g.
-Proof.
-by move=> eq; rewrite /rsum; congr fine; apply: eq_esum => x _; rewrite eq.
-Qed.
-
-Lemma rsum0 : rsum (fun _ : T => 0) = 0.
-Proof.
-rewrite /rsum (eq_esum _ _ (fun _ => 0%E)); first by [].
-by rewrite esum0.
-Qed.
-
-Lemma ge0_rsum f : (forall x, 0 <= f x) -> 0 <= rsum f.
-Proof.
-move=> f0; rewrite /rsum fine_ge0 //.
-by apply: esum_ge0 => x _; rewrite lee_fin.
-Qed.
-
-(* the workhorse: on a summable family [rsum] is the honest [esum] *)
-Lemma rsumE f : esummable [set: T] (EFin \o f) ->
-  (rsum f)%:E = \esum_(x in [set: T]) (f x)%:E.
-Proof.
-move=> sf; rewrite /rsum fineK //.
-by apply: (esummable_esum_fin_num sf).
-Qed.
-
-(* a uniform bound on the finite subsums bounds the whole [esum] *)
-Lemma esum_seq_le f z : (forall x, 0 <= f x) ->
-  (forall J : seq T, uniq J -> \sum_(j <- J) f j <= z) ->
-  (\esum_(x in [set: T]) (f x)%:E <= z%:E)%E.
-Proof.
-move=> f0 h; rewrite ge0_esum; first by move=> x _; rewrite lee_fin.
-apply: ge_ereal_sup => _ [B [finB _] <-].
-rewrite fsbig_finite; first exact: finB.
-by rewrite sumEFin lee_fin; apply/h/fset_uniq.
-Qed.
-
-Lemma esummable_ge0_le f z : (forall x, 0 <= f x) ->
-  (\esum_(x in [set: T]) (f x)%:E <= z%:E)%E ->
-  esummable [set: T] (EFin \o f).
-Proof.
-move=> f0 h; rewrite esummableE.
-rewrite (eq_esum _ _ (fun x => (f x)%:E)).
-+ by move=> x _ /=; rewrite (ger0_norm (f0 x)).
-rewrite ge0_fin_numE; first by apply: esum_ge0 => x _; rewrite lee_fin.
-by apply: (le_lt_trans h); rewrite ltry.
-Qed.
-
-Lemma rsum_le f z : (forall x, 0 <= f x) ->
-  (forall J : seq T, uniq J -> \sum_(j <- J) f j <= z) -> rsum f <= z.
-Proof.
-move=> f0 h; have key := esum_seq_le f0 h.
-by rewrite -lee_fin rsumE // (esummable_ge0_le f0 key).
-Qed.
-
-(* conversely, every finite subsum is below [rsum] *)
-Lemma gerfinseq_rsum f (r : seq T) : uniq r ->
-  (forall x, 0 <= f x) -> esummable [set: T] (EFin \o f) ->
-  \sum_(j <- r) f j <= rsum f.
-Proof.
-move=> uqr f0 sf; rewrite -lee_fin rsumE // -sumEFin.
-apply: esum_ge; first by move=> x _; rewrite lee_fin.
-have pr : perm_eq (fset_set ([set` r])%classic) r.
-+ apply: uniq_perm; [exact: fset_uniq | exact: uqr |].
-  move=> i; rewrite in_fset_set; first exact: finite_seq.
-  by rewrite mem_setE.
-exists ([set` r])%classic; first by split; [exact: finite_seq | by []].
-rewrite fsbig_finite; first exact: finite_seq.
-by rewrite (perm_big r pr).
-Qed.
-
-(* no summability needed, matching [realsum]'s [psumZ] *)
-Lemma rsumZ f c : (forall x, 0 <= f x) ->
-  rsum (fun x => c * f x) = c * rsum f.
-Proof.
-move=> f0; rewrite /rsum.
-rewrite (eq_esum _ _ (fun x => (c%:E * (f x)%:E)%E)); first by move=> x _.
-rewrite esumZ; first by move=> x _; rewrite lee_fin.
-by rewrite fineMl.
-Qed.
-
-Lemma rsumB f g : (forall x, 0 <= g x <= f x) ->
-  esummable [set: T] (EFin \o f) ->
-  rsum (fun x => f x - g x) = rsum f - rsum g.
-Proof.
-move=> gf sf.
-have sg : esummable [set: T] (EFin \o g).
-+ apply: (le_esummable (g := EFin \o f)) => // x _.
-  by rewrite /= !lee_fin; exact: gf x.
-have ff := esummable_esum_fin_num sf.
-have fg := esummable_esum_fin_num sg.
-have E : \esum_(x in [set: T]) ((f x - g x)%:E)
-       = ((\esum_(x in [set: T]) (f x)%:E)
-          - (\esum_(x in [set: T]) (g x)%:E))%E.
-+ rewrite -(esummable_esumB sf sg); apply: eq_esum => x _; exact: EFinB.
-by rewrite /rsum E fineB.
-Qed.
-
-Lemma le_rsum f g : (forall x, 0 <= f x <= g x) ->
-  esummable [set: T] (EFin \o g) -> rsum f <= rsum g.
-Proof.
-move=> fg sg; have sf : esummable [set: T] (EFin \o f).
-  apply: (le_esummable (g := EFin \o g)) => // x _.
-  by rewrite /= !lee_fin; have /andP[-> ->] := fg x.
-rewrite -lee_fin !rsumE //; apply: le_esum => x _.
-by rewrite lee_fin; have /andP[_ ->] := fg x.
-Qed.
-
-End RSum.
-
-(* -------------------------------------------------------------------- *)
-(* On a [finType] an [rsum] is an ordinary finite sum.  Replaces         *)
-(* [realsum]'s [psum_fin], without its absolute values.                  *)
-Lemma rsum_fin {R : realType} {I : finType} (f : I -> R) :
-  (forall i, 0 <= f i) -> rsum f = \sum_i f i.
-Proof.
-move=> f0; rewrite /rsum (esum_fset finite_finset).
-- by move=> i _; rewrite lee_fin.
-by rewrite sum_eq_set sumEFin.
-Qed.
-
-(* -------------------------------------------------------------------- *)
-(* [realsum]'s [psum_finseq]: a family supported on a finite [r] sums    *)
-(* to the plain finite sum over [r].                                     *)
-Lemma rsum_finseq {R : realType} {T : choiceType} (f : T -> R) (r : seq T) :
-  uniq r -> (forall x, 0 <= f x) -> (forall x, f x != 0 -> x \in r) ->
-  rsum f = \sum_(x <- r) f x.
-Proof.
-move=> uqr f0 supp.
-have fin : finite_set ([set` r])%classic by exact: finite_seq.
-have pr : perm_eq (fset_set ([set` r])%classic) r.
-+ apply: uniq_perm; [exact: fset_uniq | exact: uqr |].
-  by move=> i; rewrite in_fset_set // mem_setE.
-rewrite /rsum (esumID ([set` r])%classic [set: T]);
-  first by move=> ? _; rewrite lee_fin.
-rewrite !setTI.
-have -> : \esum_(x in ~` ([set` r])%classic) ((f x)%:E) = 0%E.
-+ apply: esum1 => x xNr.
-  have -> : f x = 0; last by [].
-  apply/eqP/negPn/negP => nz; apply: xNr.
-  exact: supp nz.
-rewrite adde0 esum_fset // ; first by move=> i _; rewrite lee_fin.
-by rewrite fsbig_finite // (perm_big r pr) sumEFin.
-Qed.
-
-(* -------------------------------------------------------------------- *)
-(* [realsum]'s [le1_mu], in [rsum] form *)
-Lemma le1_rsum {R : realType} {T : choiceType} (mu : {distr T / R}) :
-  rsum mu <= 1.
-Proof.
-by rewrite -lee_fin (rsumE (summable_mu mu)); exact: le1_mu.
-Qed.
-
-(* -------------------------------------------------------------------- *)
-(* [pr] as an [rsum], so that the [rsum] theory applies to it *)
-Lemma prE_rsum {R : realType} {T : choiceType}
-    (mu : {distr T / R}) (E : pred T) :
-  \P_[mu] E = rsum (fun x => (E x)%:R * mu x).
-Proof. by []. Qed.
-
-(* [realseq]'s [ncvgZ] / [ncvgMl] for a constant scalar *)
 Lemma cvgZl {R : realType} (u : nat -> R) (l c : R) :
   (u @ \oo --> l)%classic -> ((fun n => c * u n) @ \oo --> c * l)%classic.
 Proof. by move=> hu; apply: cvgM => //; exact: cvg_cst. Qed.
 
-(* [cvgD] / [cvgB] stated on an explicit lambda rather than on the       *)
-(* pointwise ring structure of [nat -> R]: the latter lives in           *)
-(* [mathcomp.classical.functions], which the client files do not import. *)
 Lemma cvgnD {R : realType} (u v : nat -> R) (a b : R) :
      (u @ \oo --> a)%classic -> (v @ \oo --> b)%classic
   -> ((fun n => u n + v n) @ \oo --> a + b)%classic.
@@ -757,11 +597,6 @@ Lemma cvgnB {R : realType} (u v : nat -> R) (a b : R) :
   -> ((fun n => u n - v n) @ \oo --> a - b)%classic.
 Proof. move=> hu hv; exact (cvgB hu hv). Qed.
 
-(* -------------------------------------------------------------------- *)
-(* [counting_distr]'s [dlim] is [limn_einf]-based, so it only agrees     *)
-(* with the pointwise limit on convergent sequences -- which is exactly  *)
-(* the situation [strassen]'s [strcvg] produces (convergent, but not     *)
-(* monotone, so [dlim_limE] does not apply).                            *)
 Lemma dlimE_cvg {R : realType} {T : choiceType}
     (f : nat -> {distr T / R}) x :
   cvgn (fun n => f n x) -> dlim f x = limn (fun n => f n x).
@@ -777,49 +612,6 @@ by [].
 Qed.
 
 (* -------------------------------------------------------------------- *)
-(* scaling preserves summability (real scalar) *)
-Lemma esummableZ {R : realType} {T : choiceType} (f : T -> R) (c : R) :
-  esummable [set: T] (EFin \o f) ->
-  esummable [set: T] (EFin \o (fun x => c * f x)).
-Proof.
-move=> sf; apply: (eq_esummable (f := fun x => (c%:E * (f x)%:E)%E)).
-+ by move=> x _ /=; rewrite EFinM.
-by apply: esummableZl => //; exact: sf.
-Qed.
-
-(* -------------------------------------------------------------------- *)
-(* marginals as [rsum]s -- the shape [rsum] lemmas can act on *)
-Lemma dfstE_rsum {R : realType} {T U : choiceType}
-    (mu : {distr (T * U)%type / R}) x :
-  dfst mu x = rsum (fun y => mu (x, y)).
-Proof. by rewrite dfstE. Qed.
-
-Lemma dsndE_rsum {R : realType} {T U : choiceType}
-    (mu : {distr (T * U)%type / R}) y :
-  dsnd mu y = rsum (fun x => mu (x, y)).
-Proof. by rewrite dsndE. Qed.
-
-(* -------------------------------------------------------------------- *)
-(* finType marginals as ordinary finite sums *)
-Lemma dfstE_fin {R : realType} {T U : finType}
-    (mu : {distr (T * U)%type / R}) x :
-  dfst mu x = \sum_y mu (x, y).
-Proof.
-have -> : dfst mu x = rsum (fun y => mu (x, y)) by rewrite dfstE.
-by rewrite rsum_fin // => ?; exact: ge0_mu.
-Qed.
-
-Lemma dsndE_fin {R : realType} {T U : finType}
-    (mu : {distr (T * U)%type / R}) y :
-  dsnd mu y = \sum_x mu (x, y).
-Proof.
-have -> : dsnd mu y = rsum (fun x => mu (x, y)) by rewrite dsndE.
-by rewrite rsum_fin // => ?; exact: ge0_mu.
-Qed.
-
-(* -------------------------------------------------------------------- *)
-(* [realsum]'s [nboundedP], in the [bounded_fun] vocabulary that         *)
-(* [bolzano_weierstrass] expects.                                        *)
 Lemma bounded_funP {R : realType} (u : nat -> R) (M : R) :
   (forall n, `|u n| <= M) -> bounded_fun u.
 Proof.
@@ -831,8 +623,6 @@ by apply: hh; exists M => n _; exact: h.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-(* [realsum]'s [iscvg_sub]: convergence is stable under passing to a     *)
-(* subsequence.                                                          *)
 Lemma cvg_homo_oo (s : nat -> nat) :
   {homo s : x y / (x < y)%N} -> (s @ \oo --> \oo)%classic.
 Proof.
@@ -847,101 +637,16 @@ move=> homo_s cu; apply: cvgP.
 by apply: (cvg_comp s u (cvg_homo_oo homo_s) cu).
 Qed.
 
-(* [realsum]'s [iscvg_eq] -- trivial with [funext] *)
 Lemma cvgn_eq {R : realType} (u v : nat -> R) : u =1 v -> cvgn v -> cvgn u.
 Proof. by move=> /funext ->. Qed.
 
-(* [realsum]'s [iscvg_shift]; not in mathcomp-analysis, which only has  *)
-(* the [--> l] form [cvg_shiftn].                                        *)
 Lemma is_cvg_shiftn {R : realType} (N : nat) (u : nat -> R) :
   cvgn (fun n => u (n + N)%N) = cvgn u.
 Proof.
 rewrite propeqE; split=> /cvg_ex[l hl]; apply/cvg_ex; exists l;
   by move: hl; rewrite (cvg_shiftn N u (nbhs l)).
 Qed.
-
 (* -------------------------------------------------------------------- *)
-(* reindexing along an injection whose image carries the whole family;   *)
-(* replaces [realsum]'s [reindex_psum]                                   *)
-Lemma rsum_image {R : realType} {T U : choiceType} (g : U -> T) (f : T -> R) :
-  injective g -> (forall x, (forall u, g u <> x) -> f x = 0) ->
-  (forall x, 0 <= f x) -> rsum f = rsum (f \o g).
-Proof.
-move=> ginj f0 fge0; rewrite /rsum; congr fine.
-rewrite (esumID (g @` [set: U]) [set: T]); first by move=> ? _; rewrite lee_fin.
-rewrite !setTI.
-have -> : \esum_(x in ~` (g @` [set: U])) ((f x)%:E) = 0%E.
-+ apply: esum1 => x xNim.
-  have -> : f x = 0 by apply: f0 => u gu; apply: xNim; exists u.
-  by [].
-rewrite adde0.
-by rewrite (esum_image [set: U] g (fun x => (f x)%:E)) // => x y _ _; exact: ginj.
-Qed.
-
-(* -------------------------------------------------------------------- *)
-(* replaces [realsum]'s [psum_pair]; only slice summability is needed    *)
-Lemma rsum_pair {R : realType} {T U : choiceType} (f : T * U -> R) :
-  (forall x, 0 <= f x) ->
-  (forall x, esummable [set: U] (EFin \o (fun y => f (x, y)))) ->
-  rsum f = rsum (fun x => rsum (fun y => f (x, y))).
-Proof.
-move=> f0 sfx; rewrite /rsum; congr fine.
-have dom : ([set: T] `*`` (fun _ : T => [set: U]))%classic
-         = @setT (T * U)%type.
-+ by rewrite predeqE => -[x y]; split.
-transitivity (\esum_(x in [set: T]) \esum_(y in [set: U]) (f (x, y))%:E);
-  last by apply: eq_esum => x _; rewrite -(rsumE (sfx x)).
-rewrite (esum_esum (f := fun x y => (f (x, y))%:E));
-  first by move=> ?? _ _; rewrite lee_fin.
-by rewrite dom; apply: eq_esum => -[x y] _.
-Qed.
-
-(* -------------------------------------------------------------------- *)
-(* replaces [realsum]'s [psum_pair_swap] *)
-Lemma rsum_pair_swap {R : realType} {T U : choiceType} (f : T * U -> R) :
-  (forall x, 0 <= f x) ->
-  (forall y, esummable [set: T] (EFin \o (fun x => f (x, y)))) ->
-  rsum f = rsum (fun y => rsum (fun x => f (x, y))).
-Proof.
-move=> f0 sfy; rewrite /rsum; congr fine.
-have dom : ([set: T] `*`` (fun _ : T => [set: U]))%classic
-         = @setT (T * U)%type.
-+ by rewrite predeqE => -[x y]; split.
-transitivity (\esum_(y in [set: U]) \esum_(x in [set: T]) (f (x, y))%:E);
-  last by apply: eq_esum => y _; rewrite -(rsumE (sfy y)).
-rewrite -(@exchange_esum R T U [set: T] [set: U]
-            (fun x y => (f (x, y))%:E)); first by move=> ??; rewrite lee_fin.
-rewrite (esum_esum (f := fun x y => (f (x, y))%:E));
-  first by move=> ?? _ _; rewrite lee_fin.
-by rewrite dom; apply: eq_esum => -[x y] _.
-Qed.
-
-(* -------------------------------------------------------------------- *)
-Lemma rsum_option {R : realType} {T : choiceType} (f : option T -> R) :
-  esummable [set: option T] (EFin \o f) ->
-  rsum f = rsum (f \o some) + f None.
-Proof.
-move=> sf; have sfs := esummable_option sf.
-rewrite /rsum (esum_option sf) fineD //.
-by apply: (esummable_esum_fin_num sfs).
-Qed.
-
-(* -------------------------------------------------------------------- *)
-Lemma esummable_condl {R : realType} {T : choiceType}
-    (f : T -> R) (P : pred T) :
-  esummable [set: T] (EFin \o f) ->
-  esummable [set: T] (EFin \o (fun x => (P x)%:R * f x)).
-Proof.
-move=> sf.
-apply: (eq_esummable (f := ((fun x => ((P x)%:R)%:E) \* (EFin \o f))%E)).
-+ by move=> x _ /=; rewrite EFinM.
-apply: esummableMl; last exact: sf.
-exists 1%:E => [x|]; last by [].
-by rewrite gee0_abs ?lee_fin ?ler0n// lern1 leq_b1.
-Qed.
-
-(* -------------------------------------------------------------------- *)
-(* Was provided by [realsum]; pure [sup] fact, no distribution content.  *)
 Lemma max_sup {R : realType} x (E : set R) :
   (E `&` ubound E)%classic x -> sup E = x.
 Proof.
@@ -952,11 +657,6 @@ by move/sup_upper_bound/ubP; apply.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-(* [counting_distr] builds distributions by declaring an [HB.instance]   *)
-(* on a named function, which is a command and so unusable inside a      *)
-(* proof.  The [Distribution] structure is a plain record with exposed   *)
-(* constructors, so the term-level builder of the old [distr] library    *)
-(* is recoverable.                                                       *)
 Definition mkdistr {R : realType} {T : choiceType} (f : T -> R) (h : isdistr f)
   : {distr T / R} := Distribution.Pack (Distribution.Class (@mkdistrd R T f h)).
 
@@ -992,7 +692,6 @@ Proof.
   by rewrite addSn (leq_trans ih) // 1?ltnW.
 Qed.
 
-(* -------------------------------------------------------------------- *)
 Lemma homoS_ler {T : numDomainType} (f : nat -> T) :
   (forall x, f x <= f x.+1) -> {homo f : x y / (x <= y)%N >-> x <= y}.
 Proof.
@@ -1000,7 +699,6 @@ Proof.
   by elim: (y - _)%N => // n ih; rewrite addSn (le_trans ih (homo _)).
 Qed.
 
-(* -------------------------------------------------------------------- *)
 Lemma natpred_finiteN (E : pred nat) :
   (forall s : seq nat, ~ {subset E <= s})
   -> { σ : nat -> nat |
@@ -1019,4 +717,27 @@ Proof.
     apply/homoS_lt => /= nl; set r := _ :: _.
     have := xchooseP (h r) => /andP[].
     by rewrite {1}big_cons gtn_max => /andP[].
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma espcE {R: realType} {T: choiceType} mu (f : T -> R)  A :
+   \E?_[mu] f ->
+   espc mu f A = esp (drestr A mu) f / \P_[mu] A .
+Proof.
+move=> sm.
+have key : \P_[mu] A * espc mu f A = esp (drestr A mu) f.
++ rewrite (pr_esp_sum A sm) /esp; congr fine.
+  apply: eq_esum => x _ /=.
+  by rewrite drestrE; case: (A x); rewrite ?mul1r ?mul0r ?mulr0.
+have [z|nz] := eqVneq (\P_[mu] A) 0.
++ rewrite z invr0 mulr0 /espc (eq_esum _ _ (fun _ => 0%E)).
+  - by move=> x _; rewrite prc_pred1 z invr0 !mulr0.
+  - by rewrite esum0.
+by rewrite -key mulrAC divff // mul1r.
+Qed.
+
+Lemma mass_drestr {R: realType} {T: choiceType} (mu : {distr T / R}) A  :
+  \P_[drestr A mu] predT = \P_[mu] A.
+Proof.
+by rewrite pr_drestr; apply: eq_pr => x; rewrite !inE andbT.
 Qed.

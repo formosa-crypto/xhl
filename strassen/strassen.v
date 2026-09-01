@@ -1,12 +1,12 @@
 (* -------------------------------------------------------------------- *)
-From mathcomp Require Import boot order.
+From mathcomp           Require Import boot order.
 From mathcomp.algebra   Require Import algebra.
 From mathcomp.finmap    Require Import finmap.
 From mathcomp.classical Require Import boolp classical_sets filter.
 From mathcomp.reals     Require Import reals constructive_ereal.
-From mathcomp.analysis Require Import counting_distr ereal esum.
-From mathcomp.analysis Require Import sequences normedtype topology.
-(* ------- *)           Require Import xbigops misc maxflow elift.
+From mathcomp.analysis  Require Import counting_distr ereal esum.
+From mathcomp.analysis  Require Import sequences normedtype topology.
+                        Require Import xbigops misc maxflow elift rsum.
 
 Set   Implicit Arguments.
 Unset Strict Implicit.
