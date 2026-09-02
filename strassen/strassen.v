@@ -28,29 +28,48 @@ Local Notation "⇐ x" := (inl (Some x)) (at level 2).
 Local Notation "⇒ x" := (inr (Some x)) (at level 2).
 
 (* ==================================================================== *)
+(* Everything below is generic in the ambient [realType] and in the      *)
+(* sensitivity transform [Ω], exactly as in elift.v -- the four          *)
+(* hypotheses are repeated verbatim so that the [Let]s just below        *)
+(* typecheck.  [Ω] is instantiated (with [expR]) only where ε is finally *)
+(* fixed; nothing here depends on the choice.                            *)
+Section StrassenTheory.
+Context {R : realType}.
+Context (Ω : R -> R).
+
+Hypothesis ΩD     : {morph Ω : x y / x + y >-> x * y}.
+Hypothesis Ω0     : Ω 0 = 1.
+Hypothesis mono_Ω : {mono Ω : x y / x <= y >-> x <= y}.
+Hypothesis gt0_Ω  : forall x, 0 < Ω x.
+
+(* [elift.v] discharges each of its Ω-lemmas over only the hypotheses its *)
+(* proof uses, so they now take those as arguments.  Re-abbreviating them *)
+(* here once keeps every proof body in this file unchanged.               *)
+Let ge0_Ω := elift.ge0_Ω gt0_Ω.
+Let Ω_ge1 := elift.Ω_ge1 Ω0 mono_Ω.
+Let ltr_Ω := elift.ltr_Ω mono_Ω.
+
+(* ==================================================================== *)
 Local Notation distr T := {distr T%type / R}.
 
 (* -------------------------------------------------------------------- *)
-(* [BW] used to be proved here from scratch, on top of a 45-line         *)
-(* [nbounded_sub_mono]; mathcomp-analysis now provides the theorem       *)
-(* itself.  All that is left is the sigma-type packaging, which [strcvg] *)
-(* below needs because it computes with the extracted subsequence.       *)
-Lemma BW (u : nat -> R) : bounded_fun u ->
-  {α : nat -> nat | {homo α : x y / (x < y)%N} & cvgn (u \o α)}.
-Proof.
-move=> /bolzano_weierstrass/cid2[f incr_f cvg_f].
-rewrite leEnat in incr_f.
-exists f; last exact: cvg_f.
-by move=> x y; rewrite !ltnNge incr_f.
-Qed.
+(* [BW] (Bolzano-Weierstrass in sigma-type form), [strcvg] (the Cantor   *)
+(* diagonal for a [countType]) and [strcvg2] used to be proved here.     *)
+(* They are now [misc.bw_subseq], [misc.diag_cvg] / [rsum.dcompact] and  *)
+(* [rsum.dcompact2] respectively -- and the latter two drop the          *)
+(* [countType] requirement, which is what lets [CountableStrassen] below *)
+(* be stated for an arbitrary [choiceType].                              *)
 
 (* -------------------------------------------------------------------- *)
-Axiom DCT : forall {T: choiceType} (un : nat -> T -> R) (u g : T -> R),
+(* Dominated convergence.  This used to be assumed here; it is now        *)
+(* [rsum.rsum_dct], proved from [misc.esum_fatou].                        *)
+Lemma DCT {T: choiceType} (un : nat -> T -> R) (u g : T -> R) :
      (forall x, ((un^~ x) @ \oo --> u x)%classic)
   -> (forall n x, `|un n x| <= g x)
   -> esummable [set: T] (EFin \o g)
   -> esummable [set: T] (EFin \o u)
      /\ ((fun n => rsum (un n)) @ \oo --> rsum u)%classic.
+Proof. exact: rsum_dct. Qed.
 
 (* -------------------------------------------------------------------- *)
 Lemma DCT_swap {T: choiceType} (un : nat -> T -> R) (u g : T -> R) :
@@ -72,91 +91,18 @@ Lemma DCT_ncvg {T: choiceType} (un : nat -> T -> R) (u g : T -> R) :
 Proof. by move=> h1 h2 h3; case: (@DCT T un u g). Qed.
 
 (* ==================================================================== *)
-Section CountableSeqCompacityForDistr.
-Context {A : countType} (μ : nat -> distr A).
-
-(* -------------------------------------------------------------------- *)
-Lemma strcvg :
-  {Ω : nat -> nat | {homo Ω : x y / (x < y)%N} &
-    forall a : A, cvgn (fun n => μ (Ω n) a)}.
-Proof.
-have α a θ: {α : nat -> nat |
-  {homo α : x y / (x < y)%N} & cvgn (μ^~ a \o θ \o α)}.
-+ case: (@BW (μ^~ a \o θ)) => [|α mono_α cvg_μα]; last by exists α.
-  apply: (bounded_funP (M := 1)) => n.
-  by rewrite ger0_norm //= le1_mu1.
-have homo_α a θ : {homo tag (α a θ) : x y / (x < y)%N} by case: (α a θ).
-pose ω θ n := odflt idfun (omap (fun a => tag (α a θ)) (choice.unpickle n)).
-have homo_ω k θ: {homo θ : m n / (m < n)%N} -> {homo ω θ k : m n / (m < n)%N}.
-+ move=> homo_θ m n lt_mn; rewrite /ω; case: choice.unpickle => //=.
-  * by move=> a; apply/homo_α.
-pose Ω := fix Ω k :=
-  if k is k'.+1 then
-    let σ := ω (Ω k').2 k' in (σ, (Ω k').2 \o σ)
-  else (idfun, idfun).
-have Ω1SE i: (Ω i.+1).1 =1 ω (Ω i).2 i by [].
-have Ω2E i: (Ω i).2 =1 \big[comp/idfun]_(0 <= j < i) (Ω j.+1).1.
-+ elim: i => /= [|i ih] n; first by rewrite big_geq.
-  by rewrite big_nat_recr //= -ih.
-have ΩD2E n m: (Ω (n + m)%N).2 =1
-  (Ω n).2 \o \big[comp/idfun]_(0 <= j < m) (Ω (n.+1+j)%N).1 => [k /=|].
-+ rewrite !Ω2E (big_cat_nat _ (n := n)) ?leq_addr //=.
-  congr (_ _); rewrite -{1}[n]add0n big_addn addKn.
-  by apply/eq_bigcomp => {}k _; rewrite addnC.
-have homoΩ2 n: {homo (Ω n).2 : x y / (x < y)%N}.
-+ by elim: n => //= n ih; apply/homo_comp => //=; apply/homo_ω.
-have homoΩ1 n: {homo (Ω n).1 : x y / (x < y)%N}.
-+ by case: n => //= n; apply/homo_ω/homoΩ2.
-exists (fun n => (Ω n).2 n) => [|a].
-+ move=> m n lt_mn; rewrite -{1}[n](subnK (ltnW lt_mn)) addnC.
-  rewrite ΩD2E (@leq_trans ((Ω m).2 n)) //; first by apply/homoΩ2.
-  rewrite (misc.homo_leq_mono (homoΩ2 _)) homo_geidfun //.
-  by apply/homo_bigcomp => k _; apply/homoΩ1.
-have [p pE]: exists p, p = (choice.pickle a).+1 by exists (choice.pickle a).+1.
-rewrite -(is_cvg_shiftn p); pose T n := (Ω (n + p)%N).2 (n + p)%N.
-have h: exists2 σ, {homo σ : x y / (x < y)%N} & T =1 (Ω p).2 \o σ.
-+ exists (fun n => (\big[comp/idfun]_(0 <= j < n) (Ω (p.+1+j)%N).1) (n+p)%N).
-  * move=> x y ltxy; rewrite -(homo_ltn_mono (homoΩ2 p)).
-    have /=<- := ΩD2E p x (x+p)%N; have /=<- := ΩD2E p y (y+p)%N.
-    rewrite (leq_trans (homoΩ2 _ (x+p)%N (y+p)%N _)) ?ltn_add2r //.
-    rewrite -{2}[y](@subnK x) ?[(x <= y)%N]ltnW // addnA addnAC.
-    rewrite [in X in (_ <= X)%N]ΩD2E (misc.homo_leq_mono (homoΩ2 _)).
-    by apply/homo_geidfun/homo_bigcomp => k _; apply/homoΩ1.
-  * by move=> n /=; rewrite /T addnC ΩD2E.
-case: h => σ homoσ TE; pose X := ((μ^~ a) \o (Ω p).2) \o σ.
-apply/(@cvgn_eq _ _ X); first by move=> k /=; rewrite -/(T _) TE.
-apply/cvgn_subseq => //; rewrite {p T TE X}pE /=; set ξ := Ω _.
-by rewrite /ω choice.pickleK /=; case: (α a ξ.2).
-Qed.
-End CountableSeqCompacityForDistr.
-
-(* -------------------------------------------------------------------- *)
-Lemma strcvg2
-  {A B : countType} (μ1 : nat -> distr A) (μ2 : nat -> distr B)
-:
-  { Ω : nat -> nat | {homo Ω : x y / (x < y)%N} &
-     [/\ forall a : A, cvgn (fun n => μ1 (Ω n) a)
-       & forall b : B, cvgn (fun n => μ2 (Ω n) b) ] }.
-Proof.
-case: (strcvg μ1) => ω1 mono1 cvg1.
-case: (strcvg (μ2 \o ω1)) => ω2 mono2 cvg2.
-(exists (ω1 \o ω2); last split) => // [m n|a].
-+ by move/mono2/mono1.
-+ by apply/(cvgn_subseq (u := (μ1 \o ω1)^~ a) (s := ω2)).
-Qed.
-
-(* ==================================================================== *)
 Section RevStrassen.
 Context {A B : finType}.
 Context (ε δ : R) (μ1 : distr A) (μ2 : distr B) (S : pred (A * B)).
 
 Hypothesis (ge0_ε : 0 <= ε) (ge0_δ : 0 <= δ).
-Hypothesis alift : elift ε δ μ1 μ2 S.
+Hypothesis alift : elift Ω ε δ μ1 μ2 S.
 
 Theorem StrassenI X :
   \P_[μ1] X <= Ω ε * \P_[μ2] (fun y => [exists x in X, S (x, y)]) + δ.
 Proof.
-case: alift => /= -[μL μR] [EL ER RμL RμR /edist_le -/(_ ge0_ε) /= leδ].
+case: alift => /= -[μL μR]
+  [EL ER RμL RμR /(edist_le gt0_Ω) -/(_ ge0_ε) /= leδ].
 pose T := [pred ab : option A * option B
   | if ab is (Some a, _) then X a else false].
 move/(_ T): leδ; rewrite !pr_dmargin => /le_trans.
@@ -606,7 +552,7 @@ Arguments SμL : simpl never.
 Arguments SμR : simpl never.
 
 (* -------------------------------------------------------------------- *)
-Lemma FinWeakStrassen : elift ε δ μ1 μ2 S.
+Lemma FinWeakStrassen : elift Ω ε δ μ1 μ2 S.
 Proof.
 exists (SμL, SμR) => /=; split.
 + move=> a; rewrite dfstE_fin /= /SμL_r /=.
@@ -625,7 +571,7 @@ exists (SμL, SμR) => /=; split.
   set e := (X in f X) => nz_fe; have := le_NFfc f e; rewrite /c /=.
   case: S => //; rewrite mul0r le_eqVlt (negbTE (nz_fe)) /=.
   by rewrite ltNge ge0_flowNF.
-apply/edist_le=> //= X; rewrite !pr_dmargin.
+apply/(edist_le gt0_Ω)=> //= X; rewrite !pr_dmargin.
 pose P1 := [pred x | ((Some x.1, None) \in X) && (x.2 == None :> option B)].
 pose P2 := [pred x | ((Some x.1, x.2 ) \in X) && (x.2 != None)].
 set P := (X in X <= _); have {P}->: P = \P_[SμL] P1 + \P_[SμL] P2.
@@ -687,7 +633,7 @@ Qed.
 End StrassenUnderMaxFlow.
 
 (* -------------------------------------------------------------------- *)
-Theorem FinStrassen : elift ε δ μ1 μ2 S.
+Theorem FinStrassen : elift Ω ε δ μ1 μ2 S.
 Proof.
 case: (maxflow_mincut NF)=> f [hf fmax]; apply/(@FinWeakStrassen f).
 case: fmax => /= C fmE; rewrite fmE (rwP eqP) eq_le geω_cut andbT.
@@ -763,7 +709,7 @@ Hypothesis mono : forall X, \P_[μ1] X <=
   Ω ε * \P_[μ2] (fun y => `[< exists2 x, x \in X & S (x, y) >]) + δ.
 
 (* FIXME: factor out facts about dfinrestr *)
-Theorem FinSuppStrassen : elift ε δ μ1 μ2 S.
+Theorem FinSuppStrassen : elift Ω ε δ μ1 μ2 S.
 Proof.
 pose ν1 : distr c1 := dfinrestr c1 μ1.
 pose ν2 : distr c2 := dfinrestr c2 μ2.
@@ -842,14 +788,34 @@ Qed.
 End FinSuppStrassen.
 
 (* -------------------------------------------------------------------- *)
+(* [A] and [B] are arbitrary [choiceType]s: the [countType] requirement    *)
+(* the [strcvg2]-based proof used to carry is gone.  Two things replaced   *)
+(* it, both in rsum.v: [dcompact2] extracts a pointwise-convergent         *)
+(* subsequence for any [choiceType], and [dsupp_exhaust] supplies the      *)
+(* increasing sequence of finite sets that used to be                      *)
+(* [E i := seq_fset (pmap unpickle (iota 0 i))].                          *)
+(*                                                                       *)
+(* [dsupp_exhaust] only exhausts the *support*.  That is enough: off the   *)
+(* support the truncation [drestr] and [μ] agree, both being [0], so the   *)
+(* two places that used "every point is eventually in [E n]" now split on  *)
+(* [x \in dinsupp μ] instead ([cvg_η1] / [cvg_η2] below, and the final     *)
+(* [Δ n --> δ]).                                                          *)
 Section CountableStrassen.
-Context {A B : countType}.
+Context {A B : choiceType}.
 Context (ε δ : R) (μ1 : distr A) (μ2 : distr B) (S : pred (A * B)).
 
 Hypothesis (ge0_ε : 0 <= ε) (ge0_δ : 0 <= δ).
 
-Definition E {T : countType} i : {fset T} :=
-  seq_fset tt (pmap choice.unpickle (iota 0 i)).
+Let cA : nat -> {fset A} := tag (dsupp_exhaust μ1).
+Let cB : nat -> {fset B} := tag (dsupp_exhaust μ2).
+
+Local Lemma exhA x :
+  x \in dinsupp μ1 -> exists N, forall n, (N <= n)%N -> x \in cA n.
+Proof. by rewrite /cA; case: (dsupp_exhaust μ1) => c hc; apply: hc. Qed.
+
+Local Lemma exhB y :
+  y \in dinsupp μ2 -> exists N, forall n, (N <= n)%N -> y \in cB n.
+Proof. by rewrite /cB; case: (dsupp_exhaust μ2) => c hc; apply: hc. Qed.
 
 Definition imS (X : pred A) :=
   [pred y | `[< exists2 x, x \in X & S (x, y) >]].
@@ -857,9 +823,9 @@ Definition imS (X : pred A) :=
 Hypothesis mono :
   forall X, \P_[μ1] X <= Ω ε * \P_[μ2] (imS X) + δ.
 
-Let η1 n := (drestr (mem (E n)) μ1).
-Let η2 n := (drestr (mem (E n)) μ2).
-Let Δ  n := (Ω ε * \P_[μ2] (predC (mem (E n))) + δ).
+Let η1 n := (drestr (mem (cA n)) μ1).
+Let η2 n := (drestr (mem (cB n)) μ2).
+Let Δ  n := (Ω ε * \P_[μ2] (predC (mem (cB n))) + δ).
 
 Lemma ge0_Δ n : 0 <= Δ n.
 Proof. by rewrite addr_ge0 // mulr_ge0 ?(ge0_Ω, ge0_pr). Qed.
@@ -883,15 +849,16 @@ Local Notation elift_r n η :=
  [/\ dfst η.1 =1 η1 n, dsnd η.2 =1 η2 n
    , (forall a b, (a, Some b) \in dinsupp η.1 -> S (a, b))
    , (forall a b, (Some a, b) \in dinsupp η.2 -> S (a, b))
-   & edist ε (deliftL η.1) (deliftR η.2) <= Δ n].
+   & edist Ω ε (deliftL η.1) (deliftR η.2) <= Δ n].
 
-Local Notation R η := (forall a b,
+(* Named [bnd], not [R]: [R] is the ambient [realType] section variable. *)
+Local Notation bnd η := (forall a b,
   η.2 (Some a, b) <= η.1 (a, Some b) <= Ω ε * η.2 (Some a, b)).
 
-Lemma elift_dfinrestr n : { η : T | elift_r n η /\ R η }.
+Lemma elift_dfinrestr n : { η : T | elift_r n η /\ bnd η }.
 Proof.
-suff: elift ε (Δ n) (η1 n) (η2 n) S by move/(elift_bnd ge0_ε).
-apply/(FinSuppStrassen (c1 := E n) (c2 := E n)) => //.
+suff: elift Ω ε (Δ n) (η1 n) (η2 n) S by move/(elift_bnd Ω0 mono_Ω gt0_Ω ge0_ε).
+apply/(FinSuppStrassen (c1 := cA n) (c2 := cB n)) => //.
 + by apply/ge0_Δ.
 + by move=> x; rewrite dinsupp_restr => /andP[].
 + by move=> x; rewrite dinsupp_restr => /andP[].
@@ -901,21 +868,42 @@ Qed.
 Let ηL n : distr (A * option B) := (tag (elift_dfinrestr n)).1.
 Let ηR n : distr (option A * B) := (tag (elift_dfinrestr n)).2.
 
-Let ω : nat -> nat := tag (strcvg2 ηL ηR).
+Let ω : nat -> nat := tag (dcompact2 ηL ηR).
 
 Local Lemma homo_ω : {homo ω : x y / (x < y)%N}.
-Proof. by rewrite /ω; case: strcvg2. Qed.
+Proof. by rewrite /ω; case: dcompact2. Qed.
 
 Let ξL : distr (A * option B) := dlim (ηL \o ω).
 Let ξR : distr (option A * B) := dlim (ηR \o ω).
 
 Local Lemma iscvg_ηL x : cvgn (fun n => ηL (ω n) x).
-Proof. by rewrite /ω; case: strcvg2 => /= h _ []. Qed.
+Proof. by rewrite /ω; case: dcompact2 => /= h _ []. Qed.
 
 Local Lemma iscvg_ηR x : cvgn (fun n => ηR (ω n) x).
-Proof. by rewrite /ω; case: strcvg2 => /= h _ []. Qed.
+Proof. by rewrite /ω; case: dcompact2 => /= h _ []. Qed.
 
-Lemma Strassen : elift ε δ μ1 μ2 S.
+(* The truncations converge pointwise to [μ1] / [μ2].  Off the support     *)
+(* both sides are [0]; on it, [exhA] / [exhB] put [x] into [cA n] from     *)
+(* some rank on, and [ω n >= n] carries that along the subsequence.        *)
+Local Lemma cvg_η1 a : ((fun n => η1 (ω n) a) @ \oo --> μ1 a)%classic.
+Proof.
+case/boolP: (a \in dinsupp μ1) => [/exhA[N hN]|/dinsuppPn h0]; last first.
++ apply: cvg_near_cst; apply: nearW => n.
+  by rewrite /η1 drestrE h0; case: ifP.
+apply: cvg_near_cst; near=> n; rewrite /η1 drestrE ifT //.
+by apply/hN/(leq_trans _ (homo_geidfun homo_ω n)); near: n; apply: nbhs_infty_ge.
+Unshelve. all: end_near. Qed.
+
+Local Lemma cvg_η2 b : ((fun n => η2 (ω n) b) @ \oo --> μ2 b)%classic.
+Proof.
+case/boolP: (b \in dinsupp μ2) => [/exhB[N hN]|/dinsuppPn h0]; last first.
++ apply: cvg_near_cst; apply: nearW => n.
+  by rewrite /η2 drestrE h0; case: ifP.
+apply: cvg_near_cst; near=> n; rewrite /η2 drestrE ifT //.
+by apply/hN/(leq_trans _ (homo_geidfun homo_ω n)); near: n; apply: nbhs_infty_ge.
+Unshelve. all: end_near. Qed.
+
+Lemma Strassen : elift Ω ε δ μ1 μ2 S.
 Proof.
 pose GL a := if a is Some a then       μ1 a else 1.
 pose GR b := if b is Some b then Ω ε * μ2 b else 1.
@@ -956,16 +944,8 @@ exists (ξL, ξR) => /=; split => [a|b|||].
     - move=> b; rewrite /ξL (dlimE_cvg (@iscvg_ηL (a, b))).
       exact: (@iscvg_ηL (a, b)).
     - by move=> n b; rewrite ger0_norm // (ge0_mu, hLR).
-  pose pa := choice.pickle a.
   have ->: μ1 a = limn (fun n => η1 (ω n) a).
-  * apply/esym/cvg_lim => //; apply: cvg_near_cst.
-    near=> n; rewrite drestrE; case: ifPn => // /negP[].
-    suff : a \in E (ω n) by [].
-    rewrite /E seq_fsetE mem_pmap; apply/mapP; exists pa; last first.
-    + by rewrite choice.pickleK.
-    rewrite mem_iota leq0n add0n; apply: (@leq_trans n).
-    + by near: n; apply: nbhs_infty_gt.
-    + by apply/homo_geidfun/homo_ω.
+  * by apply/esym/cvg_lim => //; exact: cvg_η1.
   have E1 : (fun n => rsum (FL a n)) = (fun n => η1 (ω n) a).
   * by apply/funext => n /=; rewrite -dfstE_rsum exlift_dfstL.
   by rewrite E1.
@@ -976,24 +956,17 @@ exists (ξL, ξR) => /=; split => [a|b|||].
     - move=> a; rewrite /ξR (dlimE_cvg (@iscvg_ηR (a, b))).
       exact: (@iscvg_ηR (a, b)).
     - by move=> n a; rewrite ger0_norm // (ge0_mu, hRL).
-  pose pb := choice.pickle b.
   have ->: μ2 b = limn (fun n => η2 (ω n) b).
-  * apply/esym/cvg_lim => //; apply: cvg_near_cst.
-    near=> n; rewrite drestrE; case: ifPn => // /negP[].
-    suff : b \in E (ω n) by [].
-    rewrite /E seq_fsetE mem_pmap; apply/mapP; exists pb; last first.
-    + by rewrite choice.pickleK.
-    rewrite mem_iota leq0n add0n; apply: (@leq_trans n).
-    + by near: n; apply: nbhs_infty_gt.
-    + by apply/homo_geidfun/homo_ω.
+  * by apply/esym/cvg_lim => //; exact: cvg_η2.
   have E2 : (fun n => rsum (FR b n)) = (fun n => η2 (ω n) b).
   * by apply/funext => n /=; rewrite -dsndE_rsum exlift_dsndR.
   by rewrite E2.
 + by move=> a b /dinsupp_dlim [K] /(_ _ (leqnn _)) /exlift_dsuppL.
 + by move=> a b /dinsupp_dlim [K] /(_ _ (leqnn _)) /exlift_dsuppR.
-apply/edist_le_supp => //= X subX.
-pose L n : elift.R := \P_[deliftL (ηL (ω n))] X.
-pose R n : elift.R := \P_[deliftR (ηR (ω n))] X.
+apply/(edist_le_supp gt0_Ω) => //= X subX.
+(* [Rr], not [R]: [R] is the ambient [realType] section variable. *)
+pose L  n : R := \P_[deliftL (ηL (ω n))] X.
+pose Rr n : R := \P_[deliftR (ηR (ω n))] X.
 have sliceL : forall (ν : distr (A * option B)) (a : option A),
     esummable [set: option B]
       (EFin \o (fun b => (X (a, b))%:R * deliftL ν (a, b))).
@@ -1045,10 +1018,10 @@ have prR : forall ν : distr (option A * B), \P_[deliftR ν] X
 * move=> ν; rewrite prE_rsum.
   rewrite (rsum_pair_swap (f := fun ab => (X ab)%:R * deliftR ν ab)) //.
   by move=> ab; rewrite mulr_ge0 ?ler0n ?ge0_mu.
-have cvgR: (R @ \oo --> \P_[deliftR ξR] X)%classic.
+have cvgR: (Rr @ \oo --> \P_[deliftR ξR] X)%classic.
 * pose F n a b := (X (a, b))%:R * (deliftR (ηR (ω n)) (a, b)).
-  have -> : R = (fun n => rsum (fun b => rsum (fun a => F n a b))).
-  - by apply/funext => n; rewrite /R prR.
+  have -> : Rr = (fun n => rsum (fun b => rsum (fun a => F n a b))).
+  - by apply/funext => n; rewrite /Rr prR.
   rewrite prR; apply/(@DCT_ncvg _ _
     (fun b => rsum (fun a => (X (a, b))%:R * deliftR ξR (a, b))) GR) => //=.
   - move=> b; apply/(@DCT_ncvg _ _
@@ -1084,27 +1057,29 @@ suff cvgΔ: (Δ @ \oo --> δ)%classic.
 * have cvgΔω : ((Δ \o ω) @ \oo --> δ)%classic.
   - exact: (cvg_comp ω Δ (cvg_homo_oo homo_ω) cvgΔ).
   apply: (ler_cvg_to (a := (\oo)%classic)
-            (f := fun n => L n - Ω ε * R n) (g := Δ \o ω)
+            (f := fun n => L n - Ω ε * Rr n) (g := Δ \o ω)
             (l := \P_[deliftL ξL] X - Ω ε * \P_[deliftR ξR] X) (l' := δ)).
   - exact: (cvgnB cvgL (cvgZl (c := Ω ε) cvgR)).
   - exact: cvgΔω.
-  apply: nearW => n; rewrite /= lerBlDr addrC /L /R.
-  have := exlift_edist (elift_dfinrestr (ω n)) => /edist_le.
+  apply: nearW => n; rewrite /= lerBlDr addrC /L /Rr.
+  have := exlift_edist (elift_dfinrestr (ω n)) => /(edist_le gt0_Ω).
   by move/(_ ge0_ε X); rewrite -/(ηL _) -/(ηR _).
-suff hp : ((fun n => \P_[μ2] (predC (mem (E n)))) @ \oo --> 0)%classic.
+suff hp : ((fun n => \P_[μ2] (predC (mem (cB n)))) @ \oo --> 0)%classic.
 * have h := cvgnD (cvgZl (c := Ω ε) hp) (cvg_cst (F := (\oo)%classic) δ).
   by rewrite mulr0 add0r in h; exact: h.
-have -> : (fun n => \P_[μ2] (predC (mem (E n))))
-        = (fun n => rsum (fun b => ((predC (mem (E n))) b)%:R * μ2 b)).
+have -> : (fun n => \P_[μ2] (predC (mem (cB n))))
+        = (fun n => rsum (fun b => ((predC (mem (cB n))) b)%:R * μ2 b)).
 * by apply/funext => n; rewrite prE_rsum.
 rewrite -(@rsum0 _ B); apply/(DCT_ncvg (g := μ2)) => //=.
-* move=> b; apply: cvg_near_cst; near=> n.
-  have hb : b \in E n.
-  - rewrite /E seq_fsetE mem_pmap; apply/mapP; exists (choice.pickle b).
-    + rewrite mem_iota leq0n add0n; near: n; apply: nbhs_infty_gt.
-    + by rewrite choice.pickleK.
-  by rewrite /= hb /= mul0r.
+* (* off the support the summand is [0] outright; on it, [exhB] kills the *)
+  (* indicator from some rank on.                                        *)
+  move=> b; case/boolP: (b \in dinsupp μ2) => [/exhB[N hN]|/dinsuppPn h0].
+  - apply: cvg_near_cst; near=> n.
+    by rewrite /= (hN n) /= ?mul0r //; near: n; apply: nbhs_infty_ge.
+  by apply: cvg_near_cst; apply: nearW => n; rewrite h0 mulr0.
 * move=> n b; rewrite ger0_norm ?mulr_ge0 ?ler0n //.
   by rewrite ler_piMl // lern1 leq_b1.
 Unshelve. all: end_near. Qed.
 End CountableStrassen.
+
+End StrassenTheory.
