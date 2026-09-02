@@ -259,8 +259,6 @@ Section Lift.
 Variable (R : realType) (A B : codeType) (X Xg : eqType)
          (M: memType A B X Xg).
 
-Notation rident := (X * side)%type.
-
 Definition irexpr s :=
   (@iexpr A B _ _ _ _ M (rmem A B X Xg M)
      (fun x : X => (x, s)) (fun x : Xg => (x, s))
@@ -274,7 +272,6 @@ Definition ircmd s :=
 End Lift.
 
 (* -------------------------------------------------------------------- *)
-Notation rident ident := (ident * side)%type.
 
 Notation irvar s := (@ivar _ _ _ (fun x => (x, s))) (only parsing).
 Notation girvar s := (@givar _ _ _ (fun x => (x, s))) (only parsing).

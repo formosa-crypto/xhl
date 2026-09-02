@@ -15,7 +15,6 @@ depends: [
   "dune"
   "coq-mathcomp-algebra"   { >= "2.4" }
   "coq-mathcomp-classical" { >= "1.13" }
-  "coq-mathcomp-experimental-reals" { >= "1.13" }
   "coq-mathcomp-ssreflect" { >= "2.4" }
 ]
 
@@ -25,7 +24,6 @@ pin-depends: [
   [ "coq-mathcomp-reals-stdlib.dev"       "git+https://github.com/lyonel2017/analysis.git#feature-esum-psum" ]
   [ "coq-mathcomp-analysis.dev"           "git+https://github.com/lyonel2017/analysis.git#feature-esum-psum" ]
   [ "coq-mathcomp-analysis-stdlib.dev"    "git+https://github.com/lyonel2017/analysis.git#feature-esum-psum" ]
-  [ "coq-mathcomp-experimental-reals.dev" "git+https://github.com/lyonel2017/analysis.git#feature-esum-psum" ]
 ]
 
 build: [ "dune" "build" "-p" name "-j" jobs ]
