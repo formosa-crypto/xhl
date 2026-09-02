@@ -55,6 +55,17 @@ Reasons about *expected values* rather than probabilities.
 Expectation-Based Properties: Applications to Skiplists and Security Proofs*,
 OOPSLA 2024.
 
+### `erhl/` — Quantitative probabilistic relational Hoare logic
+
+The relational counterpart of `ehl/`: pre- and post-conditions are relational
+*expectations*, and validity is witnessed by ★-couplings, so the two programs
+need not have the same termination probability.  `erhl_stmt.v` holds the
+definitions (★-extension, ★-couplings, the two forms of validity, contracts);
+`erhl.v` holds the deductive system.
+
+*Reference:* Avanzini, Barthe, Davoli, Grégoire — *A Quantitative Probabilistic
+Relational Hoare Logic*, POPL 2025.
+
 ### `ellora/` — Ellora: a distributional Hoare logic
 
 A Hoare logic whose assertions are predicates over distributions.
