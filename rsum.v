@@ -131,6 +131,47 @@ rewrite -lee_fin !rsumE //; apply: le_esum => x _.
 by rewrite lee_fin; have /andP[_ ->] := fg x.
 Qed.
 
+(* The converse of [gerfinseq_rsum]: [rsum] is approached from below by    *)
+(* its finite partial sums.  This is the tightness input of               *)
+(* [dlim_weight1] (erhl/erhl_stmt.v).                                     *)
+Lemma rsum_approx f (e : R) : (forall x, 0 <= f x) ->
+  esummable [set: T] (EFin \o f) -> 0 < e ->
+  exists2 r : seq T, uniq r & rsum f - e < \sum_(x <- r) f x.
+Proof.
+move=> f0 sf e0.
+have fin := esummable_esum_fin_num sf.
+have E : \esum_(x in [set: T]) (f x)%:E
+       = ereal_sup [set \sum_(x \in B) (f x)%:E | B in fsets [set: T]].
++ by rewrite ge0_esum // => x _; rewrite lee_fin.
+have finsup : ereal_sup [set \sum_(x \in B) (f x)%:E | B in fsets [set: T]]
+                \is a fin_num by rewrite -E.
+have [x [B [finB _] <-] hlt] := ub_ereal_sup_adherent e0 finsup.
+exists (fset_set B); first exact: fset_uniq.
+rewrite -lte_fin EFinB (rsumE sf) E.
+by rewrite -sumEFin -fsbig_finite.
+Qed.
+
+(* Pinching: below a summable bound, equal totals force equality.         *)
+Lemma le_rsum_eqP f g : (forall x, 0 <= f x <= g x) ->
+  esummable [set: T] (EFin \o g) -> rsum f = rsum g -> f =1 g.
+Proof.
+move=> fg sg eqfg x.
+have h0 : forall y, 0 <= g y - f y.
++ by move=> y; rewrite subr_ge0; case/andP: (fg y).
+have hle : forall y, g y - f y <= g y.
++ by move=> y; rewrite lerBlDr lerDl; case/andP: (fg y).
+have sh : esummable [set: T] (EFin \o (fun y => g y - f y)).
++ by apply: (le_esummable (g := EFin \o g)) => // y _; rewrite /= !lee_fin h0 hle.
+have hB : rsum (fun y => g y - f y) = 0.
++ by rewrite rsumB ?eqfg ?subrr // => y; rewrite (h0 y) /=; case/andP: (fg y).
+have key : forall y, (@setT T) y -> (0 <= ((g y - f y)%:E))%E.
++ by move=> y _; rewrite lee_fin h0.
+have hz : \esum_(y in [set: T]) ((g y - f y)%:E) = 0%E.
++ by rewrite -(rsumE sh) hB.
+have h := @esum_eq0P R T setT (fun y => ((g y - f y)%:E)) key hz x I.
+by move: h => /eqP; rewrite eqe subr_eq0 => /eqP; exact/esym.
+Qed.
+
 End RSum.
 
 Lemma rsum_fin {R : realType} {I : finType} (f : I -> R) :
@@ -172,6 +213,15 @@ Lemma prE_rsum {R : realType} {T : choiceType}
     (mu : {distr T / R}) (E : pred T) :
   \P_[mu] E = rsum (fun x => (E x)%:R * mu x).
 Proof. by []. Qed.
+
+Lemma pr_approx {R : realType} {T : choiceType} (mu : {distr T / R}) (e : R) :
+  0 < e -> exists2 r : seq T, uniq r & dweight mu - e < \sum_(x <- r) mu x.
+Proof.
+move=> e0.
+have -> : dweight mu = rsum mu.
++ by rewrite prE_rsum; apply: eq_rsum => x /=; rewrite mul1r.
+by apply: rsum_approx; [exact: ge0_mu | exact: summable_mu | exact: e0].
+Qed.
 
 Lemma dfstE_rsum {R : realType} {T U : choiceType}
     (mu : {distr (T * U)%type / R}) x :
@@ -256,3 +306,123 @@ move=> sf; have sfs := esummable_option sf.
 rewrite /rsum (esum_option sf) fineD //.
 by apply: (esummable_esum_fin_num sfs).
 Qed.
+
+(* ==================================================================== *)
+(* Tightness: a pointwise limit of distributions with full, converging   *)
+(* marginals keeps all of its mass.                                      *)
+(*                                                                      *)
+(* Fatou alone would only give [dfst (dlim nu) <=1 P]; mass genuinely    *)
+(* can escape under a pointwise limit, and what rules that out here is   *)
+(* that [P] and [Q] have weight 1.  The argument is the standard one:    *)
+(* approximate [P] and [Q] by finite partial sums ([pr_approx]), observe *)
+(* that inclusion/exclusion bounds [nu n] from below on the product of   *)
+(* the two finite sets *uniformly in [n]*, and pass to the limit there   *)
+(* -- a finite sum, so no exchange of limit and infinite sum is needed.  *)
+(* ==================================================================== *)
+Section PrSeq.
+Context {R : realType} {A B : choiceType}.
+
+Lemma pr_fstseq (mu : {distr (A * B)%type / R}) (F : seq A) :
+  uniq F -> \P_[mu] [pred p | p.1 \in F] = \sum_(a <- F) dfst mu a.
+Proof.
+move=> uF; rewrite -(pr_mem _ uF) (pr_dmargin _ fst).
+by apply/eq_pr => p; rewrite !inE.
+Qed.
+
+Lemma pr_sndseq (mu : {distr (A * B)%type / R}) (G : seq B) :
+  uniq G -> \P_[mu] [pred p | p.2 \in G] = \sum_(b <- G) dsnd mu b.
+Proof.
+move=> uG; rewrite -(pr_mem _ uG) (pr_dmargin _ snd).
+by apply/eq_pr => p; rewrite !inE.
+Qed.
+
+(* The pointwise-convergence hypothesis cannot be weakened to a bound on  *)
+(* [limn_einf]: [liminf] is superadditive, so summing it gives the wrong  *)
+(* inequality.                                                           *)
+Lemma dlim_weight1 (nu : nat -> {distr (A * B)%type / R})
+    (P : {distr A / R}) (Q : {distr B / R}) :
+  dweight P = 1 -> dweight Q = 1 ->
+  (forall a, ((fun n => dfst (nu n) a) @ \oo --> P a)%classic) ->
+  (forall b, ((fun n => dsnd (nu n) b) @ \oo --> Q b)%classic) ->
+  (forall p, cvgn (fun n => nu n p)) ->
+  dweight (dlim nu) = 1.
+Proof.
+move=> wP wQ cP cQ cnu.
+apply/eqP; rewrite eq_le le1_pr /=; apply/ler_addgt0Pr => e e0.
+have e20 : 0 < e / 2 by rewrite divr_gt0.
+have [F uF hF] := pr_approx P e20.
+have [G uG hG] := pr_approx Q e20.
+rewrite wP in hF; rewrite wQ in hG.
+pose FG := [seq (a, b) | a <- F, b <- G].
+have uFG : uniq FG := uniq_allpairs_pair uF uG.
+(* inclusion/exclusion, uniformly in [n] *)
+have key : forall n,
+    (\sum_(a <- F) dfst (nu n) a) + (\sum_(b <- G) dsnd (nu n) b) - 1
+      <= \sum_(p <- FG) nu n p.
++ move=> n; rewrite -(pr_fstseq _ uF) -(pr_sndseq _ uG) -(pr_mem _ uFG).
+  have -> : \P_[nu n] [pred x | x \in FG]
+          = \P_[nu n] [predI [pred p | p.1 \in F] & [pred p | p.2 \in G]].
+  + by apply: eq_pr => p; rewrite !inE /= mem_allpairs_pair.
+  by rewrite pr_and lerD2l lerN2 le1_pr.
+(* pass to the limit inside the finite sum *)
+have cvgL : ((fun n => \sum_(p <- FG) nu n p) @ \oo
+               --> \sum_(p <- FG) dlim nu p)%classic.
++ by apply: cvg_bigseq => p; exact: cvg_dlim_pt.
+have cvgR : ((fun n => (\sum_(a <- F) dfst (nu n) a)
+                     + (\sum_(b <- G) dsnd (nu n) b) - 1) @ \oo
+               --> (\sum_(a <- F) P a) + (\sum_(b <- G) Q b) - 1)%classic.
++ apply: cvgnB; last exact: cvg_cst.
+  by apply: cvgnD; apply: cvg_bigseq.
+have nkey : (\forall n \near \oo,
+    (\sum_(a <- F) dfst (nu n) a) + (\sum_(b <- G) dsnd (nu n) b) - 1
+      <= \sum_(p <- FG) nu n p)%classic.
++ by apply: nearW; exact: key.
+have step : (\sum_(a <- F) P a) + (\sum_(b <- G) Q b) - 1
+              <= \sum_(p <- FG) dlim nu p.
++ exact: (ler_cvg_to cvgR cvgL nkey).
+have hlast : \sum_(p <- FG) dlim nu p <= dweight (dlim nu).
++ by rewrite -(pr_mem _ uFG); apply: subset_pr => q; rewrite !inE.
+have hsum : (1 - e / 2) + (1 - e / 2) = 1 + (1 - e).
++ by rewrite addrACA -opprD -splitr addrA.
+apply: ltW; rewrite -ltrBlDr.
+apply: (lt_le_trans _ (le_trans step hlast)).
+rewrite ltrBrDr addrC -hsum.
+exact: ltrD hF hG.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+(* A finite partial sum of a section of a joint distribution is bounded   *)
+(* by the corresponding marginal.                                        *)
+Lemma sum_seq_le_dfst (mu : {distr (A * B)%type / R}) (a : A) (J : seq B) :
+  uniq J -> \sum_(b <- J) mu (a, b) <= dfst mu a.
+Proof.
+move=> uJ.
+have uP : uniq [seq (a, b) | b <- J].
++ by rewrite map_inj_uniq // => x y [].
+rewrite -(big_map (fun b => (a, b)) predT mu) -(pr_mem _ uP).
+have -> : dfst mu a = \P_[mu] [pred p | p.1 \in pred1 a].
++ by rewrite -(pr_dmargin _ fst) -pr_pred1.
+by apply: subset_pr => p; rewrite !inE => /mapP[b _ ->]; rewrite /= eqxx.
+Qed.
+
+Lemma sum_seq_le_dsnd (mu : {distr (A * B)%type / R}) (b : B) (J : seq A) :
+  uniq J -> \sum_(a <- J) mu (a, b) <= dsnd mu b.
+Proof.
+move=> uJ.
+have uP : uniq [seq (a, b) | a <- J].
++ by rewrite map_inj_uniq // => x y [].
+rewrite -(big_map (fun a => (a, b)) predT mu) -(pr_mem _ uP).
+have -> : dsnd mu b = \P_[mu] [pred p | p.2 \in pred1 b].
++ by rewrite -(pr_dmargin _ snd) -pr_pred1.
+by apply: subset_pr => p; rewrite !inE => /mapP[a _ ->]; rewrite /= eqxx.
+Qed.
+
+Lemma dweight_dfst (nu : {distr (A * B)%type / R}) :
+  dweight (dfst nu) = dweight nu.
+Proof. by rewrite (pr_dmargin predT fst nu) (eq_pr (B := predT)). Qed.
+
+Lemma dweight_dsnd (nu : {distr (A * B)%type / R}) :
+  dweight (dsnd nu) = dweight nu.
+Proof. by rewrite (pr_dmargin predT snd nu) (eq_pr (B := predT)). Qed.
+
+End PrSeq.
