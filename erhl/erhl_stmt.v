@@ -3,6 +3,7 @@ From mathcomp           Require Import boot order algebra.
 From mathcomp.classical Require Import boolp classical_sets.
 From mathcomp.reals     Require Import reals constructive_ereal.
 From mathcomp.analysis  Require Import esum ereal counting_distr.
+From mathcomp.analysis  Require Import sequences normedtype topology.
 From mathcomp           Require finmap.
 From xhl                Require Import misc rsum.
 From xhl.pwhile         Require Import notations inhabited pwhile psemantic passn range.
@@ -10,6 +11,7 @@ From xhl.prhl           Require Import prhl.
 From xhl.ehl            Require Import ehl_stmt.
 
 Import GRing.Theory Order.Theory Num.Theory.
+Import numFieldNormedType.Exports.
 
 Local Open Scope syn_scope.
 Local Open Scope mem_scope.
@@ -616,6 +618,32 @@ case=> h1 _; have := dweight_dstar d1; rewrite -h1 (pr_dmargin predT fst nu).
 by rewrite (eq_pr (B := predT)).
 Qed.
 
+(* When both sides are lossless, a star-coupling puts no mass on a pair    *)
+(* with a [None] component: [dstar_full] kills the [None] cell of either   *)
+(* marginal, and [le_dfst] / [le_dsnd] propagate that to the joint.        *)
+Lemma scoupling_full_supp (D1 D2 : Distr cmem)
+    (nu : Distr (option cmem * option cmem)%type) :
+  dweight D1 = 1 -> dweight D2 = 1 -> scoupling D1 D2 nu ->
+  forall p, p \in dinsupp nu ->
+    (if p is (Some _, Some _) then true else false).
+Proof.
+move=> w1 w2 hnu.
+have hz1 : forall b, nu (None, b) = 0.
++ move=> b; apply/eqP; rewrite eq_le ge0_mu andbT.
+  by have := le_dfst nu (None, b); rewrite (proj1 hnu) /= (dstar_full D1 w1).
+have hz2 : forall a, nu (a, None) = 0.
++ move=> a; apply/eqP; rewrite eq_le ge0_mu andbT.
+  by have := le_dsnd nu (a, None); rewrite (proj2 hnu) /= (dstar_full D2 w2).
+case=> [[a|] [b|]] hin //.
++ have h : (Some a, @None cmem) \notin dinsupp nu by apply/dinsuppPn; exact: hz2.
+  by rewrite hin in h.
++ have h : (@None cmem, Some b) \notin dinsupp nu by apply/dinsuppPn; exact: hz1.
+  by rewrite hin in h.
+have h : (@None cmem, @None cmem) \notin dinsupp nu
+  by apply/dinsuppPn; exact: hz1.
+by rewrite hin in h.
+Qed.
+
 Lemma espe_indic {T : choiceType} (mu : Distr T) (E : pred T) :
   espe mu (fun x => ((E x)%:R)%:E) = (\P_[mu] E)%:E.
 Proof. by rewrite prE; apply: eq_esum => x _; rewrite EFinM. Qed.
@@ -638,6 +666,75 @@ have hAb : (0 <= A (a, b))%E by exact: hA.
 have hBb : (0 <= B (a, b))%E by exact: hB.
 by rewrite (ge0_muleDl _ hAb hBb).
 Qed.
+
+(* ==================================================================== *)
+(*                        THE TRUSTED BASE                               *)
+(*                                                                      *)
+(* The three -- and only three -- facts this development assumes.  Each  *)
+(* is a textbook statement of measure theory, stated here for            *)
+(* [{distr _ / _}] because mathcomp-analysis proves them only for the    *)
+(* Lebesgue integral (see [fatou] in                                    *)
+(* analysis/lebesgue_integral_theory/, which is about [\int[mu]_] over a *)
+(* [measurableType] and has no [esum] counterpart).                     *)
+(*                                                                      *)
+(* Nothing else in erhl/ is admitted; [Print Assumptions soundness]      *)
+(* reports exactly these plus mathcomp-classical's usual three.          *)
+(* ==================================================================== *)
+
+(* ---------------------------------------------------------------------- *)
+(* (1) Fatou's lemma for [esum]/[espe].                                    *)
+(*                                                                        *)
+(* This is [esum_dlim_r] (analysis/probability_theory/counting_distr.v)    *)
+(* with its [nd f] hypothesis deleted and [<= r] weakened to [<= liminf].  *)
+(* Recall [dlim] is the *unconditional* pointwise liminf ([dlim_EFin]), so *)
+(* no monotonicity is implied.  The [0 <= E] side condition is the one     *)
+(* [esum_dlim_r] carries, and is not cosmetic: [esum] on a signed family   *)
+(* is a Jordan difference [pos_esum E^+ - pos_esum E^-].                   *)
+Axiom espe_fatou :
+  forall {T : choiceType} (f : nat -> Distr T) (E : T -> \bar R),
+    (forall x, (0 <= E x)%E) ->
+    (espe (dlim f) E <= limn_einf (fun n => espe (f n) E))%E.
+
+(* ---------------------------------------------------------------------- *)
+(* (2) Sequential compactness of [Distr T] for the topology of pointwise   *)
+(* convergence -- the [choiceType] generalisation of [strcvg]              *)
+(* (strassen/strassen.v), stated verbatim in its [R]-valued form.          *)
+(*                                                                        *)
+(* Unlike the other two this one is provable *inside this repository*, and *)
+(* should eventually be discharged.  Every [mu n] has countable support    *)
+(* ([summable_countn0], mathcomp/experimental_reals/realsum.v), so         *)
+(* [cunion_countable] (experimental_reals/discrete.v) makes the union of   *)
+(* the supports countable, [countable_countMixin] packs it as a            *)
+(* [countType], and the Cantor diagonal of [strcvg] -- which rests on the  *)
+(* proved [BW], not on [strassen.v]'s [Axiom DCT] -- applies there.  What  *)
+(* is missing is only the plumbing between [Distr T] and [Distr [psub S]]. *)
+Axiom dcompact :
+  forall {T : choiceType} (mu : nat -> Distr T),
+    { omega : nat -> nat
+    | {homo omega : x y / (x < y)%N}
+    & forall x, cvgn (fun n => mu (omega n) x) }.
+
+(* ---------------------------------------------------------------------- *)
+(* (3) Strassen's theorem with deficiency (paper Prop. 3.2), in            *)
+(* star-coupling form.  Sole consumer: [erhl_strassen] (erhl/erhl.v).      *)
+(*                                                                        *)
+(* strassen/strassen.v cannot supply it: it declares its own              *)
+(* [Parameter R : realType] (via elift.v), which no [Parameter] can be     *)
+(* made to agree with pwhile's; [CountableStrassen] needs [countType]      *)
+(* while [cmem] is a dependent product over all [IhbType.type]s; what it   *)
+(* produces is an [elift], i.e. a *pair* of half-couplings, and the merge  *)
+(* into a single coupling has no support anywhere in the repo; and it      *)
+(* assumes [Axiom DCT] anyway.                                            *)
+(*                                                                        *)
+(* The converse direction is *proved*, without this axiom and without any  *)
+(* termination hypothesis, as [erhl_strassenInv] (erhl/erhl.v).            *)
+Axiom strassen_deficiency :
+  forall (D1 D2 : Distr cmem) (Rl : rel cmem) (delta : R),
+    dweight D1 = 1 -> dweight D2 = 1 -> 0 <= delta ->
+    (forall M : pred cmem, \P_[D1] M <= \P_[D2] (rimage Rl M) + delta) ->
+    exists2 nu, scoupling D1 D2 nu &
+      (espe nu (rstar (fun m' : rmem => ((~~ Rl m'.1 m'.2)%:R)%:E))
+         <= delta%:E)%E.
 
 (* ==================================================================== *)
 (* Validity                                                              *)
@@ -751,20 +848,153 @@ Lemma psharp_lbound (D1 D2 : Distr cmem) (g : rcond)
   scoupling D1 D2 nu -> (psharp g D1 D2 <= espe nu (rstar g))%E.
 Proof. by move=> h; apply: ereal_inf_lbound; exists nu. Qed.
 
+Lemma ge0_espe_rstar (nu : Distr (option cmem * option cmem)%type) (g : rcond) :
+  (forall m, (0 <= g m)%E) -> (0 <= espe nu (rstar g))%E.
+Proof.
+move=> hg; apply: esum_ge0 => p _.
+by apply: mule_ge0; [apply: ge0_rstar | rewrite lee_fin ge0_mu].
+Qed.
+
 (* --------------------------------------------------------------------- *)
-(* THE single analytic fact this development assumes: the infimum over     *)
-(* star-couplings is ATTAINED.  Everything else about Lemma 4.2 -- and     *)
-(* hence [erhl_conseq] / [kerhl_conseq] -- is derived from it below, so    *)
-(* this is the only hole left by the [Conseq] rules.                       *)
-(* The non-negativity hypothesis is NOT cosmetic: [esum] on a signed family *)
-(* is a Jordan difference [pos_esum f^+ - pos_esum f^-], and for a [g]      *)
-(* unbounded below the infimum need not be attained (nor even meaningful    *)
-(* when both parts diverge).  For [0 <= g] the objective is lower           *)
-(* semicontinuous and the standard compactness argument applies.            *)
+(* The compactness core, shared by [psharp_attained] and [psharp_dlim].    *)
+(*                                                                       *)
+(* From a sequence of star-couplings whose marginals converge pointwise,  *)
+(* [dcompact] extracts a pointwise-convergent subsequence; its limit is   *)
+(* again a star-coupling, and the objective is lower semicontinuous along *)
+(* it.  Two things do the work.  [dlim_weight1] (rsum.v) says no mass     *)
+(* escapes -- which is where the fullness of [dstar _] is used, and which *)
+(* Fatou alone could never give, since Fatou only ever yields [<=].  The  *)
+(* pinching lemma [le_rsum_eqP] then upgrades the two marginal            *)
+(* inequalities to equalities.  Only the last step uses [espe_fatou].     *)
+Lemma scoupling_lim (mu1 mu2 : nat -> Distr cmem) (D1 D2 : Distr cmem)
+    (nu : nat -> Distr (option cmem * option cmem)%type) (g : rcond) :
+  (forall n, scoupling (mu1 n) (mu2 n) (nu n)) ->
+  (forall a, ((fun n => dstar (mu1 n) a) @ \oo --> dstar D1 a)%classic) ->
+  (forall b, ((fun n => dstar (mu2 n) b) @ \oo --> dstar D2 b)%classic) ->
+  (forall m, (0 <= g m)%E) ->
+  exists2 nu0, scoupling D1 D2 nu0 &
+    exists2 omega : nat -> nat, {homo omega : x y / (x < y)%N} &
+      (espe nu0 (rstar g)
+         <= limn_einf (fun n => espe (nu (omega n)) (rstar g)))%E.
+Proof.
+move=> hnu c1 c2 hg.
+have [omega homo_om cvom] := dcompact nu.
+pose nu0 := dlim (fun n => nu (omega n)).
+have hf : forall n, dfst (nu (omega n)) = dstar (mu1 (omega n)).
++ by move=> n; case: (hnu (omega n)).
+have hs : forall n, dsnd (nu (omega n)) = dstar (mu2 (omega n)).
++ by move=> n; case: (hnu (omega n)).
+have c1' : forall a, ((fun n => dstar (mu1 (omega n)) a) @ \oo
+                        --> dstar D1 a)%classic.
++ move=> a.
+  by apply: (cvg_comp omega (fun k => dstar (mu1 k) a)
+               (cvg_homo_oo homo_om) (c1 a)).
+have c2' : forall b, ((fun n => dstar (mu2 (omega n)) b) @ \oo
+                        --> dstar D2 b)%classic.
++ move=> b.
+  by apply: (cvg_comp omega (fun k => dstar (mu2 k) b)
+               (cvg_homo_oo homo_om) (c2 b)).
+have cf : forall a, ((fun n => dfst (nu (omega n)) a) @ \oo
+                        --> dstar D1 a)%classic.
++ move=> a; have -> : (fun n => dfst (nu (omega n)) a)
+                    = (fun n => dstar (mu1 (omega n)) a).
+  - by apply: funext => n; rewrite hf.
+  exact: c1' a.
+have cs : forall b, ((fun n => dsnd (nu (omega n)) b) @ \oo
+                        --> dstar D2 b)%classic.
++ move=> b; have -> : (fun n => dsnd (nu (omega n)) b)
+                    = (fun n => dstar (mu2 (omega n)) b).
+  - by apply: funext => n; rewrite hs.
+  exact: c2' b.
+have wt : dweight nu0 = 1.
++ by apply: (dlim_weight1 (dweight_dstar D1) (dweight_dstar D2) cf cs cvom).
+(* the two marginal inequalities, from finite partial sums *)
+have le1 : forall a, dfst nu0 a <= dstar D1 a.
++ move=> a; rewrite dfstE_rsum; apply: rsum_le; first by move=> b; exact: ge0_mu.
+  move=> J uJ.
+  have cvJ : ((fun n => \sum_(b <- J) nu (omega n) (a, b)) @ \oo
+                --> \sum_(b <- J) nu0 (a, b))%classic.
+  + by apply: cvg_bigseq => b; exact: cvg_dlim_pt.
+  have hnear : (\forall n \near \oo,
+      \sum_(b <- J) nu (omega n) (a, b) <= dstar (mu1 (omega n)) a)%classic.
+  + by apply: nearW => n; rewrite -(hf n); exact: sum_seq_le_dfst.
+  have : \sum_(b <- J) nu0 (a, b) <= dstar D1 a
+    by exact: (ler_cvg_to cvJ (c1' a) hnear).
+  by [].
+have le2 : forall b, dsnd nu0 b <= dstar D2 b.
++ move=> b; rewrite dsndE_rsum; apply: rsum_le; first by move=> a; exact: ge0_mu.
+  move=> J uJ.
+  have cvJ : ((fun n => \sum_(a <- J) nu (omega n) (a, b)) @ \oo
+                --> \sum_(a <- J) nu0 (a, b))%classic.
+  + by apply: cvg_bigseq => a; exact: cvg_dlim_pt.
+  have hnear : (\forall n \near \oo,
+      \sum_(a <- J) nu (omega n) (a, b) <= dstar (mu2 (omega n)) b)%classic.
+  + by apply: nearW => n; rewrite -(hs n); exact: sum_seq_le_dsnd.
+  have : \sum_(a <- J) nu0 (a, b) <= dstar D2 b
+    by exact: (ler_cvg_to cvJ (c2' b) hnear).
+  by [].
+(* mass preservation pinches them into equalities *)
+have hfst : dfst nu0 = dstar D1.
++ apply/distr_eqP; apply: (le_rsum_eqP (g := dstar D1)).
+  - by move=> a; rewrite ge0_mu /= le1.
+  - exact: summable_mu.
+  have e1 : rsum (dfst nu0) = 1 by rewrite -dweightE dweight_dfst wt.
+  by rewrite e1 -dweightE dweight_dstar.
+have hsnd : dsnd nu0 = dstar D2.
++ apply/distr_eqP; apply: (le_rsum_eqP (g := dstar D2)).
+  - by move=> b; rewrite ge0_mu /= le2.
+  - exact: summable_mu.
+  have e2 : rsum (dsnd nu0) = 1 by rewrite -dweightE dweight_dsnd wt.
+  by rewrite e2 -dweightE dweight_dstar.
+exists nu0; first by split.
+exists omega => //.
+by apply: espe_fatou => p; apply: ge0_rstar.
+Qed.
+
+(* --------------------------------------------------------------------- *)
+(* The infimum over star-couplings is ATTAINED.                            *)
+(*                                                                       *)
+(* The non-negativity hypothesis is NOT cosmetic: [esum] on a signed      *)
+(* family is a Jordan difference [pos_esum g^+ - pos_esum g^-], and for a *)
+(* [g] unbounded below the infimum need not be attained (nor even be      *)
+(* meaningful when both parts diverge).                                   *)
 Lemma psharp_attained (D1 D2 : Distr cmem) (g : rcond) :
   (forall m, (0 <= g m)%E) ->
   exists2 nu, scoupling D1 D2 nu & espe nu (rstar g) = psharp g D1 D2.
-Proof. Admitted.
+Proof.
+move=> hg.
+have h0 : (0 <= psharp g D1 D2)%E.
++ by apply: le_ereal_inf_tmp => _ [nu _ <-]; exact: ge0_espe_rstar.
+case: (eqVneq (psharp g D1 D2) (+oo)%E) => [hoo|hfin].
++ (* the infimum of a nonempty set is [+oo] only if every element is *)
+  have [nu hnu] := exists_scoupling D1 D2.
+  exists nu => //; apply/eqP; rewrite eq_le hoo leey /=.
+  by rewrite -hoo; exact: psharp_lbound.
+have hfn : psharp g D1 D2 \is a fin_num by rewrite ge0_fin_numE // ltey.
+have [c hcE] : exists c : R, psharp g D1 D2 = c%:E.
++ by exists (fine (psharp g D1 D2)); rewrite fineK.
+(* a minimising sequence, with harmonic error *)
+have hseq : forall n : nat, exists nu, scoupling D1 D2 nu
+              /\ (espe nu (rstar g) <= (c + harmonic n)%:E)%E.
++ move=> n.
+  have [x [nu hnu <-] hlt] := lb_ereal_inf_adherent (harmonic_gt0 n) hfn.
+  by exists nu; split=> //; apply: ltW; rewrite EFinD -hcE.
+have [nu hnuP] := choice hseq.
+have hcst1 : forall a, ((fun _ : nat => dstar D1 a) @ \oo
+                          --> dstar D1 a)%classic by move=> a; exact: cvg_cst.
+have hcst2 : forall b, ((fun _ : nat => dstar D2 b) @ \oo
+                          --> dstar D2 b)%classic by move=> b; exact: cvg_cst.
+have [nu0 hnu0 [omega homo_om hle]] :=
+  scoupling_lim (fun _ => D1) (fun _ => D2) D1 D2 nu g
+    (fun n => proj1 (hnuP n)) hcst1 hcst2 hg.
+exists nu0 => //; apply/eqP; rewrite eq_le; apply/andP; split;
+  last exact: psharp_lbound.
+apply: (le_trans hle); rewrite hcE; apply: limn_einf_le_harmonic => n.
+apply: (le_trans (proj2 (hnuP (omega n)))).
+(* [n <= omega n], and [harmonic] is antitone *)
+rewrite lee_fin lerD2l /harmonic /= lef_pV2 ?posrE ?ltr0n //.
+by rewrite ler_nat ltnS homo_geidfun.
+Qed.
 (* --------------------------------------------------------------------- *)
 
 (* The [->] half of Lemma 4.2 needs no hypothesis. *)
@@ -793,15 +1023,61 @@ by move=> hg; split=> h m; apply/(erhl_ierhl_pt _ _ _ _ hg); exact: h.
 Qed.
 
 (* --------------------------------------------------------------------- *)
-(* The second (and last) analytic fact assumed: a bound on [psharp] that   *)
-(* holds at every stage of a monotone approximation survives the limit.    *)
-(* This is what the paper calls "the sequence of star-couplings converges, *)
-(* in a certain sense, to a star-coupling"; it is the exact analogue of    *)
-(* [esum_dlim_r], which does the same job for the unary logic [ehl].       *)
-(*                                                                        *)
-(* Note it cannot be proved by exhibiting a monotone family of             *)
-(* star-couplings: they all have weight 1 (see [dweight_scoupling]), so a   *)
-(* nondecreasing family is constant.  Used by [erhl_while] and             *)
+(* Along a monotone approximation the weights converge, hence so do the    *)
+(* star-extensions -- at [Some x] by [dlim_limE], at [None] because        *)
+(* [dstar _ None = 1 - dweight _].                                        *)
+Lemma cvg_dweight_dlim (mu : nat -> Distr cmem) :
+  (forall n p, (n <= p)%N -> mu n <=1 mu p) ->
+  ((fun n => dweight (mu n)) @ \oo --> dweight (dlim mu))%classic.
+Proof.
+move=> hmono.
+have nd_mu := dhomo_dnd hmono.
+have cvw : cvgn (fun n => dweight (mu n)).
++ apply: nondecreasing_is_cvgn.
+  - move=> n p le; rewrite !dweightE; apply: le_rsum; last exact: summable_mu.
+    by move=> x; rewrite ge0_mu /= (hmono n p le).
+  by exists 1 => _ [n _ <-]; exact: le1_pr.
+have hfe : (fun n => \esum_(x in [set: cmem]) (((predT x)%:R * mu n x)%:E))
+         = (fun n => (dweight (mu n))%:E).
++ by apply: funext => n; rewrite prE.
+have key : (dweight (dlim mu))%:E = limn (fun n => (dweight (mu n))%:E).
++ by rewrite prE (@esum_dlim _ _ mu nd_mu predT) hfe.
+have cvE : ((fun n => (dweight (mu n))%:E) @ \oo
+              --> (limn (fun n => dweight (mu n)))%:E)%classic.
++ by apply: cvg_EFin; [apply: nearW | exact: cvw].
+have hEq : limn (fun n => (dweight (mu n))%:E)
+         = (limn (fun n => dweight (mu n)))%:E by apply/cvg_lim.
+have -> : dweight (dlim mu) = limn (fun n => dweight (mu n)).
++ by apply/EFin_inj; rewrite key hEq.
+exact: cvw.
+Qed.
+
+Lemma cvg_dstar_dlim (mu : nat -> Distr cmem) :
+  (forall n p, (n <= p)%N -> mu n <=1 mu p) ->
+  forall a, ((fun n => dstar (mu n) a) @ \oo --> dstar (dlim mu) a)%classic.
+Proof.
+move=> hmono [x|].
++ have -> : (fun n => dstar (mu n) (Some x)) = (fun n => mu n x).
+  - by apply: funext => n; rewrite dstar_someE.
+  rewrite dstar_someE; apply: cvg_dlim_pt.
+  apply: nondecreasing_is_cvgn; first by move=> n p le; exact: hmono.
+  by exists 1 => _ [n _ <-]; exact: le1_mu1.
+have -> : (fun n => dstar (mu n) None) = (fun n => 1 - dweight (mu n)).
++ by apply: funext => n; rewrite dstar_noneE.
+rewrite dstar_noneE.
+by apply: cvgnB; [exact: cvg_cst | exact: cvg_dweight_dlim].
+Qed.
+
+(* --------------------------------------------------------------------- *)
+(* A [psharp] bound holding at every stage of a monotone approximation     *)
+(* survives the limit.  This is what the paper calls "the sequence of      *)
+(* star-couplings converges, in a certain sense, to a star-coupling"; it   *)
+(* is the analogue of [esum_dlim_r] for the unary logic [ehl].             *)
+(*                                                                       *)
+(* Note it could not be proved by exhibiting a *monotone* family of        *)
+(* star-couplings: they all have weight 1 ([dweight_scoupling]), so a      *)
+(* nondecreasing family is constant.  Hence [scoupling_lim], which works   *)
+(* with a merely convergent subsequence.  Used by [erhl_while] and         *)
 (* [recursive_proc].                                                       *)
 Lemma psharp_dlim (mu1 mu2 : nat -> Distr cmem) (g : rcond)
     (r : \bar pwhile.R) :
@@ -810,7 +1086,20 @@ Lemma psharp_dlim (mu1 mu2 : nat -> Distr cmem) (g : rcond)
   (forall m, (0 <= g m)%E) ->
   (forall n, (psharp g (mu1 n) (mu2 n) <= r)%E) ->
   (psharp g (dlim mu1) (dlim mu2) <= r)%E.
-Proof. Admitted.
+Proof.
+move=> h1 h2 hg hb.
+have hseq : forall n, exists nu, scoupling (mu1 n) (mu2 n) nu
+              /\ (espe nu (rstar g) <= r)%E.
++ move=> n; have [nu hnu heq] := psharp_attained (mu1 n) (mu2 n) g hg.
+  by exists nu; split=> //; rewrite heq; exact: hb.
+have [nu hnuP] := choice hseq.
+have [nu0 hnu0 [omega _ hle]] :=
+  scoupling_lim mu1 mu2 (dlim mu1) (dlim mu2) nu g
+    (fun n => proj1 (hnuP n)) (cvg_dstar_dlim mu1 h1) (cvg_dstar_dlim mu2 h2) hg.
+apply: (@le_trans _ _ (espe nu0 (rstar g))); first exact: psharp_lbound.
+apply: (le_trans hle); apply: limn_einf_le => n.
+exact: (proj2 (hnuP (omega n))).
+Qed.
 (* --------------------------------------------------------------------- *)
 
 End Validity.

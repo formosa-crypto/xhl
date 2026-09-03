@@ -612,6 +612,75 @@ by [].
 Qed.
 
 (* -------------------------------------------------------------------- *)
+(* [limn_einf] as a supremum, and the two upper bounds we need on it.     *)
+Lemma limn_einf_supE {R : realType} (u : (\bar R)^nat) :
+  limn_einf u = ereal_sup (range (einfs u)).
+Proof. by rewrite limn_einf_lim; apply/cvg_lim => //; exact: cvg_einfs_sup. Qed.
+
+Lemma limn_einf_le {R : realType} (u : (\bar R)^nat) (r : \bar R) :
+  (forall n, (u n <= r)%E) -> (limn_einf u <= r)%E.
+Proof.
+move=> h; rewrite limn_einf_supE; apply: ge_ereal_sup => _ [n _ <-].
+by apply: (le_trans _ (h n)); exact: (einfs_le u (leqnn n)).
+Qed.
+
+(* A minimising sequence with error [harmonic] has [liminf] below its      *)
+(* target: used to prove that [psharp] is attained.                        *)
+Lemma limn_einf_le_harmonic {R : realType} (u : (\bar R)^nat) (c : R) :
+  (forall n, (u n <= (c + harmonic n)%:E)%E) -> (limn_einf u <= c%:E)%E.
+Proof.
+move=> h; rewrite limn_einf_supE; apply: ge_ereal_sup => _ [n _ <-].
+have hR : ((fun m => c + harmonic m) @ \oo --> c)%classic.
++ rewrite -[X in (_ --> X)%classic]addr0.
+  by apply: cvgnD; [exact: cvg_cst | exact: cvg_harmonic].
+have hg : ((fun m => (c + harmonic m)%:E) @ \oo --> c%:E)%classic.
++ by apply: cvg_EFin; [apply: nearW | exact: hR].
+apply: (lee_cvg_to (f := fun=> einfs u n) (cvg_cst _) hg).
+near=> m; apply: (le_trans _ (h m)).
+by apply: einfs_le; near: m; exact: nbhs_infty_ge.
+Unshelve. all: end_near. Qed.
+
+(* -------------------------------------------------------------------- *)
+(* The pointwise limit of a convergent sequence of distributions is       *)
+(* [dlim] -- the non-monotone companion of [dlim_limE].                   *)
+Lemma cvg_dlim_pt {R : realType} {T : choiceType}
+    (f : nat -> {distr T / R}) x :
+  cvgn (fun n => f n x) -> ((fun n => f n x) @ \oo --> dlim f x)%classic.
+Proof. by move=> cv; rewrite (dlimE_cvg cv). Qed.
+
+(* -------------------------------------------------------------------- *)
+(* A finite sum of convergent sequences converges to the sum of the       *)
+(* limits.  [cvg_sum] (analysis/normedtype_theory/tvs.v) does not apply:  *)
+(* it needs a [TopologicalNmodule.type], which a bare [realType] is not.  *)
+Lemma cvg_bigseq {R : realType} {I : Type} (r : seq I)
+    (u : I -> nat -> R) (l : I -> R) :
+  (forall i, (u i @ \oo --> l i)%classic) ->
+  ((fun n => \sum_(i <- r) u i n) @ \oo --> \sum_(i <- r) l i)%classic.
+Proof.
+move=> hu; elim: r => [|i r ih].
++ rewrite big_nil; under eq_fun do rewrite big_nil; exact: cvg_cst.
+rewrite big_cons; under eq_fun do rewrite big_cons.
+exact: cvgnD (hu i) ih.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma mem_allpairs_pair {S T : eqType} (s : seq S) (t : seq T) (p : S * T) :
+  (p \in [seq (x, y) | x <- s, y <- t]) = (p.1 \in s) && (p.2 \in t).
+Proof.
+apply/idP/idP.
++ by case/allpairsP => q [hq1 hq2 ->] /=; rewrite hq1 hq2.
+by case: p => a b /andP[h1 h2]; exact: allpairs_f.
+Qed.
+
+Lemma uniq_allpairs_pair {S T : eqType} (s : seq S) (t : seq T) :
+  uniq s -> uniq t -> uniq [seq (x, y) | x <- s, y <- t].
+Proof.
+move=> us ut.
+apply: (@allpairs_uniq S T (S * T)%type (fun x y => (x, y)) s t) => //.
+by move=> [a1 b1] [a2 b2] _ _ /= [-> ->].
+Qed.
+
+(* -------------------------------------------------------------------- *)
 Lemma bounded_funP {R : realType} (u : nat -> R) (M : R) :
   (forall n, `|u n| <= M) -> bounded_fun u.
 Proof.

@@ -751,7 +751,85 @@ Lemma erhl_strassen (Rl : rel cmem) f c d :
      erhl (fun m : rmem => (1 + f m)%E) c d
           (fun m' : rmem => ((M m'.1)%:R + (~~ rimage Rl M m'.2)%:R)%:E)) ->
   erhl f c d (fun m' : rmem => ((~~ Rl m'.1 m'.2)%:R)%:E).
-Proof. Admitted.
+Proof.
+move=> hc hd h m.
+have w1 : dweight (ssem_ ps c m.1) = 1 by apply: hc; rewrite inE.
+have w2 : dweight (ssem_ ps d m.2) = 1 by apply: hd; rewrite inE.
+pose T (P : rmem -> bool) : pred (option cmem * option cmem)%type :=
+  [pred p | if p is (Some a, Some b) then P (a, b) else false].
+(* The hypothesis, read as a statement about the two marginals.  This is    *)
+(* exactly the computation of [erhl_strassenInv] run backwards; the extra   *)
+(* ingredient is [scoupling_full_supp], which is where losslessness enters: *)
+(* it lets [T _] be replaced by a predicate depending on one component      *)
+(* only, so that [pr_dmargin] and [pr_dstar] can push it to the marginal.   *)
+have hraw : forall M : pred cmem,
+    ((\P_[ssem_ ps c m.1] M)%:E
+       + (1 - \P_[ssem_ ps d m.2] (rimage Rl M))%:E <= 1 + f m)%E.
++ move=> M; case: (h M m) => nu hnu hle.
+  have hT : forall P : rmem -> bool,
+      espe nu (rstar (fun m' : rmem => ((P m')%:R)%:E)) = (\P_[nu] (T P))%:E.
+  - move=> P; rewrite -(espe_indic nu (T P)).
+    by apply: eexp_eq; case=> [[a|] [b|]]; rewrite /rstar.
+  have hsplit :
+    espe nu (rstar (fun m' : rmem =>
+               ((M m'.1)%:R + (~~ rimage Rl M m'.2)%:R)%:E))
+    = (espe nu (rstar (fun m' : rmem => ((M m'.1)%:R)%:E))
+     + espe nu (rstar (fun m' : rmem => ((~~ rimage Rl M m'.2)%:R)%:E)))%E.
+  - rewrite -espe_rstarD.
+    * by move=> ?; rewrite lee_fin ler0n.
+    * by move=> ?; rewrite lee_fin ler0n.
+    by apply: eexp_eq => p; rewrite /rstar; case: p => -[a|] [b|].
+  have e1 : \P_[nu] (T (fun m' => M m'.1)) = \P_[ssem_ ps c m.1] M.
+  - have -> : \P_[nu] (T (fun m' => M m'.1))
+            = \P_[nu] [pred x | fst x \in
+                        [pred o | if o is Some a then M a else false]].
+    * apply: eq_in_pr => p hp; move: (scoupling_full_supp _ _ _ w1 w2 hnu p hp).
+      by case: p hp => [[a|] [b|]] //= _ _; rewrite !inE.
+    by rewrite -(pr_dmargin _ fst) (proj1 hnu) pr_dstar.
+  have e2 : \P_[nu] (T (fun m' => ~~ rimage Rl M m'.2))
+          = 1 - \P_[ssem_ ps d m.2] (rimage Rl M).
+  - have -> : \P_[nu] (T (fun m' => ~~ rimage Rl M m'.2))
+            = \P_[nu] [pred x | snd x \in
+                        [pred o | if o is Some b
+                                  then ~~ rimage Rl M b else false]].
+    * apply: eq_in_pr => p hp; move: (scoupling_full_supp _ _ _ w1 w2 hnu p hp).
+      by case: p hp => [[a|] [b|]] //= _ _; rewrite !inE.
+    rewrite -(pr_dmargin _ snd) (proj2 hnu).
+    have -> : [pred o | if o is Some b then ~~ rimage Rl M b else false]
+            = [pred o : option cmem | if o is Some b
+                                      then (predC (rimage Rl M)) b else false]
+      by [].
+    by rewrite pr_dstar pr_predC w2.
+  by move: hle; rewrite hsplit !hT e1 e2.
+(* [0 <= f m]: instantiate at [M := pred0], where [rimage] is empty. *)
+have hz0 : \P_[ssem_ ps d m.2] (rimage Rl pred0) = 0.
++ have -> : \P_[ssem_ ps d m.2] (rimage Rl pred0)
+          = \P_[ssem_ ps d m.2] pred0.
+  - by apply: eq_pr => x; rewrite !inE /=; apply/negbTE/asboolPn => -[y].
+  exact: pr_pred0.
+have hf0 : (0 <= f m)%E.
++ have h0 := hraw pred0.
+  rewrite pr_pred0 hz0 subr0 in h0.
+  by move: h0; rewrite add0e -{1}(adde0 1%:E) leeD2lE.
+have arith : forall a b e : pwhile.R, a + (1 - b) <= 1 + e -> a <= b + e.
++ move=> a b e H; rewrite addrC -lerBlDr.
+  by move: H; rewrite addrA [a + 1]addrC -addrA lerD2l.
+(* An infinite pre-expectation makes the goal vacuous. *)
+case: (eqVneq (f m) (+oo)%E) => [hoo|hnoo].
++ have [nu hnu] := exists_scoupling (ssem_ ps c m.1) (ssem_ ps d m.2).
+  by exists nu => //; rewrite hoo leey.
+have hfn : f m \is a fin_num by rewrite ge0_fin_numE // ltey.
+have [delta hdE] : exists delta : pwhile.R, f m = delta%:E.
++ by exists (fine (f m)); rewrite fineK.
+have hd0 : 0 <= delta by rewrite -lee_fin -hdE.
+have hM : forall M : pred cmem,
+    \P_[ssem_ ps c m.1] M <= \P_[ssem_ ps d m.2] (rimage Rl M) + delta.
++ move=> M; apply: arith.
+  by have := hraw M; rewrite hdE -!EFinD lee_fin.
+have [nu hnu hle] :=
+  strassen_deficiency (ssem_ ps c m.1) (ssem_ ps d m.2) Rl delta w1 w2 hd0 hM.
+by exists nu => //; rewrite hdE.
+Qed.
 
 (* No [lossless] hypothesis: see the comment on [H_StrassenInv]. *)
 Lemma erhl_strassenInv (Rl : rel cmem) f c d (M : pred cmem) :
