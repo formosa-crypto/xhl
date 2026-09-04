@@ -40,7 +40,34 @@ Implicit Types r      : bd.
 (*                                                                      *)
 (*   This file states, as Coq lemmas over [phl_] of phl.v, every rule   *)
 (*   of the catalogue in RULES-PHL.md.  Each lemma carries the number   *)
-(*   of the section of that document which it formalizes.              *)
+(*   of the section of that document which it formalizes.                *)
+(*                                                                      *)
+(* -------------------------------------------------------------------- *)
+(*   SOURCE OF TRUTH -- the EasyCrypt implementation, not the document.  *)
+(*                                                                      *)
+(*   Every rule below has been reconciled against EasyCrypt's OCaml      *)
+(*   sources ([src/phl/*.ml]).  Each section header cites the tactic     *)
+(*   that implements the rule as [ecPhlXxx.ml:NNN], and individual       *)
+(*   lemmas add finer line references where the section covers several   *)
+(*   shapes.  Where the RULES-PHL.md prose and the code disagree, the    *)
+(*   CODE wins and the disagreement is recorded on the spot.  Two such   *)
+(*   places are known:                                                   *)
+(*     - RULES-PHL.md S1.6's [mk_event_cond] table is transposed for     *)
+(*       the two one-sided rows (see the orientation note in S1.6);      *)
+(*     - [ecPhlConseq.ml:241-242]'s block comment states the transpose   *)
+(*       of what [bdHoare_conseq_conds] ([:218-231]) actually builds     *)
+(*       (see the note above [ec_postimpl]).                             *)
+(*                                                                      *)
+(*   A rule that is FALSE as EasyCrypt implements it is stated anyway,   *)
+(*   flagged [!!! WRONG], left [Admitted], and accompanied by a          *)
+(*   counterexample that has been machine-checked.  Such a flag is a     *)
+(*   report about EasyCrypt, not about this transcription:               *)
+(*   [grep '!!! WRONG'] lists them.  The dominant cause is a bound left  *)
+(*   unconstrained when a rule's premises all go vacuous -- EasyCrypt's  *)
+(*   [bhs_bd] is an unrestricted [real] ([ecAst.ml:270-280]; the smart   *)
+(*   constructors at [ecCoreFol.ml:317-325] check only memory tags, and  *)
+(*   typing checks only [~expct:treal], [ecTyping.ml:3643-3657]) -- but  *)
+(*   [ec_while_variant] fails for a different and more basic reason.     *)
 (*                                                                      *)
 (* -------------------------------------------------------------------- *)
 (*   NAMING CONVENTION -- two kinds of lemma live in this file.          *)
@@ -58,7 +85,9 @@ Implicit Types r      : bd.
 (*             in the development.  All helpers are gathered in the two  *)
 (*             blocks below marked "AUXILIARY", one before [Section      *)
 (*             Rules] for the distribution-level facts and one inside    *)
-(*             it for the pHL-level ones.  Nothing outside this file is  *)
+(*             it for the pHL-level ones -- with the single exception    *)
+(*             of [aux_phl_while_ll], which is stated in S1.8 next to    *)
+(*             the loop rules it serves.  Nothing outside this file is   *)
 (*             modified to provide them.                                 *)
 (*                                                                      *)
 (*   So: [grep '^Lemma ec_'] lists the EasyCrypt rules, and              *)
@@ -110,7 +139,9 @@ Section ec_phl.
 (* -------------------------------------------------------------------- *)
 (* S0.2  The opposite comparison, EasyCrypt's [hoarecmp_opp].            *)
 (*   <=^op = >=,  >=^op = <=,  =^op = =.                                 *)
-(* Used by the bound-splitting rules of S3.4 and S3.5.                   *)
+(* [hoarecmp_opp], ecCoreFol.ml.  Used by the bound-splitting rules of   *)
+(* S3.4 and S3.5 ([t_bdhoare_split_bop], ecPhlBdHoare.ml:55, and         *)
+(* [t_bdhoare_split_not], :149).                                         *)
 
 Definition bd_opp (r : bd) : bd :=
   match r with
@@ -212,7 +243,7 @@ by rewrite mulr1n -hT; apply: le_in_pr => v _; rewrite !inE.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-(* Same idea as [aux_pr_espc_ge] below, but for a plain expectation:     *)
+(* Same idea as [aux_espc_ge] below, but for a plain expectation:        *)
 (* a lower bound valid only on the support still bounds [\E_[mu]], scaled *)
 (* by the weight.  Used by the S1.6 [rnd] rules, where the prefix is     *)
 (* lossless so the weight is [1].                                        *)
@@ -236,39 +267,76 @@ apply: le_exp.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-(* A lower bound on a conditional expectation whose hypothesis holds     *)
-(* only on the support.  [le_exp] demands a pointwise inequality         *)
-(* EVERYWHERE, so the integrand is first replaced -- via [eq_exp], which *)
-(* only needs agreement on the support -- by one that is constantly [k]  *)
-(* off it.  Stated in the product form so that the degenerate case       *)
-(* [\P_[mu] A = 0] needs no extra hypothesis.  Used by S1.2's            *)
-(* [ec_seq_ge].                                                          *)
+(* Bounds on a conditional expectation whose hypothesis holds only on    *)
+(* the support.  [le_exp] demands a pointwise inequality EVERYWHERE, so  *)
+(* the integrand is first replaced -- via [eq_exp], which only needs     *)
+(* agreement on the support -- by one that is constantly [k] off it.     *)
+(* Stated in the product form so that the degenerate case                *)
+(* [\P_[mu] A = 0] needs no extra hypothesis.  [F] is any [0,1]-valued   *)
+(* observable (in practice a probability, possibly one whose event       *)
+(* depends on the point: that is why [F] is left abstract rather than    *)
+(* fixed to [fun x => \P_[nu x] Qp]).  Used by S1.6's [ec_rnd_split].    *)
 
-Lemma aux_pr_espc_ge {T : choiceType} (mu : Distr T) (nu : T -> Distr T)
-                     (Qp A : pred T) (k : R) :
-     (forall x, x \in dinsupp (drestr A mu) -> k <= \P_[nu x] Qp)
-  -> \P_[mu] A * k <= \P_[mu] A * \E_[mu, A] (fun x => \P_[nu x] Qp).
+Lemma aux_espc_le {T : choiceType} (mu : Distr T) (F : T -> R) (A : pred T) (k : R) :
+     (forall x, 0 <= F x <= 1)
+  -> (forall x, x \in dinsupp (drestr A mu) -> F x <= k)
+  -> \P_[mu] A * \E_[mu, A] F <= \P_[mu] A * k.
 Proof.
-move=> hk.
-have hb : forall eta : Distr T, \E?_[eta] (fun x => \P_[nu x] Qp).
-+ move=> eta; apply: bounded_has_exp; exists 1 => x.
-  by rewrite ger0_norm ?ge0_pr ?le1_pr.
+move=> hF hk.
+have hb : forall eta : Distr T, \E?_[eta] F.
++ move=> eta; apply: bounded_has_exp; exists 1 => y.
+  by move: (hF y) => /andP[h0 h1]; rewrite ger0_norm.
 case: (\P_[mu] A =P 0) => [->|/eqP nz]; first by rewrite !mul0r.
 rewrite espcE; first by apply: hb.
-have -> : \P_[mu] A * (\E_[drestr A mu] (fun x => \P_[nu x] Qp) / \P_[mu] A)
-        = \E_[drestr A mu] (fun x => \P_[nu x] Qp).
+have -> : \P_[mu] A * (\E_[drestr A mu] F / \P_[mu] A) = \E_[drestr A mu] F.
 + by rewrite mulrC (mulfVK nz).
 rewrite -mass_drestr -exp_cst.
-pose F' x := if x \in dinsupp (drestr A mu) then \P_[nu x] Qp else k.
-have -> : \E_[drestr A mu] (fun x => \P_[nu x] Qp) = \E_[drestr A mu] F'.
-+ by apply/eq_exp => x hx; rewrite /F' hx.
+pose F' y := if y \in dinsupp (drestr A mu) then F y else k.
+have -> : \E_[drestr A mu] F = \E_[drestr A mu] F'.
++ by apply/eq_exp => y hy; rewrite /F' hy.
 apply: le_exp.
-+ by apply: bounded_has_exp; exists `|k| => x /=; exact: lexx.
-+ apply: bounded_has_exp; exists (1 + `|k|) => x; rewrite /F'; case: ifP => _.
-  - rewrite ger0_norm ?ge0_pr //; apply: (le_trans (le1_pr _ _)).
-    by rewrite lerDl normr_ge0.
++ apply: bounded_has_exp; exists (1 + `|k|) => y; rewrite /F'; case: ifP => _.
+  - move: (hF y) => /andP[h0 h1]; rewrite ger0_norm //.
+    by apply: (le_trans h1); rewrite lerDl normr_ge0.
   - by rewrite lerDr ler01.
-+ by move=> x; rewrite /F'; case: ifP => hx; [exact: hk | exact: lexx].
++ by apply: bounded_has_exp; exists `|k| => y /=; exact: lexx.
++ by move=> y; rewrite /F'; case: ifP => hy; [exact: hk | exact: lexx].
+Qed.
+
+Lemma aux_espc_ge {T : choiceType} (mu : Distr T) (F : T -> R) (A : pred T) (k : R) :
+     (forall x, 0 <= F x <= 1)
+  -> (forall x, x \in dinsupp (drestr A mu) -> k <= F x)
+  -> \P_[mu] A * k <= \P_[mu] A * \E_[mu, A] F.
+Proof.
+move=> hF hk.
+have hb : forall eta : Distr T, \E?_[eta] F.
++ move=> eta; apply: bounded_has_exp; exists 1 => y.
+  by move: (hF y) => /andP[h0 h1]; rewrite ger0_norm.
+case: (\P_[mu] A =P 0) => [->|/eqP nz]; first by rewrite !mul0r.
+rewrite espcE; first by apply: hb.
+have -> : \P_[mu] A * (\E_[drestr A mu] F / \P_[mu] A) = \E_[drestr A mu] F.
++ by rewrite mulrC (mulfVK nz).
+rewrite -mass_drestr -exp_cst.
+pose F' y := if y \in dinsupp (drestr A mu) then F y else k.
+have -> : \E_[drestr A mu] F = \E_[drestr A mu] F'.
++ by apply/eq_exp => y hy; rewrite /F' hy.
+apply: le_exp.
++ by apply: bounded_has_exp; exists `|k| => y /=; exact: lexx.
++ apply: bounded_has_exp; exists (1 + `|k|) => y; rewrite /F'; case: ifP => _.
+  - move: (hF y) => /andP[h0 h1]; rewrite ger0_norm //.
+    by apply: (le_trans h1); rewrite lerDl normr_ge0.
+  - by rewrite lerDr ler01.
++ by move=> y; rewrite /F'; case: ifP => hy; [exact: hk | exact: lexx].
+Qed.
+
+Lemma aux_espc_eq {T : choiceType} (mu : Distr T) (F : T -> R) (A : pred T) (k : R) :
+     (forall x, 0 <= F x <= 1)
+  -> (forall x, x \in dinsupp (drestr A mu) -> F x = k)
+  -> \P_[mu] A * \E_[mu, A] F = \P_[mu] A * k.
+Proof.
+move=> hF hk; apply/le_anti/andP; split.
++ by apply: aux_espc_le => // y hy; rewrite (hk y hy).
++ by apply: aux_espc_ge => // y hy; rewrite (hk y hy).
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -358,6 +426,8 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S1.1  skip.                                                           *)
+(* [t_bdhoare_skip_r_low], ecPhlSkip.ml:42 (premises :52-56, [<=]        *)
+(* rejected); surface [t_bdhoare_skip_r], :61, [t_skip], :90.            *)
 (*                                                                      *)
 (*     forall &m, P => (1 <> b)      forall &m, P => Q                   *)
 (*   ---------------------------------------------------                *)
@@ -368,14 +438,20 @@ Qed.
 (* [phl_conseq_*] on [Q] and the bound.                                  *)
 
 Lemma ec_skip P Q r d :
-  (forall m, P m -> Q m) -> r 1 d -> phl P skip Q r d.
+     (forall m, P m -> Q m)
+  -> (forall m, P m -> r 1 d)
+  -> phl P skip Q r d.
 Proof.
 move=> hQ hr m Pm; rewrite ssemE pr_dunit.
-by have -> : (Q m)%:R = 1 :> R by rewrite (hQ m Pm) /= mulr1n.
+have -> : (Q m)%:R = 1 :> R by rewrite (hQ m Pm) /= mulr1n.
+exact: (hr m Pm).
 Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S1.2  seq (app) -- the four-bound rule.                               *)
+(* [t_bdhoare_seq_r_low], ecPhlSeq.ml:44 (conditions :59-71, premise     *)
+(* pruning :84-97); surface [t_bdhoare_seq_r], :103;                     *)
+(* [process_phl_bd_info], :167-215; dispatcher arm :258-263.             *)
 (*                                                                      *)
 (* [S] is the catalogue's case predicate [R] (renamed: [R] is the        *)
 (* realType here).  [Phi] is the catalogue's auxiliary assertion [phi].  *)
@@ -385,7 +461,7 @@ Qed.
 (* second-phase judgements with [phl_conseq_eq] using [Phi].             *)
 
 Lemma ec_seq_eq (Phi S P Q : assn) c1 c2 f1 f2 g1 g2 d :
-     d = f1 * f2 + g1 * g2
+     (forall m, P m -> f1 * f2 + g1 * g2 = d)
   -> hoare P c1 Phi
   -> phl P c1 S           '= f1
   -> phl (Phi /\ S)%A c2 Q      '= f2
@@ -400,7 +476,7 @@ Lemma ec_seq_eq (Phi S P Q : assn) c1 c2 f1 f2 g1 g2 d :
 (* argument of [phl_seq_eq] is replayed here, with the [hoare] premise   *)
 (* supplying [range Phi] to bridge [S] and [Phi /\ S] on the support.    *)
 Proof.
-move=> -> hPhi PR RQ PNR NRQ m Pm /=; rewrite ssemE pr_dlet.
+move=> hbd hPhi PR RQ PNR NRQ m Pm /=; rewrite -(hbd m Pm) ssemE pr_dlet.
 have hr : range Phi (ssem_ ps c1 m) by apply/pr_range/eqP; exact: (hPhi m Pm).
 apply/eqP; rewrite (exp_split S); first by apply: has_esp_pr.
 have [/= /eqP-> /eqP->] := (PR _ Pm, PNR _ Pm); congr (_ + _).
@@ -449,9 +525,13 @@ Qed.
 (* Adding [0 <= f2] and [0 <= g2] makes it provable by the same argument *)
 (* as [ec_seq_ge] below.  Left unproved and unchanged, per the agreed    *)
 (* rule that statements are the specification.                           *)
+(*                                                                      *)
+(* EASYCRYPT WITNESS: phl/easycrypt/ec_seq_le.ec proves [false] in       *)
+(* EasyCrypt from this instance ([phi := false] disarms the second-phase *)
+(* premises, [s1 := while (true) { }] keeps [cond_phi] satisfiable).     *)
 
 Lemma ec_seq_le (Phi S P Q : assn) c1 c2 f1 f2 g1 g2 d :
-     f1 * f2 + g1 * g2 <= d
+     (forall m, P m -> f1 * f2 + g1 * g2 <= d)
   -> hoare P c1 Phi
   -> phl P c1 S           '<= f1
   -> phl (Phi /\ S)%A c2 Q      '<= f2
@@ -460,14 +540,30 @@ Lemma ec_seq_le (Phi S P Q : assn) c1 c2 f1 f2 g1 g2 d :
   -> phl P (c1 ;; c2) Q '<= d.
 Proof. Admitted.
 
-(* At [>=] the four non-negativity hypotheses ARE load-bearing: a        *)
-(* product of lower bounds bounds the product from below only when the   *)
-(* bounds are non-negative.  Without them the statement is false         *)
-(* (take [f1 = f2 = -1]).                                                *)
+(* !!! WRONG -- FALSE as written, and this one is the most serious of     *)
+(* the family, because the JUDGEMENT'S OWN BOUND is perfectly ordinary.   *)
+(* A product of lower bounds bounds the product from below only when the  *)
+(* bounds are non-negative; [ecPhlSeq.ml:44-100] emits no analogue of     *)
+(* [rnd]'s [sgoal5], so nothing forces [0 <= f1,f2,g1,g2].  I previously  *)
+(* carried those four hypotheses; they are NOT in EasyCrypt and have been *)
+(* removed to match the implementation.                                   *)
+(*                                                                      *)
+(* COUNTEREXAMPLE -- [P := Phi := S := Q := predT], [c1 := abort],        *)
+(* [f1 := -1], [f2 := -1], [g1 := 0], [g2 := 0], [d := 1].                *)
+(* Then [d <= f1*f2 + g1*g2] is [1 <= 1]; [hoare predT abort predT] holds;*)
+(* [phl predT abort predT '>= -1] and [phl _ c2 _ '>= -1] hold because    *)
+(* every probability is [>= 0 > -1]; the two [g] premises are [0 <= _].   *)
+(* But [ssem (abort ;; c2) m = dnull], so the conclusion asserts          *)
+(* [1 <= 0].                                                             *)
+(*                                                                      *)
+(* Note that a NEGATIVE INTERMEDIATE BOUND is all that is needed here --  *)
+(* [phoare[c : P ==> S] >= -1%r] is an ordinary, provable EasyCrypt       *)
+(* judgement -- and the conclusion's bound [1%r] is entirely normal.      *)
+(*                                                                      *)
+(* EASYCRYPT WITNESS: phl/easycrypt/ec_seq_ge.ec proves [false].         *)
 
 Lemma ec_seq_ge (Phi S P Q : assn) c1 c2 f1 f2 g1 g2 d :
-     0 <= f1 -> 0 <= f2 -> 0 <= g1 -> 0 <= g2
-  -> d <= f1 * f2 + g1 * g2
+     (forall m, P m -> d <= f1 * f2 + g1 * g2)
   -> hoare P c1 Phi
   -> phl P c1 S           '>= f1
   -> phl (Phi /\ S)%A c2 Q      '>= f2
@@ -475,32 +571,12 @@ Lemma ec_seq_ge (Phi S P Q : assn) c1 c2 f1 f2 g1 g2 d :
   -> phl (Phi /\ ~ S)%A c2 Q    '>= g2
   -> phl P (c1 ;; c2) Q '>= d.
 Proof.
-move=> hf1 hf2 hg1 hg2 hbd hPhi PR RQ PNR NRQ m Pm /=; rewrite ssemE pr_dlet.
-have hr : range Phi (ssem_ ps c1 m) by apply/pr_range/eqP; exact: (hPhi m Pm).
-rewrite (exp_split S); first by apply: has_esp_pr.
-apply: (le_trans hbd); apply: lerD.
-+ have h2 : \P_[ssem_ ps c1 m] S * f2
-          <= \P_[ssem_ ps c1 m] S
-             * \E_[ssem_ ps c1 m, S] (fun x => \P_[ssem_ ps c2 x] Q).
-  - apply: aux_pr_espc_ge => x; rewrite dinsupp_restr => /andP [hx Sx].
-    have hc : (Phi /\ S)%A x.
-    * by apply/andP; split; [exact: (hr x hx) | exact: Sx].
-    exact: (RQ x hc).
-  apply: (le_trans _ h2).
-  by apply: ler_pM; [exact: hf1 | exact: hf2 | exact: (PR m Pm) | exact: lexx].
-+ have h2 : \P_[ssem_ ps c1 m] (predC S) * g2
-          <= \P_[ssem_ ps c1 m] (predC S)
-             * \E_[ssem_ ps c1 m, predC S] (fun x => \P_[ssem_ ps c2 x] Q).
-  - apply: aux_pr_espc_ge => x; rewrite dinsupp_restr => /andP [hx Sx].
-    have hc : (Phi /\ ~ S)%A x.
-    * by apply/andP; split; [exact: (hr x hx) | exact: Sx].
-    exact: (NRQ x hc).
-  apply: (le_trans _ h2).
-  by apply: ler_pM; [exact: hg1 | exact: hg2 | exact: (PNR m Pm) | exact: lexx].
-Qed.
+Proof. Admitted.
 
 (* -------------------------------------------------------------------- *)
 (* S1.3  if.                                                             *)
+(* [t_bdhoare_cond], ecPhlCond.ml:61 (expansion [LowInternal.t_gen_cond], *)
+(* :25-44); elaboration [process_cond], ecPhlHiCond.ml:10.               *)
 (*                                                                      *)
 (*   |- phoare[ s1; tl : P /\ e ==> Q ] <> b                             *)
 (*   |- phoare[ s2; tl : P /\ ~e ==> Q ] <> b                            *)
@@ -533,11 +609,14 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S1.4  match -- NOT FORMALIZED.                                        *)
+(* [t_bdhoare_match], ecPhlCond.ml:243 (expansion :125-233).             *)
 (* [cmd_] (pwhile/pwhile.v:276) has no [match] constructor and the       *)
 (* language has no datatypes, so there is no goal of this shape.         *)
 
 (* -------------------------------------------------------------------- *)
 (* S1.5  rcondt / rcondf.                                                *)
+(* [Low.t_bdhoare_rcond_r], ecPhlRCond.ml:63 (Hoare premise :70);        *)
+(* [match] variant [Low.t_bdhoare_rcond_match_r], :250.                  *)
 (*                                                                      *)
 (*   |- hoare[ hd : P ==> e_b ]    |- phoare[ hd; s_b; tl : P ==> Q ] <> b *)
 (*   ------------------------------------------------------------------- *)
@@ -576,6 +655,9 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S1.6  rnd, five shapes.                                               *)
+(* [t_bdhoare_rnd_r], ecPhlRnd.ml:158.  [mk_event] :198-206,             *)
+(* [mk_event_cond] :165-179, [bound]/[pre_bound] :207-214, the five      *)
+(* shapes :215-291; [process_rnd] bdHoare arm :649, :664-685.            *)
 (*                                                                      *)
 (* Throughout, the statement ends with [x <$- e] and [s] is the prefix.   *)
 (* [E : pred T] is the catalogue's *event*, a predicate on the sampled   *)
@@ -583,20 +665,42 @@ Qed.
 (* [pre_bound] is [true] and [bound] is [d], so the generalisation over  *)
 (* a fresh [bd] variable disappears.                                     *)
 (*                                                                      *)
-(* !! ORIENTATION OF [mk_event_cond] -- PLEASE CHECK AGAINST EASYCRYPT.  *)
-(* RULES-PHL.md S1.6 tabulates it as                                     *)
+(* -------------------------------------------------------------------- *)
+(* [mk_event_cond] as a first-class definition, transcribed from         *)
+(* [ecPhlRnd.ml:165-179].  It is the only premise that ties the event    *)
+(* [E] to the postcondition, through [subst_form_lv]                     *)
+(* ([ecLowPhlGoal.ml:597]), i.e. [Q[v/lv]] -- here [Q m.[x <- v]].       *)
+(*                                                                      *)
+(* !! ORIENTATION -- RESOLVED AGAINST THE IMPLEMENTATION.                *)
+(* RULES-PHL.md S1.6 (and EasyCrypt's own in-tree copy of that document) *)
+(* tabulates the two one-sided rows as                                   *)
 (*      <=  :  forall v, E v -> v \in supp d -> Q[v/lv]                  *)
 (*      >=  :  forall v, Q[v/lv] -> v \in supp d -> E v                  *)
-(*      =   :  forall v, v \in supp d -> (E v <-> Q[v/lv])               *)
-(* The two one-sided rows are stated below in the OPPOSITE direction,    *)
-(* because as tabulated they do not give the rule.  At [<=] one needs    *)
-(* [\P_[e] (Q[.]) <= \P_[e] E <= d], hence [Q[v] -> E v]; the tabulated  *)
-(* [E v -> Q[v]] yields [\P_[e] E <= \P_[e] (Q[.])], the wrong way.      *)
-(* Dually at [>=].  The [=] row agrees with the catalogue and is         *)
-(* unchanged, which is evidence that the two one-sided rows of the       *)
-(* table are transposed.  The default event [E := fun v => Q[v/lv]]      *)
-(* makes both readings coincide, which is why this is invisible unless   *)
-(* [E] is supplied explicitly (shapes (c) and (d)).                      *)
+(* which is the TRANSPOSE of what the code builds.  [ecPhlRnd.ml:174]    *)
+(* defines [f_imps_simpl' fl = f_imps_simpl (List.tl fl) (List.hd fl)]   *)
+(* and [f_imps_simpl = List.fold_right f_imp_simpl] ([ecFol.ml:709]), so *)
+(* the HEAD of the list is the conclusion and the tail the hypotheses.   *)
+(* With [FHle -> [event_v; v_in_supp; post_v]] ([:176]) that reads       *)
+(*      <=  :  forall v, v \in supp d -> Q[v/lv] -> E v                  *)
+(* and with [FHge -> [post_v; v_in_supp; event_v]] ([:177])              *)
+(*      >=  :  forall v, v \in supp d -> E v -> Q[v/lv].                 *)
+(* [FHeq] ([:178]) is [v \in supp d -> (E v <-> Q[v/lv])], on which code *)
+(* and document agree.  The orientation below is the code's; it is also  *)
+(* the only one that gives the rule (at [<=] one needs                   *)
+(* [\P_[e] (Q[.]) <= \P_[e] E <= d], hence [Q[v] -> E v]).  So the       *)
+(* document's table is wrong, in both copies.  The default event         *)
+(* [E := fun v => Q[v/lv]] ([mk_event], [:198-206]) makes both readings  *)
+(* coincide, which is why this is invisible unless [E] is supplied       *)
+(* explicitly (shapes (c), (d), (d') and (e)).                           *)
+
+Definition ec_evcond {T : IhbType.type} (r : bd) (x : vars T) (e : dexpr T)
+                     (E : pred T) (Q : assn) (m : cmem) : Prop :=
+  forall v : T, v \in dinsupp (`[{e}] m) ->
+    match r with
+    | Le => Q m.[x <- v] -> E v
+    | Ge => E v -> Q m.[x <- v]
+    | Eq => E v = Q m.[x <- v]
+    end.
 
 (* (a) [rnd], [<=], post independent of the assigned variable: the       *)
 (* sampling is simply dropped.                                           *)
@@ -661,7 +765,8 @@ rewrite [X in X <= _]pr_exp; apply: le_exp.
   by rewrite !inE.
 Qed.
 
-(* (c) [rnd E], [<=].  The residual is a *Hoare* goal -- see (G4).       *)
+(* (c) [rnd E], [<=] -- [PSingleRndParam], [ecPhlRnd.ml:248-256].  The   *)
+(* residual is a *Hoare* goal ([f_hoareS], [:254]) -- see (G4).          *)
 (*                                                                      *)
 (* !!! WRONG -- FALSE as written; missing [0 <= d].  Third instance of   *)
 (* the same defect as [ec_seq_le] and [ec_call_seq_le]: the only premise *)
@@ -677,21 +782,21 @@ Qed.
 (* Note that [ec_rnd_le_indep] above is NOT affected: its premise is a   *)
 (* pHL judgement [phl P s Q '<= d], which at [s := abort] already yields *)
 (* [0 <= d].                                                             *)
+(*                                                                      *)
+(* EASYCRYPT WITNESS: phl/easycrypt/ec_rnd_le.ec proves [false].         *)
 
 Lemma ec_rnd_le {T : IhbType.type} P Q (x : vars T) (e : dexpr T) (E : pred T) s d :
      hoare P s [pred m | (\P_[`[{e}] m] E <= d)
-                         && `[< forall v : T, v \in dinsupp (`[{e}] m)
-                                           -> Q m.[x <- v] -> E v >]]
+                         && `[< ec_evcond Le x e E Q m >]]
   -> phl P (s ;; (x <$- e)) Q '<= d.
 Proof. Admitted.
 
-(* (d) [rnd E], [>=].  The residual judgement is forced to [= 1] by      *)
-(* the catalogue ([ecPhlRnd.ml:262]).                                    *)
+(* (d) [rnd E], [>=] -- [PSingleRndParam], [ecPhlRnd.ml:257-264].  The   *)
+(* residual judgement is forced to [FHeq 1%r] ([:262]).                  *)
 
 Lemma ec_rnd_ge {T : IhbType.type} P Q (x : vars T) (e : dexpr T) (E : pred T) s d :
      phl P s [pred m | (d <= \P_[`[{e}] m] E)
-                       && `[< forall v : T, v \in dinsupp (`[{e}] m)
-                                         -> E v -> Q m.[x <- v] >]] '= 1
+                       && `[< ec_evcond Ge x e E Q m >]] '= 1
   -> phl P (s ;; (x <$- e)) Q '>= d.
 (* Sound, unlike (c): the residual is forced to [= 1], so the prefix is  *)
 (* lossless and [\P_[mu] predT = 1] absorbs the weight factor.           *)
@@ -702,8 +807,7 @@ have -> : \dlet_(m' <- ssem_ ps s m) ssem_ ps (x <$- e) m'
 + by apply: eq_in_dlet; last by []; move=> m' _; rewrite ssemE.
 rewrite pr_dlet.
 set W := [pred m | (d <= \P_[`[{e}] m] E)
-                   && `[< forall v : T, v \in dinsupp (`[{e}] m)
-                                     -> E v -> Q m.[x <- v] >]].
+                   && `[< ec_evcond Ge x e E Q m >]].
 have hW : \P_[ssem_ ps s m] W = 1 by apply/eqP; exact: (h m Pm).
 have hT : \P_[ssem_ ps s m] predT = 1.
 + by apply/le_anti; rewrite le1_pr /= -hW; apply: subset_pr.
@@ -718,13 +822,13 @@ have key : \P_[ssem_ ps s m] predT * d
 by apply: (le_trans _ key); rewrite hT mul1r lexx.
 Qed.
 
-(* (d') [rnd E], [=].  Here the catalogue's [mk_event_cond] is kept as   *)
-(* tabulated: on the support, [E] and [Q[./lv]] must agree.              *)
+(* (d') [rnd E], [=] -- the [FHeq] instance of the same branch           *)
+(* ([ecPhlRnd.ml:257-264]).  This is the row on which the code and the   *)
+(* document agree: on the support, [E] and [Q[./lv]] must agree.         *)
 
 Lemma ec_rnd_eq {T : IhbType.type} P Q (x : vars T) (e : dexpr T) (E : pred T) s d :
      phl P s [pred m | (\P_[`[{e}] m] E == d)
-                       && `[< forall v : T, v \in dinsupp (`[{e}] m)
-                                         -> (E v = Q m.[x <- v]) >]] '= 1
+                       && `[< ec_evcond Eq x e E Q m >]] '= 1
   -> phl P (s ;; (x <$- e)) Q '= d.
 Proof.
 move=> h m Pm; rewrite ssemE.
@@ -733,8 +837,7 @@ have -> : \dlet_(m' <- ssem_ ps s m) ssem_ ps (x <$- e) m'
 + by apply: eq_in_dlet; last by []; move=> m' _; rewrite ssemE.
 rewrite pr_dlet.
 set W := [pred m | (\P_[`[{e}] m] E == d)
-                   && `[< forall v : T, v \in dinsupp (`[{e}] m)
-                                     -> (E v = Q m.[x <- v]) >]].
+                   && `[< ec_evcond Eq x e E Q m >]].
 have hW : \P_[ssem_ ps s m] W = 1 by apply/eqP; exact: (h m Pm).
 have hT : \P_[ssem_ ps s m] predT = 1.
 + by apply/le_anti; rewrite le1_pr /= -hW; apply: subset_pr.
@@ -752,72 +855,151 @@ by apply/eqP.
 Qed.
 
 (* (e) [rnd phi d1 d2 d3 d4 [E]] -- [PMultRndParams], six premises, in   *)
-(* the order EasyCrypt emits them ([bd_sgoal], [sgoal1] .. [sgoal5]).    *)
-(* [Phi] is the catalogue's [phi].  The [<>]-oriented event condition is *)
-(* written [Ev]; instantiate it per the orientation note above.          *)
-
-(* !!! WRONG -- FALSE as written, and the fault is in my abstraction of  *)
-(* [mk_event_cond], not in the catalogue.  I introduced [Ev : assn] as   *)
-(* an opaque stand-in for the event condition ("instantiate it per the   *)
-(* orientation note above"), but nothing in the statement ties [Ev] to   *)
-(* [E], to [Q], or to the sampled variable.  So no premise ever relates  *)
-(* the event [E] to the postcondition [Q], and the four bounds constrain *)
-(* [\P_[e] E] alone -- which says nothing about [\P_[e] (Q[./x])].       *)
-(* The repair is to spell [mk_event_cond] out, as shapes (c) and (d) do  *)
-(* ([forall v, v \in dinsupp (`[{e}] m) -> ...]), instead of abstracting *)
-(* it.                                                                   *)
+(* the order EasyCrypt emits them ([ecPhlRnd.ml:265-289]:                *)
+(* [bd_sgoal; sgoal1; sgoal2; sgoal3; sgoal4; sgoal5]).                  *)
+(* [Phi] is EasyCrypt's [phi].                                           *)
 (*                                                                      *)
-(* COUNTEREXAMPLE, machine-checked -- take [e] lossless (satisfiable:    *)
-(* any constant [dunit] distribution) and instantiate at                 *)
-(*   [P := predT], [Q := predT], [Phi := predT], [Ev := predT],          *)
-(*   [E := pred0], [s := skip], [r := Eq],                               *)
-(*   [d1 := 1], [d2 := 0], [d3 := 0], [d4 := 0], [d := 0].               *)
-(* Then [1*0 + 0*0 = 0]; [phl predT skip predT '= 1] is [phl_skip];      *)
-(* both event premises hold because [\P_[e m] pred0 = 0] and [Ev] is     *)
-(* [predT]; [phl predT skip (~ predT) '= 0] holds; the third premise is  *)
-(* vacuous; and all four bounds are in [[0,1]].  But                     *)
-(* [ssem (skip ;; (x <$- e)) m = ssem (x <$- e) m] has weight [1], so    *)
-(* the conclusion asserts [1 = 0].                                       *)
+(* CORRECTED against the implementation.  This lemma previously carried  *)
+(* an opaque [Ev : assn] as a stand-in for the event condition, tied to  *)
+(* neither [E] nor [Q] nor the sampled variable, which made it vacuous   *)
+(* and false.  That was my error, not EasyCrypt's: [ecPhlRnd.ml:274,280] *)
+(* build [sgoal2]/[sgoal4] as                                            *)
+(*   forall &m, phi => ((mu d E <> d_i) /\ mk_event_cond E)              *)
+(* and [mk_event_cond] ties [E] to [Q[lv := v]] through [subst_form_lv]  *)
+(* ([ecLowPhlGoal.ml:597]).  [ec_evcond] above is that condition.        *)
+(*                                                                      *)
+(* Note [bd_sgoal] is NOT guarded by the precondition here               *)
+(* ([ecPhlRnd.ml:270] has no [f_imp (bhs_pr bhs)]), unlike [seq]'s       *)
+(* [condbd] ([ecPhlSeq.ml:71]) -- so this premise stays unguarded.       *)
+
 Lemma ec_rnd_split {T : IhbType.type} P Q (Phi : assn)
-                   (x : vars T) (e : dexpr T) (E : pred T) (Ev : assn) s r
+                   (x : vars T) (e : dexpr T) (E : pred T) s r
                    d d1 d2 d3 d4 :
      r (d1 * d2 + d3 * d4) d
   -> phl P s Phi        r d1
-  -> (forall m, Phi m -> r (\P_[`[{e}] m] E) d2 /\ Ev m)
+  -> (forall m, Phi m -> r (\P_[`[{e}] m] E) d2 /\ ec_evcond r x e E Q m)
   -> phl P s (~ Phi)%A  r d3
-  -> (forall m, ~~ Phi m -> r (\P_[`[{e}] m] E) d4 /\ Ev m)
+  -> (forall m, ~~ Phi m -> r (\P_[`[{e}] m] E) d4 /\ ec_evcond r x e E Q m)
   -> (0 <= d1 <= 1) && (0 <= d2 <= 1) && (0 <= d3 <= 1) && (0 <= d4 <= 1)
   -> phl P (s ;; (x <$- e)) Q r d.
-Proof. Admitted.
+(* TRUE, and proved.  [sgoal5]'s [0 <= d_i <= 1] is what makes the two   *)
+(* one-sided cases go through: [ler_wpM2r] needs [0 <= d2] and [0 <= d4] *)
+(* to turn the bounds on [\P_[mu] Phi] and [\P_[mu] (~ Phi)] into bounds *)
+(* on the products.  The [=] case needs no bound at all.                 *)
+(* Proof: split the expectation over [Phi] ([exp_split]), then bound     *)
+(* each conditional expectation on the support ([aux_espc_*]), where the *)
+(* event condition turns [\P_[e m'] (Q[./x])] into [\P_[e m'] E].        *)
+Proof.
+move=> hbd h1 h2 h3 h4.
+move=> /andP[/andP[/andP[_ /andP[hd20 _]] _] /andP[hd40 _]].
+move=> m Pm; rewrite ssemE.
+have -> : \dlet_(m' <- ssem_ ps s m) ssem_ ps (x <$- e) m'
+        = \dlet_(m' <- ssem_ ps s m) (\dlet_(v <- `[{e}] m') dunit m'.[x <- v]).
++ by apply: eq_in_dlet; last by []; move=> m' _; rewrite ssemE.
+rewrite pr_dlet.
+have -> : \E_[ssem_ ps s m]
+            (fun m' => \P_[\dlet_(v <- `[{e}] m') dunit m'.[x <- v]] Q)
+        = \E_[ssem_ ps s m] (fun m' => \P_[`[{e}] m'] [pred v : T | Q m'.[x <- v]]).
++ by apply/eq_exp => m' _; rewrite aux_pr_dlet_dunit.
+set mu := ssem_ ps s m.
+(* [Gp], not [G]: [G _ <<- _] is the global-assignment notation.         *)
+set Gp := (fun m' => \P_[`[{e}] m'] [pred v : T | Q m'.[x <- v]]).
+have hG : forall m2 : cmem, (0 <= Gp m2 <= 1)%R.
++ by move=> m2; rewrite ge0_pr le1_pr.
+have hE : \E?_[mu] Gp.
++ by apply: bounded_has_exp; exists 1 => m'; rewrite ger0_norm ?ge0_pr ?le1_pr.
+rewrite (exp_split Phi hE).
+move: (h1 m Pm) (h3 m Pm) hbd => {h1 h3 Pm}.
+case: r h2 h4 => h2 h4 h1 h3 hbd /=.
+(* Le *)
++ apply: (le_trans _ hbd); apply: lerD.
+  - apply: (@le_trans _ _ (\P_[mu] Phi * d2)); last by rewrite ler_wpM2r.
+    apply: aux_espc_le; first exact: hG.
+    move=> m' hm'; move: hm'; rewrite dinsupp_restr => /andP[_ /h2[hd2 hev]].
+    apply: (le_trans _ hd2); apply: le_in_pr => v hv.
+    by rewrite !inE; exact: (hev v hv).
+  - apply: (@le_trans _ _ (\P_[mu] (~ Phi)%A * d4)); last by rewrite ler_wpM2r.
+    apply: aux_espc_le; first exact: hG.
+    move=> m' hm'; move: hm'; rewrite dinsupp_restr => /andP[_ /h4[hd4 hev]].
+    apply: (le_trans _ hd4); apply: le_in_pr => v hv.
+    by rewrite !inE; exact: (hev v hv).
+(* Ge *)
++ apply: (le_trans hbd); apply: lerD.
+  - apply: (@le_trans _ _ (\P_[mu] Phi * d2)); first by rewrite ler_wpM2r.
+    apply: aux_espc_ge; first exact: hG.
+    move=> m' hm'; move: hm'; rewrite dinsupp_restr => /andP[_ /h2[hd2 hev]].
+    apply: (le_trans hd2); apply: le_in_pr => v hv.
+    by rewrite !inE => hEv; exact: (hev v hv hEv).
+  - apply: (@le_trans _ _ (\P_[mu] (~ Phi)%A * d4)); first by rewrite ler_wpM2r.
+    apply: aux_espc_ge; first exact: hG.
+    move=> m' hm'; move: hm'; rewrite dinsupp_restr => /andP[_ /h4[hd4 hev]].
+    apply: (le_trans hd4); apply: le_in_pr => v hv.
+    by rewrite !inE => hEv; exact: (hev v hv hEv).
+(* Eq *)
++ apply/eqP; rewrite -(eqP hbd); congr (_ + _).
+  - rewrite (@aux_espc_eq _ mu Gp Phi d2) ?(eqP h1) //.
+    move=> m' hm'; move: hm'; rewrite dinsupp_restr => /andP[_ /h2[hd2 hev]].
+    rewrite /Gp -(eqP hd2); apply/eq_in_pr => v hv.
+    by rewrite !inE; exact/esym/(hev v hv).
+  - rewrite (@aux_espc_eq _ mu Gp (~ Phi)%A d4) ?(eqP h3) //.
+    move=> m' hm'; move: hm'; rewrite dinsupp_restr => /andP[_ /h4[hd4 hev]].
+    rewrite /Gp -(eqP hd4); apply/eq_in_pr => v hv.
+    by rewrite !inE; exact/esym/(hev v hv).
+Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S1.7  rndsem -- NOT FORMALIZED.                                       *)
+(* [Core.t_bdhoare_rndsem_r], ecPhlRnd.ml:424; [process_rndsem], :723.   *)
 (* [Core.t_bdhoare_rndsem_r] replaces a trailing block of samplings by   *)
 (* one *semantic* sampling.  [cmd_] has no semantic-sampling             *)
 (* constructor, so the rule has no counterpart here.                     *)
 
 
 (* -------------------------------------------------------------------- *)
-(* S1.8  while -- three rules.                                           *)
+(* S1.8  while -- three rules, [ecPhlWhile.ml].                          *)
+(*   (a) [t_bdhoare_while_r]          [:127-153]  any comparison         *)
+(*   (b) [t_bdhoare_while_rev_r]      [:157-200]  [<=] only ([:161])     *)
+(*   (c) [t_bdhoare_while_rev_geq_r]  [:205-306]  [>=]/[=] only ([:210]) *)
+(* [process_while] ([:548-587]) picks between them on the presence of a  *)
+(* variant and of the [k eps] bounds.                                    *)
 (*                                                                      *)
 (* The variant is [vrnt : cmem -> int], matching EasyCrypt's use of      *)
 (* [vrnt <= 0] as the termination threshold.                            *)
 (* phl.v has NO loop rule at all, so all three are new here.             *)
-
-(* (a) Variant rule ([while (inv) (vrnt)], admissible at [<=], [=],      *)
-(* [>=]).  The body must be certain ([= 1]) and must strictly decrease   *)
-(* the variant.                                                         *)
 (*                                                                      *)
-(* The catalogue packages the rule with a prefix [s] and a [forall       *)
-(* mod(body)] postcondition on that prefix.  Here the loop is stated on  *)
-(* its own; the prefix is recovered by composing with [ec_seq_*] (S1.2), *)
-(* which is what the [forall mod(body)] packaging exists to emulate.     *)
+(* (a) and (b) apply to a statement [s ; while e do c] and act on the    *)
+(* trailing loop ([tc1_last_while], [:130] and [:170]); the prefix [s]   *)
+(* is therefore part of the statement below.  (c) instead requires the   *)
+(* loop to be the WHOLE statement ([check_single_stmt], [:230],          *)
+(* definition [:92-94]), so it has no prefix.                            *)
 (*                                                                      *)
-(* Proof sketch: [ssem_whileE] then [range]/[pr] on [whilen e c n], by   *)
-(* strong induction on [vrnt m]; the body being [= 1] makes each         *)
-(* unrolling mass-preserving and [homo_whilen] gives the limit.          *)
+(* THE ABSTRACT STATEMENT of (b) and (c).  [body_concl] in both reverse  *)
+(* rules is discharged in a context carrying a fresh abstract statement  *)
+(* [w] ([xmutate1_hyps], [:200] and [:300]), constrained by             *)
+(* [while_info] ([:22, :173, :285]) to the loop's reads, writes and      *)
+(* calls.  Since the conclusion does not mention [w], soundness needs    *)
+(* the premise to hold for EVERY instantiation, so it is rendered here   *)
+(* as [forall w : cmd, ... -> ...].  pwhile's [cmd] carries no           *)
+(* read/write annotation and [hl.mod] cannot supply one without         *)
+(* [nocall] (G5), so the [while_info] restriction is dropped: [w] ranges *)
+(* over ALL commands.  That STRENGTHENS the premise and hence weakens    *)
+(* the rules below, so it is sound and is never the source of a          *)
+(* [!!! WRONG] flag -- see [ec_while_rev_eq] for why that matters.       *)
 
-Lemma ec_while_variant (I : assn) (vrnt : cmem -> int) (e : bexpr) c :
+(* ==================================================================== *)
+(* ===  AUXILIARY -- the semantic core of the S1.8(a) variant rule  === *)
+(* ==================================================================== *)
+(* NOT an EasyCrypt rule.  This is what the variant premises actually    *)
+(* buy: from an [I]-state the loop terminates almost surely, in an       *)
+(* [I /\ ~e] state.  It is the loop-only, [= 1] specialisation of        *)
+(* [t_bdhoare_while_r]; both [ec_while_variant] (in its sound [>=]       *)
+(* instance) and [ec_ll_while] (S4.5) rest on it.                        *)
+(*                                                                      *)
+(* Proof: [ssem_whileE] then [range]/[pr] on [whilen e c n], by strong   *)
+(* induction on [vrnt m]; the body being [= 1] makes each unrolling      *)
+(* mass-preserving and [homo_whilen] gives the limit.                    *)
+
+Lemma aux_phl_while_ll (I : assn) (vrnt : cmem -> int) (e : bexpr) c :
      (forall z : int,
         phl (I /\ `[{e}] /\ [pred m | vrnt m == z])%A c
             (I /\ [pred m | vrnt m < z])%A '= 1)
@@ -861,61 +1043,149 @@ rewrite (key `|vrnt m|%N m Im) ?lexx //.
 by rewrite abszE; exact: ler_norm.
 Qed.
 
-(* (b) Reverse rule ([while (inv)]), upper bounds only.                  *)
-(*                                                                      *)
-(* EasyCrypt introduces an *abstract statement* hypothesis [w] standing  *)
-(* for the rest of the loop and asks for one unfolding step.  Here that  *)
-(* is a genuine quantification over commands.                           *)
-(*                                                                      *)
-(* [0 <= d] and the second premise are load-bearing.  They are what      *)
-(* EasyCrypt's Hoare premise                                            *)
-(*   hoare[ s : P ==> I /\ forall mod(body). (I /\ ~e /\ Q => b = 1) ]   *)
-(* reduces to once the bound is a constant (G1): the base case of the    *)
-(* unrolling is a memory where the guard is false, and there            *)
-(* [\P_[dunit m] Q = (Q m)%:R] must be below [d].                        *)
-(*                                                                      *)
-(* Proof sketch: [ssem_whileE] + [sum_dlim_r_r]; induct on [n],          *)
-(* instantiating the third premise at [w := whilen e c n], and close     *)
-(* the unrolling with [phl_if] / [phl_skip] / [phl_abort].               *)
+(* ==================================================================== *)
+(* ===                back to the EasyCrypt rules                   === *)
+(* ==================================================================== *)
 
-Lemma ec_while_rev (I : assn) Q (e : bexpr) c d :
-     0 <= d
-  -> (forall m, I m -> ~~ `[{e}] m -> Q m -> 1 <= d)
-  -> (forall w : cmd, phl I w Q '<= d -> phl (I /\ `[{e}])%A (c ;; w) Q '<= d)
-  -> phl I (While e Do c) Q '<= d.
-Proof.
-move=> hd0 hbase hstep m Im; rewrite ssemE.
-apply: sum_dlim_r_r; first by move=> n p le_np x; apply: homo_whilen.
-move=> n; elim: n m Im => [|n ihn] m Im.
-+ by rewrite /= ssem_abortE pr_dnull; exact: hd0.
-rewrite /= ssem_ifE; case: ifPn => hem.
-+ have hw : phl I (whilen e c n) Q '<= d by move=> m' Im'; exact: ihn.
-  by apply: (hstep _ hw m); rewrite /= Im hem.
-rewrite ssem_skipE pr_dunit; case/boolP: (Q m) => hq /=.
-+ by rewrite mulr1n; exact: (hbase m Im hem hq).
-+ by rewrite mulr0n; exact: hd0.
-Qed.
-
-(* (c) Reverse rule with a rate ([while (inv) (vrnt) k eps]), lower and  *)
-(* exact bounds only.  [eps] is the per-iteration lower bound on the     *)
-(* probability that the variant decreases and [k] its upper bound;       *)
-(* together they make the loop almost surely terminating at a rate.      *)
-(* The catalogue requires the loop to be the whole statement, which is   *)
-(* automatic below.                                                      *)
+(* (a) Variant rule ([while (inv) (vrnt)], [t_bdhoare_while_r],          *)
+(* [ecPhlWhile.ml:127-153]).  [process_while] ([:567-572]) dispatches    *)
+(* here for ANY comparison, so the rule is stated at a general [r].      *)
 (*                                                                      *)
-(* DEVIATION: the catalogue's [pre-bound] and [term-invariant] premises  *)
-(* are guarded by [forall mod(body)].  They are stated here over *all*   *)
-(* memories, which is a strictly stronger premise and therefore a sound  *)
-(* (but less applicable) rule.  Stating them with (G5) would drag in a   *)
-(* [nocall c] hypothesis; see S2.3.                                      *)
-(*                                                                      *)
-(* Premises are in the catalogue's order: pre-invariant, pre-bound,      *)
-(* term-invariant, body, out-invariant, vrnt.                            *)
+(* EasyCrypt's goal is [bdHoareS P (s; while e do c) Q ⋈ b], with [s]    *)
+(* the prefix returned by [tc1_last_while] ([:130]).  It emits exactly   *)
+(* two subgoals, [b_concl] and [concl] ([:153]):                         *)
+(*   [b_concl] ([:134-141]) is the body premise, at [FHeq 1%r], with the *)
+(*     variant frozen at a fresh integer [z];                            *)
+(*   [concl] ([:142-151]) is [bdHoareS P s post ⋈ b] where               *)
+(*     [post = inv /\ forall mod(c). (term_condition /\ post')],         *)
+(*     [term_condition = inv => vrnt <= 0 => ~e]  ([:145-146]),          *)
+(*     [post' = ~e => inv => Q]                   ([:143-144]).          *)
+(* (Both are built with [f_imps_simpl'], head = conclusion; see the      *)
+(* orientation note in S1.6.)                                            *)
+(* Per (G5) the [forall mod(c)] parts are stated over ALL memories,      *)
+(* which splits [concl] into [phl P s I r d] plus the two side           *)
+(* conditions.  That is strictly stronger, so it cannot be the source of *)
+(* the failure below.                                                    *)
 
-(* !!! WRONG -- FALSE as written; missing [d <= 1].  The catalogue's      *)
-(* [pre-bound] premise at [>=] is [P => ~e => (~Q => b = 0)], which       *)
-(* constrains the bound only on the [~Q] branch.  When [Q] DOES hold at   *)
-(* an exit state the rule still claims [b <= \P_[.] Q <= 1], but nothing  *)
+(* !!! WRONG -- FALSE as written at [<=] and at [=]; sound only at [>=]. *)
+(* This one is not about the bound: it is the rule itself.  Nothing in   *)
+(* [t_bdhoare_while_r] relates the postcondition to the states in which  *)
+(* [inv] FAILS after [s].  Semantically                                  *)
+(*   \P_[s;while] Q = \E_[s] (fun m' => \P_[while@m'] Q)                 *)
+(* and the premises pin [\P_[while@m'] Q = 1] only for [I]-states [m'],  *)
+(* leaving [\P_[while@m'] Q] arbitrary in [[0,1]] elsewhere.  Hence      *)
+(* [\P_[s;while] Q >= \P_[s] I], and only the [>=] direction transfers.  *)
+(* Note there is NO [P => inv] subgoal: the tactic emits two subgoals    *)
+(* ([:153]) and neither is one.                                          *)
+(*                                                                      *)
+(* COUNTEREXAMPLE, machine-checked -- take the invariant IDENTICALLY     *)
+(* FALSE and the guard identically false:                                *)
+(*   [P := Q := predT], [I := pred0], [vrnt := fun _ => 0],              *)
+(*   [e := false%:S], [s := skip], [c := skip], [r := Le], [d := 0].     *)
+(* The body premise, the termination premise and the exit premise all    *)
+(* have [I] in their hypotheses, hence are vacuous; the residual is      *)
+(* [phl predT skip pred0 '<= 0], i.e. [0 <= 0].  But                     *)
+(* [ssem (skip ;; While false%:S Do skip) m = dunit m] by [ssem_while0], *)
+(* so the conclusion asserts [1 <= 0].                                   *)
+(* The same instance at [r := Eq] and [d := 0] refutes the [=] case.     *)
+(* Note the bound [0] is perfectly ordinary here -- unlike the S1.2 and  *)
+(* S1.6 findings, this failure needs no exotic bound at all.             *)
+(*                                                                      *)
+(* At [>=] the rule IS sound, and follows from [aux_phl_while_ll] above  *)
+(* by [ec_seq_ge]-style reasoning.                                       *)
+(*                                                                      *)
+(* EASYCRYPT WITNESS: phl/easycrypt/ec_while_variant.ec proves [false].  *)
+(* It is the one witness whose bound ([0%r]) is entirely ordinary.       *)
+
+Lemma ec_while_variant P Q (I : assn) (vrnt : cmem -> int) (e : bexpr)
+                       s c r d :
+     (forall z : int,
+        phl (I /\ `[{e}] /\ [pred m | vrnt m == z])%A c
+            (I /\ [pred m | vrnt m < z])%A '= 1)
+  -> (forall m, I m -> vrnt m <= 0 -> ~~ `[{e}] m)
+  -> (forall m, ~~ `[{e}] m -> I m -> Q m)
+  -> phl P s I r d
+  -> phl P (s ;; While e Do c) Q r d.
+Proof. Admitted.
+
+(* (b) Reverse rule ([while (inv)], [t_bdhoare_while_rev_r],             *)
+(* [ecPhlWhile.ml:157-200]).  Upper bounds only: [:161-162] rejects any  *)
+(* comparison other than [FHle].                                        *)
+(*                                                                      *)
+(* Two subgoals ([:200]):                                                *)
+(*   [body_concl] ([:178-186]) introduces an ABSTRACT STATEMENT [w]      *)
+(*     standing for the rest of the loop ([i_abstract w], [:179]) and    *)
+(*     asks for one unfolding step.  Here that is a genuine              *)
+(*     quantification over commands.                                     *)
+(*   [rem_concl] ([:189-198]) is a *Hoare* goal ([f_hoareS], [:197]) on  *)
+(*     the prefix [rem_s]:                                               *)
+(*       hoare[ rem_s : P ==> inv /\ forall mod(body).                    *)
+(*                              ((inv /\ ~e /\ Q) => bound = 1%r) ]      *)
+(*     -- note [f_eq bound f_r1] at [:193]: an EQUALITY [d = 1], not     *)
+(*     [1 <= d].  Per (G5) the [forall mod] part is stated below over    *)
+(*     ALL memories, which splits [rem_concl] into [hoare P s I] plus a  *)
+(*     side condition.                                                   *)
+
+(* !!! WRONG -- FALSE as written; missing [0 <= d].  Fourth instance of  *)
+(* the unconstrained-bound defect, after [ec_seq_le], [ec_seq_ge] and    *)
+(* [ec_rnd_le] (see also [ec_call_seq_le]).  An earlier                  *)
+(* version of this lemma carried [0 <= d] and [1 <= d] premises and was  *)
+(* provable; NEITHER is in [t_bdhoare_while_rev_r], and [:193]'s         *)
+(* [bound = 1%r] is only ever triggered at exit states satisfying [Q].   *)
+(* When no reachable exit state satisfies [Q], and the guard is false so *)
+(* the body premise is vacuous, nothing constrains [d] at all.           *)
+(*                                                                      *)
+(* COUNTEREXAMPLE, machine-checked --                                    *)
+(*   [P := I := predT], [Q := pred0], [e := false%:S],                   *)
+(*   [s := skip], [c := skip], [d := -1].                                *)
+(* The body premise has precondition [I /\ `[{e}]] = [pred0], hence is   *)
+(* vacuous; the bound premise has [Q m] = [false] in its hypotheses,     *)
+(* hence is vacuous; [hoare predT skip predT] holds.  But                *)
+(* [ssem (skip ;; While false%:S Do skip) m = dunit m] and               *)
+(* [\P_[dunit m] pred0 = 0], so the conclusion asserts [0 <= -1].        *)
+(*                                                                      *)
+(* Adding [0 <= d] repairs it, and [1 <= d] (weaker than [d = 1]) then   *)
+(* makes the proof below go through:                                     *)
+(*   [ssem_whileE] + [sum_dlim_r_r]; induct on [n], instantiating the    *)
+(*   body premise at [w := whilen e c n]; the base case [whilen e c 0 =  *)
+(*   abort] needs [0 <= d] and the [skip] branch needs [1 <= d].         *)
+(*                                                                      *)
+(* EASYCRYPT WITNESS: phl/easycrypt/ec_while_rev.ec proves [false].      *)
+
+Lemma ec_while_rev P Q (I : assn) (e : bexpr) s c d :
+     (forall w : cmd, phl I w Q '<= d -> phl (I /\ `[{e}])%A (c ;; w) Q '<= d)
+  -> hoare P s I
+  -> (forall m, I m -> ~~ `[{e}] m -> Q m -> d = 1)
+  -> phl P (s ;; While e Do c) Q '<= d.
+Proof. Admitted.
+
+(* (c) Reverse rule with a rate ([while (inv) (vrnt) k eps],             *)
+(* [t_bdhoare_while_rev_geq_r], [ecPhlWhile.ml:205-306]), lower and      *)
+(* exact bounds only ([:210-211] rejects [FHle]).  [eps] is the          *)
+(* per-iteration lower bound on the probability that the variant         *)
+(* decreases and [k] its upper bound; together they make the loop        *)
+(* almost surely terminating at a rate.  The loop must be the whole      *)
+(* statement ([check_single_stmt], [:230]), which is automatic below.    *)
+(*                                                                      *)
+(* DEVIATION: [pre_bound_concl] ([:248]) and [inv_term_concl] ([:257])   *)
+(* are guarded by [generalize_mod_ss_inv env modi], i.e. EasyCrypt's     *)
+(* [forall mod(body)].  They are stated here over *all* memories, which  *)
+(* is a strictly stronger premise and therefore a sound (but less        *)
+(* applicable) rule.  Stating them with (G5) would drag in a [nocall c]  *)
+(* hypothesis; see S2.3.                                                 *)
+(*                                                                      *)
+(* Premises are in the order EasyCrypt emits them ([:300-306]):          *)
+(* [pre_inv_concl] ([:237]), [pre_bound_concl] ([:240-250]),             *)
+(* [inv_term_concl] ([:253-258]), [body_concl] ([:289-298]),             *)
+(* [inv_concl] ([:280-282]), [vrnt_concl] ([:261-277], itself a          *)
+(* conjunction, split into the last two premises here).  Note            *)
+(* [body_concl] is stated with the PRECONDITION [P], not with [inv]      *)
+(* ([:293-295] uses [b_pre]).                                            *)
+
+(* !!! WRONG -- FALSE as written; missing [d <= 1].  EasyCrypt's         *)
+(* [pre_bound_concl] at [>=] ([:245]) is [P => ~e => (~Q => b = 0)],     *)
+(* constrains the bound only on the [~Q] branch.  When [Q] DOES hold at  *)
+(* an exit state the rule still claims [b <= \P_[.] Q <= 1], but nothing *)
 (* anywhere forces [b <= 1].                                             *)
 (*                                                                      *)
 (* COUNTEREXAMPLE, machine-checked -- take the guard identically false,  *)
@@ -928,9 +1198,11 @@ Qed.
 (* [0 < eps].  But [ssem_while0] gives [ssem (While e Do c) m = dunit m],*)
 (* so the conclusion asserts [2 <= \P_[dunit m] predT = 1].              *)
 (*                                                                      *)
-(* The [=] variant below has the SAME defect, for the same reason: its   *)
-(* pre-bound premise pins [b] only at states where the guard is already  *)
-(* false, so it says nothing when every [P]-state satisfies [e].         *)
+(*                                                                      *)
+(* EASYCRYPT WITNESS: phl/easycrypt/ec_while_rev_geq.ec proves [false].  *)
+(* Note the [~ Q] antecedent of [pre_bound_concl] is what a [Q := true]  *)
+(* instance disarms; see the [=] sibling below, which does NOT have      *)
+(* that escape.                                                          *)
 Lemma ec_while_rev_geq P Q (I : assn) (vrnt : cmem -> int) (e : bexpr)
                        c d (k : int) (eps : R) :
      (forall m, P m -> I m)
@@ -945,8 +1217,9 @@ Lemma ec_while_rev_geq P Q (I : assn) (vrnt : cmem -> int) (e : bexpr)
   -> phl P (While e Do c) Q '>= d.
 Proof. Admitted.
 
-(* !!! WRONG -- FALSE as written; missing [d <= 1], exactly as in        *)
-(* [ec_while_rev_geq] above.  The [=] shape does NOT escape the defect:  *)
+(* !!! WRONG -- FALSE as written; missing [d <= 1], exactly as in       *)
+(* [ec_while_rev_geq] above ([ecPhlWhile.ml:243-244] is the [FHeq] row   *)
+(* of the same [pre_bound_concl]).  The [=] shape does NOT escape it:    *)
 (* the pre-bound premise [P => ~e => b = (Q ? 1 : 0)] pins [b] only at   *)
 (* states where the guard is ALREADY false, so it is vacuous whenever    *)
 (* every [P]-state satisfies [e] -- which is the normal situation for a  *)
@@ -965,6 +1238,70 @@ Proof. Admitted.
 (* which makes the variant drop from 1 to 0.  But the loop then runs     *)
 (* exactly one iteration and stops, so [ssem (While e Do c) m] is a      *)
 (* [dunit] and the conclusion asserts [1 = 2].                           *)
+(*                                                                      *)
+(* NO EASYCRYPT WITNESS -- and the reason is instructive.  Unlike its    *)
+(* [>=] sibling, this defect is NOT reachable from the surface, so       *)
+(* phl/easycrypt/ has no script for it.  Both routes are blocked:        *)
+(*                                                                      *)
+(*  (i) guard false at entry (the [>=] instance).  At [FHeq],            *)
+(*      [pre_bound_concl] ([ecPhlWhile.ml:243-244]) is                   *)
+(*      [P => ~e => b = (Q ? 1 : 0)] with NO [~ Q] antecedent to         *)
+(*      disarm, so [~ e] holds and [b] is pinned to the true value.      *)
+(*      Machine-checked: at [b := 2%r], [Q := true] the premise comes    *)
+(*      out as [2%r = b2r true], i.e. [2 = 1] -- unprovable.             *)
+(*                                                                      *)
+(* (ii) guard true at entry.  Then [generalize_mod_ss_inv] ([:248])      *)
+(*      quantifies the loop's written variables, and [pre_bound_concl]   *)
+(*      does become vacuous ([x = 1 => x <> 1 => ...]).  But now         *)
+(*      [body_concl] ([:289-298]) is live:                               *)
+(*        phoare[ w : P ==> Q ] = b                                      *)
+(*        => phoare[ body; w : P /\ e ==> Q ] = b                        *)
+(*      and it cannot be discharged.  The hypothesis speaks of [w] from  *)
+(*      [P], but [body] must falsify [e] for the loop to terminate, and  *)
+(*      [P => e] (which is what made (i)'s premise vacuous) then means   *)
+(*      [P] fails after [body].  Machine-checked: after [sp 1] the goal's*)
+(*      precondition is [B.x = 0] while the hypothesis needs [B.x = 1].  *)
+(*      Nor can the absurd hypothesis ([= 2%r], above 1) be turned into  *)
+(*      [false]: [w] is an ABSTRACT STATEMENT ([LD_abs_st], [:287]), so  *)
+(*      there is no [Pr[...]] to instantiate it at.                      *)
+(*                                                                      *)
+(*      The other five premises of (ii) all discharge; only              *)
+(*      [body_concl] blocks.                                             *)
+(*                                                                      *)
+(* THE STATEMENT BELOW NEVERTHELESS MATCHES THE TACTIC, premise for      *)
+(* premise.  An earlier version of this note claimed the Coq statement   *)
+(* was "weaker than the tactic" because [forall w : cmd, ...] lets a     *)
+(* Coq proof exploit an absurd hypothesis.  That was wrong, in two ways. *)
+(*                                                                      *)
+(* First, the direction is backwards.  EasyCrypt's [w] is constrained by *)
+(* [while_info] ([ecPhlWhile.ml:22, :285]) to the loop's reads, writes   *)
+(* and calls, so it ranges over FEWER statements than [w : cmd] does.    *)
+(* Quantifying over all commands is the STRONGER premise, hence the      *)
+(* WEAKER lemma -- so it cannot be what makes the lemma false.  (Not     *)
+(* modelling that restriction is a (G5)-style deviation: pwhile's [cmd]  *)
+(* carries no read/write annotation, and [hl.mod] cannot supply one      *)
+(* without [nocall]; being a strengthening of a premise, it is sound.)   *)
+(*                                                                      *)
+(* Second, and more importantly: the vacuity is in the RULE, not in the  *)
+(* encoding.  [xmutate1_hyps] ([:300]) discharges [body_concl] in a      *)
+(* context where [w] is a free abstract-statement variable, so what the  *)
+(* tactic's soundness needs is that the implication hold for EVERY       *)
+(* instantiation of [w] -- exactly [forall w, H w -> C w].  At [b := 2]  *)
+(* with [P] satisfiable, [H w] is false for every [w], so that premise   *)
+(* is vacuously true and the conclusion is false.  The RULE IS UNSOUND.  *)
+(*                                                                      *)
+(* What stops EasyCrypt is not soundness but INCOMPLETENESS: its logic   *)
+(* has no way to derive [false] from [phoare[w : P ==> Q] = 2%r] for an  *)
+(* abstract [w], because there is no [Pr[...]] to instantiate it at.  So *)
+(* the [!!! WRONG] flag stands and the lemma is genuinely false; there   *)
+(* is simply no [.ec] script exhibiting it.  This is the one finding in  *)
+(* the file of the form "unsound rule, unexploitable in practice".       *)
+(*                                                                      *)
+(* Adding [0 <= d <= 1] would rule the counterexample out, and is what   *)
+(* the tactic's proof obligations enforce de facto -- but it is NOT a    *)
+(* premise of [t_bdhoare_while_rev_geq_r], so it is deliberately not     *)
+(* added here.  Per the agreed rule, the statement follows the           *)
+(* implementation and the divergence is reported rather than patched.    *)
 Lemma ec_while_rev_eq P Q (I : assn) (vrnt : cmem -> int) (e : bexpr)
                       c d (k : int) (eps : R) :
      (forall m, P m -> I m)
@@ -982,6 +1319,9 @@ Proof. Admitted.
 
 (* -------------------------------------------------------------------- *)
 (* S1.9  call.                                                           *)
+(* [t_bdhoare_call], ecPhlCall.ml:304 ([bdhoare_call_spec] :291-301, wp *)
+(* orientation :326-336, residual table :344-359, emission :361);        *)
+(* dispatcher [t_call] bdHoare arms :432, :449-453, :471-477.            *)
 (*                                                                      *)
 (* By (G3), EasyCrypt's [lv <@ f(args)] is                               *)
 (*   [Block bs Do (call f) Return rs].                                   *)
@@ -1047,19 +1387,34 @@ have -> : \P_[ssem_ ps (call f) (minit m bs)] [pred m' | Q (mret m m' rs)]
 exact: (h _ (hpre m Pm)).
 Qed.
 
-(* Step 3 -- with a prefix [s], reproducing the residual-goal table of   *)
-(* S1.9.  EasyCrypt reaches it through [t_bdhoare_seq] at the            *)
-(* [PSeqSingle] row of the S1.2 surface table, [(b/b', b', 0, 1)].       *)
+(* Step 3 -- with a prefix [s].  [t_bdhoare_call], [ecPhlCall.ml:304-361]*)
+(* CORRECTED against the implementation.  [:361] emits EXACTLY TWO       *)
+(* subgoals, [f_concl] (the callee spec, [:315-316] via                  *)
+(* [bdhoare_call_spec], [:291-301]) and [concl] (the residual on the     *)
+(* prefix, [:344-359]).  There is NO separate almost-surely premise:     *)
+(* earlier versions of the [>=] and [=] lemmas below carried an extra    *)
+(* [hoare P s wp] premise "discharged inside the seq application", which *)
+(* is not in the tactic.  It has been removed; the [=] row was PROVED    *)
+(* using it and is now false (see its flag).                             *)
 (*                                                                      *)
-(* NOTE the [hoare] premise: it is the [g1 = 0] component of that seq    *)
-(* split -- the prefix must establish the [wp] *almost surely*.  The     *)
-(* S1.9 residual table does not display it, because in EasyCrypt it is   *)
-(* discharged inside the seq application.  It is load-bearing: without   *)
-(* it, memories off the [wp] contribute unconstrained mass and the [=]   *)
-(* and [>=] rows fail.                                                   *)
+(* The residual table ([:346-358]), with [opt_bd] the optional bound:    *)
+(*   [FHle], [None]     -> [hoareS P s wp]              (a Hoare goal)   *)
+(*   [FHeq], [Some d']  -> [bdHoareS P s wp FHeq (d/d')]                 *)
+(*   [FHeq], [None]     -> [bdHoareS P s wp FHeq 1]                      *)
+(*   [FHge], [Some d']  -> [bdHoareS P s wp FHge (d/d')]                 *)
+(*   [FHge], [None]     -> [bdHoareS P s wp **FHeq** 1]  <- note the     *)
+(*                          comparison SWITCHES to [FHeq] at [:357]      *)
+(*   [FHle], [Some _]   -> rejected ([:296])                             *)
+(* The [Some d'] rows are stated below.  They are DEAD FROM THE SURFACE: *)
+(* every caller passes [None] ([ecPhlCall.ml:453], [ecPhlHiAuto.ml:68]), *)
+(* so the reachable [>=] and [=] rows are the [None] ones, whose         *)
+(* residual is [phl P s wp '= 1] -- i.e. the [d' := d] instance of the   *)
+(* lemmas below, with the residual comparison replaced by [=].           *)
 (*                                                                      *)
-(* The "no explicit bound" rows of the table are the [d' = d]            *)
-(* instances, where [d / d'] is [1].                                     *)
+(* Note also that [:351] and [:355] build the division [d / d'] with no  *)
+(* [d' <> 0] side condition anywhere; earlier versions of these lemmas   *)
+(* carried [d' != 0] as a premise.  It has been removed too (in Coq as   *)
+(* in EasyCrypt, [d / 0 = 0]).                                          *)
 
 (* !!! WRONG -- FALSE as written; missing [0 <= d].  Same defect as      *)
 (* [ec_seq_le]: on the support the prefix gives [F m' <= d], so          *)
@@ -1070,6 +1425,8 @@ Qed.
 (* [d := -1].  The [hoare] premise holds because [ssem abort m = dnull]; *)
 (* the contract premise is vacuous ([Pf = pred0]); but                   *)
 (* [ssem (abort ;; _) m = dnull], so the conclusion asserts [0 <= -1].   *)
+(*                                                                      *)
+(* EASYCRYPT WITNESS: phl/easycrypt/ec_call_seq_le.ec proves [false].    *)
 Lemma ec_call_seq_le P Q (Pf Qf : assn) (f : ident)
                      (bs rs : seq (@binding _ cmem)) s d :
      hoare P s [pred m | Pf (minit m bs)
@@ -1078,63 +1435,71 @@ Lemma ec_call_seq_le P Q (Pf Qf : assn) (f : ident)
   -> phl P (s ;; (Block bs Do (call f) Return rs)) Q '<= d.
 Proof. Admitted.
 
-(* !!! WRONG -- FALSE as written; missing [0 <= d'] (with [d' != 0],     *)
-(* i.e. [0 < d']).  A negative callee bound is satisfied by every        *)
-(* probability, so it constrains nothing, while [d / d'] flips sign and  *)
-(* makes the prefix premise vacuous too.                                 *)
+(* !!! WRONG -- FALSE as written; missing [0 < d'].  A negative callee   *)
+(* bound is satisfied by every probability, so it constrains nothing,    *)
+(* while [d / d'] flips sign and makes the prefix premise vacuous too.   *)
 (* COUNTEREXAMPLE, machine-checked -- [P := predT], [s := abort],        *)
 (* [Pf := pred0], [Qf := predT], [Q := predT], [bs = rs = [::]],         *)
-(* [d := 1], [d' := -1].  Then [d' != 0]; the [hoare] premise holds      *)
-(* ([ssem abort m = dnull]); [d / d' = -1 <= 0 = \P_[dnull] _] gives the *)
-(* prefix premise; the contract premise is vacuous.  But                 *)
+(* [d := 1], [d' := -1].  Then [d / d' = -1 <= 0 = \P_[dnull] _] gives   *)
+(* the prefix premise and the contract premise is vacuous.  But          *)
 (* [ssem (abort ;; _) m = dnull], so the conclusion asserts [1 <= 0].    *)
+(*                                                                      *)
+(* NO EASYCRYPT WITNESS -- this row is DEAD CODE.  It is the             *)
+(* [(FHge, Some bd)] arm ([ecPhlCall.ml:354-355]), and [opt_bd] is       *)
+(* [None] at BOTH call sites of [t_bdhoare_call] ([ecPhlCall.ml:453] in  *)
+(* [t_call], [ecPhlHiAuto.ml:68] in the losslessness strategy).  No      *)
+(* surface syntax reaches it, so no [.ec] script can exist.  The         *)
+(* reachable [(FHge, None)] arm ([:356-357]) switches the residual       *)
+(* comparison to [FHeq 1%r], which forces the prefix to be lossless and  *)
+(* is sound.  The finding here is therefore "EasyCrypt contains unsound  *)
+(* dead code", not "EasyCrypt proves false".                             *)
 Lemma ec_call_seq_ge P Q (Pf Qf : assn) (f : ident)
                      (bs rs : seq (@binding _ cmem)) s d d' :
-     d' != 0
-  -> hoare P s [pred m | Pf (minit m bs)
-                         && `[< forall m', Qf m' -> Q (mret m m' rs) >]]
-  -> phl P s [pred m | Pf (minit m bs)
+     phl P s [pred m | Pf (minit m bs)
                        && `[< forall m', Qf m' -> Q (mret m m' rs) >]] '>= (d / d')
   -> phl Pf (call f) Qf '>= d'
   -> phl P (s ;; (Block bs Do (call f) Return rs)) Q '>= d.
 Proof. Admitted.
 
+(* !!! WRONG -- FALSE once the invented almost-surely premise is gone.   *)
+(* This lemma WAS proved, using an extra                                 *)
+(*   [hoare P s [pred m | Pf (minit m bs) && ...]]                       *)
+(* premise, which let the proof turn [\P_[mu] predT] into [\P_[mu] wp]   *)
+(* and conclude [\E_[mu] F = \P_[mu] wp * d' = (d/d') * d' = d].         *)
+(* [t_bdhoare_call] emits no such premise ([ecPhlCall.ml:361]), and      *)
+(* without it the memories OFF the [wp] contribute unconstrained mass:   *)
+(* the contract pins [F m' = d'] only where [Pf (minit m' bs)] holds.    *)
+(*                                                                      *)
+(* COUNTEREXAMPLE, machine-checked -- every procedure body [skip], and   *)
+(*   [P := Q := Qf := predT], [Pf := pred0], [s := skip],                *)
+(*   [bs = rs = [::]], [d := 0], [d' := 1].                              *)
+(* The prefix premise is [phl predT skip pred0 '= 0/1], i.e. [0 = 0];    *)
+(* the contract premise [phl pred0 (call f) predT '= 1] is vacuous.  But *)
+(* [ssem (skip ;; Block [::] Do (call f) Return [::]) m] is a [dunit],   *)
+(* so the conclusion asserts [1 = 0].                                    *)
+(*                                                                      *)
+(* This is the one place where the reconciliation trades a proof for     *)
+(* fidelity.  The reachable ([None]) row of the table has residual       *)
+(* [phl P s wp '= 1], which forces the prefix to be lossless AND to land *)
+(* in [wp] almost surely -- that instance is sound, and is what the old  *)
+(* [hoare] premise was silently reconstructing.                          *)
+(*                                                                      *)
+(* NO EASYCRYPT WITNESS -- dead code, exactly as for [ec_call_seq_ge]    *)
+(* above.  This is the [(FHeq, Some bd)] arm ([ecPhlCall.ml:350-351]),   *)
+(* and [opt_bd] is [None] at both call sites.  The reachable             *)
+(* [(FHeq, None)] arm ([:352-353]) has residual [FHeq 1%r] and is sound. *)
 Lemma ec_call_seq_eq P Q (Pf Qf : assn) (f : ident)
                      (bs rs : seq (@binding _ cmem)) s d d' :
-     d' != 0
-  -> hoare P s [pred m | Pf (minit m bs)
-                         && `[< forall m', Q (mret m m' rs) = Qf m' >]]
-  -> phl P s [pred m | Pf (minit m bs)
+     phl P s [pred m | Pf (minit m bs)
                        && `[< forall m', Q (mret m m' rs) = Qf m' >]] '= (d / d')
   -> phl Pf (call f) Qf '= d'
   -> phl P (s ;; (Block bs Do (call f) Return rs)) Q '= d.
-(* Unlike its [<=] and [>=] siblings this one IS sound: at [=] the       *)
-(* contract pins [F m' = d'] exactly on the support, so                  *)
-(* [\E_[mu] F = \P_[mu] predT * d'], and the [hoare] premise identifies  *)
-(* [\P_[mu] predT] with [\P_[mu] wp = d / d'].                           *)
-Proof.
-move=> nz hwp hpr hcall m Pm; rewrite ssemE pr_dlet.
-set W := [pred m | Pf (minit m bs)
-                   && `[< forall m', Q (mret m m' rs) = Qf m' >]].
-have hr : range W (ssem_ ps s m) by apply/pr_range/eqP; exact: (hwp m Pm).
-have hF : forall m', m' \in dinsupp (ssem_ ps s m) ->
-            \P_[ssem_ ps (Block bs Do (call f) Return rs) m'] Q = d'.
-+ move=> m' hm'; move: (hr m' hm') => /andP [hPf /asboolP hQ].
-  rewrite ssemE aux_pr_dlet_dunit.
-  have -> : \P_[ssem_ ps (call f) (minit m' bs)] [pred x | Q (mret m' x rs)]
-          = \P_[ssem_ ps (call f) (minit m' bs)] Qf.
-  - by apply/eq_pr => x; rewrite ?inE; exact: hQ.
-  by apply/eqP; exact: (hcall _ hPf).
-rewrite -(@eq_exp _ _ _ (fun=> d')).
-+ by move=> m' hm'; apply/esym; exact: (hF m' hm').
-rewrite exp_cst.
-have -> : \P_[ssem_ ps s m] predT = \P_[ssem_ ps s m] W.
-+ by apply/eq_in_pr => x hx; move: (hr x hx); rewrite !inE => ->.
-by move: (hpr m Pm) => /= /eqP ->; rewrite (mulfVK nz).
-Qed.
+Proof. Admitted.
 
 (* -------------------------------------------------------------------- *)
 (* S1.10 / S1.12  proc, and fun-to-code.                                 *)
+(* [t_bdhoareF_fun_def_r], ecPhlFun.ml:104 (the bound is substituted too, *)
+(* :115); [t_fun_to_code_bdhoare_r], :480.                               *)
 (*                                                                      *)
 (*   |- phoare[ body(f) : P ==> Q ] <> b                                 *)
 (*   ------------------------------------                                *)
@@ -1151,6 +1516,8 @@ Proof. by split=> h m Pm; move: (h m Pm); rewrite ssem_call_eq. Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S1.11  proc * (abstract procedures) -- NOT FORMALIZED.                *)
+(* [t_bdhoareF_abs_ge_r], ecPhlFun.ml:263 ([bdhoareF_abs_spec] :179-189); *)
+(* derived [t_bdhoareF_abs_r], :277; [process_fun_abs], :644.            *)
 (* [t_bdhoareF_abs_ge_r] quantifies over the oracle set [O] of an        *)
 (* abstract module [f] and checks [PV.check_depend] / [check_oracle_use] *)
 (* against [f]'s top-level module state.  There is no module system and  *)
@@ -1159,6 +1526,8 @@ Proof. by split=> h m Pm; move: (h m Pm); rewrite ssem_call_eq. Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S1.13  elim* and exists* -- quantifiers in the precondition.          *)
+(* [t_hr_exists_elim_r], ecPhlExists.ml:39; [t_hr_exists_intro_r], :49   *)
+(* (body :92-107), [t_hr_exists_intro], :111.                            *)
 (*                                                                      *)
 (*   |- forall x, phoare[ c : P' ==> Q ] <> b                            *)
 (*   -----------------------------------------                           *)
@@ -1182,6 +1551,8 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S1.14  ecall -- apply a procedure contract given as a lemma.          *)
+(* [process_ecall_bdhoare], ecPhlExists.ml:583, via                      *)
+(* [t_ecall_bdhoare_bwd], ecPhlCall.ml:518-521.                          *)
 (*                                                                      *)
 (* Backward direction only, and the contract must be lossless ([= 1]);   *)
 (* the goal's own bound must satisfy [1 <> b], which is the [condbd]     *)
@@ -1228,6 +1599,8 @@ Qed.
 (* -------------------------------------------------------------------- *)
 (* S1.15  case.  Sound -- unlike a *postcondition* split -- because both *)
 (* branches keep the same bound and the preconditions are exclusive.     *)
+(* [t_bdhoare_case_r], ecPhlCase.ml:34; surface [t_hl_case] :66, :72     *)
+(* ([Inv_ts] rejected :81).                                              *)
 
 Lemma ec_case P (Phi : assn) c Q r d :
      phl (P /\ Phi)%A   c Q r d
@@ -1241,6 +1614,8 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S1.16  exfalso -- the [false] precondition axiom.                     *)
+(* [t_core_exfalso_r], ecPhlTAuto.ml:43 (ZERO premises); surface         *)
+(* [t_exfalso_r], ecPhlAuto.ml:16-25, [t_exfalso], :27.                  *)
 (* The core rule has zero premises; the surface tactic also applies when *)
 (* the precondition is merely *equivalent* to [false].                   *)
 (* Note the catalogue's remark: there is no "phoare[_ ==> true] closes"  *)
@@ -1268,6 +1643,18 @@ Proof. by move=> h m; rewrite (negbTE (h m)). Qed.
 (* *strengthen* it, and at an exact bound it must be equivalent.         *)
 (* Stated pointwise so that S2.3 can quantify it over reachable          *)
 (* memories only.                                                        *)
+(*                                                                      *)
+(* CAUTION -- EasyCrypt's own prose disagrees with its code here.        *)
+(* [ecPhlConseq.ml:215-217] documents [bdHoare_conseq_conds] as          *)
+(*   FHle: Q => Q'   FHeq: Q <=> Q'   FHge: Q' => Q                      *)
+(* which is what the code at [:226-230] builds ([f_imp po new_po] at     *)
+(* [:227], i.e. old post implies new post).  But the block comment at    *)
+(* [:241-242], sitting directly above [t_bdHoareF_conseq], states the    *)
+(* TRANSPOSE:                                                            *)
+(*   FHle (<=): Q' => Q   FHeq (=): Q' <=> Q   FHge (>=): Q => Q'        *)
+(* [ec_postimpl] follows the code.  (This is the second place where the  *)
+(* EasyCrypt prose is wrong; the first is the [mk_event_cond] table of   *)
+(* RULES-PHL.md S1.6 -- see the orientation note there.)                 *)
 
 Definition ec_postimpl (r : bd) (Q Q' : assn) (m : cmem) : Prop :=
   match r with
@@ -1302,6 +1689,8 @@ Definition ec_bd_goal (r r' : bd) (d d' : R) : Prop :=
 
 (* -------------------------------------------------------------------- *)
 (* S2.1  Consequence (pre/post).                                         *)
+(* [t_bdHoareS_conseq], ecPhlConseq.ml:259 ([t_bdHoareF_conseq] :243);   *)
+(* the postcondition-orientation table is :95-106.                       *)
 (*                                                                      *)
 (* phl.v already proves the three instances -- [phl_conseq_le],          *)
 (* [phl_conseq_ge] and [phl_conseq_eq] -- and their orientations match   *)
@@ -1327,6 +1716,9 @@ Qed.
 (* S2.2  Bound and comparison change.  One lemma for the whole table:    *)
 (* the seven admissible rows are the seven cases of [ec_bd_goal] that    *)
 (* are not [False].                                                      *)
+(* [t_bdHoareS_conseq_bd], ecPhlConseq.ml:293 ([t_bdHoareF_conseq_bd]    *)
+(* :279); the [bd_goal_r] table is :95-106, [bd_goal] (user error)       *)
+(* :108-122; the side conditions are [bdHoare_conseq_conds], :218-231.   *)
 (*                                                                      *)
 (* This is the workhorse EasyCrypt uses internally to normalise a bound  *)
 (* before applying the real rule -- in [skip] (S1.1), [proc *] (S1.11),  *)
@@ -1336,28 +1728,30 @@ Qed.
 (* The [Eq, Ge] and [Eq, Le] rows go through [phl_le1] and [phl_ge0].    *)
 
 Lemma ec_conseq_bd P Q c r r' d d' :
-     ec_bd_goal r r' d d'
+     (forall m, P m -> ec_bd_goal r r' d d')
   -> phl P c Q r' d'
   -> phl P c Q r  d.
 Proof.
-rewrite /ec_bd_goal; case: r; case: r'.
-+ by move=> hbd h m Pm; apply: (le_trans (h m Pm) hbd).
-+ by move=> [].
-+ by move=> hbd h m Pm; move: (h m Pm) => /= /eqP ->.
-+ by move=> [].
-+ by move=> hbd h m Pm; apply: (le_trans hbd (h m Pm)).
-+ by move=> hbd h m Pm; move: (h m Pm) => /= /eqP ->.
-+ move=> [hd hd'] h m Pm; move: (h m Pm) => /= hle.
+rewrite /ec_bd_goal; case: r; case: r' => hbd h m Pm.
++ by apply: (le_trans (h m Pm) (hbd m Pm)).
++ by case: (hbd m Pm).
++ by move: (h m Pm) => /= /eqP ->; exact: (hbd m Pm).
++ by case: (hbd m Pm).
++ by apply: (le_trans (hbd m Pm) (h m Pm)).
++ by move: (h m Pm) => /= /eqP ->; exact: (hbd m Pm).
++ move: (hbd m Pm) => [hd hd']; move: (h m Pm) => /= hle.
   rewrite hd; apply/eqP/le_anti/andP; split; last exact: ge0_pr.
   by rewrite -hd'.
-+ move=> [hd hd'] h m Pm; move: (h m Pm) => /= hge.
++ move: (hbd m Pm) => [hd hd']; move: (h m Pm) => /= hge.
   rewrite hd; apply/eqP/le_anti/andP; split; first exact: le1_pr.
   by rewrite -hd'.
-+ by move=> hbd h m Pm; move: (h m Pm) => /= /eqP ->; rewrite hbd.
++ by move: (h m Pm) => /= /eqP ->; rewrite (hbd m Pm).
 Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S2.3  Not-modified variants.                                          *)
+(* [t_bdHoareS_notmod], ecPhlConseq.ml:623 ([t_bdHoareF_notmod] :607);   *)
+(* derived [t_bdHoareS_conseq_nm], :652.                                 *)
 (*                                                                      *)
 (* Same as S2.1, but the postcondition premise need only hold on the     *)
 (* memories reachable from [m] by running [c] -- those that agree with   *)
@@ -1408,6 +1802,8 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S2.4  Postcondition conjunction split.                                *)
+(* [t_bdHoareS_conseq_conj], ecPhlConseq.ml:992                          *)
+(* ([t_bdHoareF_conseq_conj] :1013).                                     *)
 (*                                                                      *)
 (* Splits a conjunct off the postcondition into a *Hoare* side condition *)
 (* -- sound because the Hoare part is certain and therefore consumes no  *)
@@ -1444,6 +1840,7 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S2.5  Transitivity via an equivalence.                                *)
+(* [t_bdHoareF_conseq_equiv], ecPhlConseq.ml:1233 (4 premises).          *)
 (*                                                                      *)
 (* Proves a pHL judgement about [c1] from a coupling with [c2] plus a    *)
 (* pHL judgement about [c2].  The relational judgement is [prhl_] of     *)
@@ -1496,6 +1893,9 @@ Qed.
 (* -------------------------------------------------------------------- *)
 (* S2.6  The surface conseq -- the composite the user actually sees:     *)
 (* S2.2 to change the bound, then S2.3 in not-modified style.            *)
+(* [t_hi_conseq_bdHoareS], ecPhlConseq.ml:1543-1559                      *)
+(* ([t_hi_conseq_bdHoareF] :1635-1651); accepted argument shapes         *)
+(* :1536-1541 and :1627-1633; [t_hi_trivial] :1301.                      *)
 (* [conseq (: P' ==> Q')] with an unchanged bound instantiates           *)
 (* [r' := r], [d' := d], where [ec_bd_goal] is reflexivity and the       *)
 (* premise vanishes.                                                     *)
@@ -1505,7 +1905,7 @@ Lemma ec_conseq_full P P' Q Q' c r r' d d' :
   -> (forall m, P m -> P' m)
   -> (forall m, P m -> forall m',
         hl.eqon (predC (hl.mod c)) m m' -> ec_postimpl r Q Q' m')
-  -> ec_bd_goal r r' d d'
+  -> (forall m, P m -> ec_bd_goal r r' d d')
   -> phl P' c Q' r' d'
   -> phl P  c Q  r  d.
 Proof.
@@ -1520,6 +1920,8 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S3.1  hoare -- the [= 0] view, both directions.                       *)
+(* [t_hoare_of_bdhoareS_r] / [t_bdhoare_of_hoareS_r], ecPhlCoreView.ml:9, *)
+(* :11, :24, :26.                                                        *)
 (*                                                                      *)
 (*   |- hoare[ c : P ==> ~Q ]            |- phoare[ c : P ==> ~Q ] = 0   *)
 (*   ------------------------            ---------------------------    *)
@@ -1551,6 +1953,8 @@ Qed.
 (* [forall &m, P => (0 <> b)] premise is the plain [r 0 d].              *)
 (* Instantiating: [<= d] gives [0 <= d]; [>= d] gives [d <= 0];          *)
 (* [= d] gives [d = 0].                                                  *)
+(* [t_hoare_bd_hoare], ecPhlBdHoare.ml:16; the [= 0] short circuit is    *)
+(* :21-22 and :30-31, the general path :24-27 and :33-36.                *)
 
 Lemma ec_hoare_bd P Q c r d :
   r 0 d -> hoare P c (~ Q)%A -> phl P c Q r d.
@@ -1560,6 +1964,7 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S3.3  hoare from pHL at bound 1.                                      *)
+(* ecPhlConseq.ml:904, :916 (one premise; statement form exported).      *)
 (*                                                                      *)
 (*   |- phoare[ c : P ==> Q ] = 1                                        *)
 (*   ---------------------------                                         *)
@@ -1578,6 +1983,9 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S3.4  phoare split on a conjunctive or disjunctive postcondition.     *)
+(* [t_bdhoare_split_bop], ecPhlBdHoare.ml:55; surface                    *)
+(* [t_bdhoare_split_bop_conseq], :69 ([b3] defaults to [0%r],            *)
+(* ecPhlHiBdHoare.ml:38).                                                *)
 (*                                                                      *)
 (* Inclusion-exclusion: Pr[A /\ B] = Pr[A] + Pr[B] - Pr[A \/ B].  Note   *)
 (* the *dual* connective and the *opposite* comparison in the third      *)
@@ -1597,7 +2005,7 @@ Qed.
 (* [eq_pr] may be needed to line the two up syntactically.               *)
 
 Lemma ec_split_and P (A B : assn) c r d d1 d2 d3 :
-     r (d1 + d2 - d3) d
+     (forall m, P m -> r (d1 + d2 - d3) d)
   -> phl P c A r d1
   -> phl P c B r d2
   -> phl P c (A \/ B)%A (bd_opp r) d3
@@ -1606,13 +2014,13 @@ Proof.
 move=> hbd hA hB hAB m Pm; rewrite aux_pr_andE.
 move: hbd hA hB hAB; case: r => /= hbd hA hB hAB;
   move: (hA m Pm) (hB m Pm) (hAB m Pm) => /= k1 k2 k3.
-+ by apply: (le_trans _ hbd); apply: lerB; [apply: lerD | exact: k3].
-+ by apply: (le_trans hbd); apply: lerB; [apply: lerD | exact: k3].
-+ by move: k1 k2 k3 => /eqP -> /eqP -> /eqP ->.
++ by apply: (le_trans _ (hbd m Pm)); apply: lerB; [apply: lerD | exact: k3].
++ by apply: (le_trans (hbd m Pm)); apply: lerB; [apply: lerD | exact: k3].
++ by move: k1 k2 k3 => /eqP -> /eqP -> /eqP ->; exact: (hbd m Pm).
 Qed.
 
 Lemma ec_split_or P (A B : assn) c r d d1 d2 d3 :
-     r (d1 + d2 - d3) d
+     (forall m, P m -> r (d1 + d2 - d3) d)
   -> phl P c A r d1
   -> phl P c B r d2
   -> phl P c (A /\ B)%A (bd_opp r) d3
@@ -1621,13 +2029,15 @@ Proof.
 move=> hbd hA hB hAB m Pm; rewrite aux_pr_orE.
 move: hbd hA hB hAB; case: r => /= hbd hA hB hAB;
   move: (hA m Pm) (hB m Pm) (hAB m Pm) => /= k1 k2 k3.
-+ by apply: (le_trans _ hbd); apply: lerB; [apply: lerD | exact: k3].
-+ by apply: (le_trans hbd); apply: lerB; [apply: lerD | exact: k3].
-+ by move: k1 k2 k3 => /eqP -> /eqP -> /eqP ->.
++ by apply: (le_trans _ (hbd m Pm)); apply: lerB; [apply: lerD | exact: k3].
++ by apply: (le_trans (hbd m Pm)); apply: lerB; [apply: lerD | exact: k3].
++ by move: k1 k2 k3 => /eqP -> /eqP -> /eqP ->; exact: (hbd m Pm).
 Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S3.5  phoare split ! on a negation.  Pr[Q] = Pr[true] - Pr[~Q].       *)
+(* [t_bdhoare_split_not], ecPhlBdHoare.ml:149; surface                   *)
+(* [t_bdhoare_split_not_conseq], :158.                                   *)
 (*                                                                      *)
 (* [\P_[.] predT] is the sub-distribution *weight*, not [1] -- which is  *)
 (* exactly why the catalogue's first premise is                          *)
@@ -1642,7 +2052,7 @@ Qed.
 (* Proof: [pr_predC] (counting_distr.v:1741).                            *)
 
 Lemma ec_split_not P Q c r d d1 d2 :
-     r (d1 - d2) d
+     (forall m, P m -> r (d1 - d2) d)
   -> phl P c predT r d1
   -> phl P c (~ Q)%A (bd_opp r) d2
   -> phl P c Q r d.
@@ -1653,17 +2063,18 @@ have hX : \P_[ssem_ ps c m] Q
 + by rewrite pr_predC subKr.
 rewrite hX; move: hbd h1 h2; case: r => /= hbd h1 h2;
   move: (h1 m Pm) (h2 m Pm) => /= k1 k2.
-+ by apply: (le_trans _ hbd); apply: lerB.
-+ by apply: (le_trans hbd); apply: lerB.
-+ by move: k1 k2 => /eqP -> /eqP ->.
++ by apply: (le_trans _ (hbd m Pm)); apply: lerB.
++ by apply: (le_trans (hbd m Pm)); apply: lerB.
++ by move: k1 k2 => /eqP -> /eqP ->; exact: (hbd m Pm).
 Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S3.6  phoare split, case form: split the postcondition on an          *)
 (* arbitrary [Phi].  Proof: [prID] (counting_distr.v:1654).              *)
+(* [BDH_split_or_case], ecPhlHiBdHoare.ml:42-72; entry :13.              *)
 
 Lemma ec_split_case P Q (Phi : assn) c r d d1 d2 :
-     r (d1 + d2) d
+     (forall m, P m -> r (d1 + d2) d)
   -> phl P c (Phi /\ Q)%A   r d1
   -> phl P c (~ Phi /\ Q)%A r d2
   -> phl P c Q r d.
@@ -1671,14 +2082,14 @@ Proof.
 move=> hbd h1 h2 m Pm; rewrite (aux_pr_splitE (ssem_ ps c m) Q Phi).
 move: hbd h1 h2; case: r => /= hbd h1 h2;
   move: (h1 m Pm) (h2 m Pm) => /= k1 k2.
-+ by apply: (le_trans _ hbd); apply: lerD.
-+ by apply: (le_trans hbd); apply: lerD.
-+ by move: k1 k2 => /eqP -> /eqP ->.
++ by apply: (le_trans _ (hbd m Pm)); apply: lerD.
++ by apply: (le_trans (hbd m Pm)); apply: lerD.
++ by move: k1 k2 => /eqP -> /eqP ->; exact: (hbd m Pm).
 Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S3.7  phoare equiv -- equiv collapses to pHL when the other side is   *)
-(* empty.                                                                *)
+(* empty.  [t_equivS_conseq_bd], ecPhlConseq.ml:1115.                    *)
 (*                                                                      *)
 (*   |- phoare[ c : P ==> Q ] = 1                                        *)
 (*   -----------------------------------                                 *)
@@ -1779,6 +2190,7 @@ Qed.
 (* S4.3  prbounded -- closes a pHL goal whose bound is trivially         *)
 (* satisfied.  This is the pHL analogue of [t_hoare_true], and the only  *)
 (* rule of the catalogue that is *exclusively* pHL.                      *)
+(* [t_prbounded_r], ecPhlPr.ml:99; the case list is :114-124.            *)
 (*                                                                      *)
 (* The first two rows are already phl.v's [phl_le1] and [phl_ge0]:       *)
 (*   Lemma phl_le1 P c Q : phl P c Q '<= 1.                              *)
@@ -1796,6 +2208,7 @@ Proof. by move=> h m _; apply: (le_trans h (ge0_pr _ _)). Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S4.4  fel -- the failure-event lemma -- NOT FORMALIZED.               *)
+(* [t_failure_event_r], ecPhlFel.ml:117, emission :250.                  *)
 (* [t_failure_event_r] is driven by a counter, a query bound, per-oracle *)
 (* preconditions over the oracle set of an abstract module, and a        *)
 (* [PV.indep] check that the failure event, counter and invariant are    *)
@@ -1805,6 +2218,7 @@ Proof. by move=> h m _; apply: (le_trans h (ge0_pr _ _)). Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S4.5  islossless.                                                     *)
+(* [t_lossless], ecPhlHiAuto.ml:123.                                     *)
 (*                                                                      *)
 (* [islossless f] is notation for [phoare[ f : true ==> true ] = 1].     *)
 (* The tactic itself is a syntax-directed strategy                       *)
@@ -1871,7 +2285,8 @@ Lemma ec_ll_call (f : ident) :
   phl predT (ps f) predT '= 1 -> phl predT (call f) predT '= 1.
 Proof. by move=> h m Pm; move: (h m Pm); rewrite ssem_call_eq. Qed.
 
-(* The loop case is the S1.8(a) variant rule at [Q := predT].            *)
+(* The loop case is [aux_phl_while_ll] (the semantic core of the S1.8(a) *)
+(* variant rule) weakened to [Q := predT].                               *)
 
 Lemma ec_ll_while (I : assn) (vrnt : cmem -> int) (e : bexpr) c :
      (forall z : int,
@@ -1881,22 +2296,26 @@ Lemma ec_ll_while (I : assn) (vrnt : cmem -> int) (e : bexpr) c :
   -> phl I (While e Do c) predT '= 1.
 Proof.
 move=> h1 h2 m Im.
-move: (@ec_while_variant I vrnt e c h1 h2 m Im) => /= /eqP hq.
+move: (@aux_phl_while_ll I vrnt e c h1 h2 m Im) => /= /eqP hq.
 by apply/eqP/le_anti; rewrite le1_pr /= -hq; apply: subset_pr.
 Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S4.6  auto, trivial, exfalso -- NOT RULES.                            *)
-(* These are the automation entry points; none introduces a rule of its  *)
+(* These are the automation entry points (ecPhlAuto.ml, ecPhlHiAuto.ml); *)
+(* none introduces a rule of its                                         *)
 (* own, they only try the ones above.  Of the lemmas [t_auto] chains,    *)
-(* the two that can close a pHL goal are [t_core_exfalso] (S1.16,        *)
-(* [ec_exfalso]) and [t_prbounded] (S4.3).  A [Hint Resolve ... :        *)
+(* the two that can close a pHL goal are [t_core_exfalso]                *)
+(* (ecPhlTAuto.ml:43; S1.16, [ec_exfalso]) and [t_prbounded]             *)
+(* (ecPhlPr.ml:99; S4.3).  A [Hint Resolve ... :                         *)
 (* ec_phl] database is deliberately NOT declared while the lemmas of     *)
 (* this file are [Admitted]: it would let [eauto] close goals on         *)
 (* nothing.  Add it in the proof pass.                                   *)
 
 (* -------------------------------------------------------------------- *)
 (* S4.7  rewrite Pr[...] -- NOT FORMALIZED.                              *)
+(* The [Pr[...]] entry points live in ecPhlPr.ml:21 ([bypr]) and in     *)
+(* ecPhlDeno.ml:37 ([byphoare]); the rewrite is not a pHL rule.         *)
 (* An ambient rewriting tactic over [Pr[...]] terms, not an inference    *)
 (* rule.  It appears in the catalogue only because one lemma it can      *)
 (* instantiate, [pr_mu1_le_eq_mu1], carries a pHL losslessness           *)
@@ -1904,6 +2323,7 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S4.8  one-sided call from an equiv goal -- NOT FORMALIZED.            *)
+(* [t_equiv_call], ecPhlCall.ml:364, and the one-sided arms after it.   *)
 (* [t_equiv_call1] is an *equiv* primitive whose callee obligation is a  *)
 (* pHL losslessness spec.  Stating it means proving a [prhl_] rule for   *)
 (* [Block ... (call f) ...], and prhl.v has no rule for [block] or       *)
@@ -1939,6 +2359,8 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S5.1  wp.                                                             *)
+(* [TacInternal.t_bdhoare_wp], ecPhlWp.ml:221 (the instruction whitelist *)
+(* is [wp_instr] / [wp_stmt] in the same file).                          *)
 (*                                                                      *)
 (*   |- phoare[ s_hd : P ==> wp(s_wp, Q) ] <> b                          *)
 (*   ------------------------------------------                          *)
@@ -1988,6 +2410,7 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S5.2  sp -- the dual of wp, pushing the precondition forward.         *)
+(* [t_sp_side] [FbdHoareS] arm, ecPhlSp.ml:259-267 ([check_form_indep]). *)
 (*                                                                      *)
 (* The catalogue's extra side condition [check_form_indep] ("the bound   *)
 (* should not be modified by the statement targeted by sp") has no       *)
@@ -2012,6 +2435,7 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S5.3  inline.                                                         *)
+(* [t_inline_bdhoare_r], ecPhlInline.ml:187.                             *)
 (*                                                                      *)
 (* The call-site case is S1.10 ([ec_proc]).  For the positional form,    *)
 (* pwhile already has the syntactic transformation, [inliner]            *)
@@ -2025,6 +2449,9 @@ Proof. by move=> h m Pm; rewrite -aux_ssem_inliner; apply: h. Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S5.4  unroll, splitwhile, simplify if, and the structural rewrites.   *)
+(* [EcLowPhlGoal.t_code_transform] [FbdHoareS] arm,                      *)
+(* ecLowPhlGoal.ml:816-821; [t_unroll_r], ecPhlLoopTx.ml:183;            *)
+(* [t_splitwhile_r], :200; [t_transform_if_r], ecPhlCodeTx.ml:642.       *)
 (*                                                                      *)
 (* All are [ec_eq] applied to an equation pwhile already proves:         *)
 (*   [unroll_while]  (psemantic.v:465)                                   *)
@@ -2059,6 +2486,10 @@ Proof. by move=> h m Pm; rewrite seq_skip_r; apply: h. Qed.
 (* -------------------------------------------------------------------- *)
 (* S5.4 (rest)  kill, alias, set, set match, cfold, fission, fusion --   *)
 (* NOT FORMALIZED.                                                       *)
+(* Same rule as S5.4, ecLowPhlGoal.ml:816-821; entry points [t_kill_r],  *)
+(* ecPhlCodeTx.ml:22 (losslessness premise :76), [t_alias_r] :109,       *)
+(* [t_set_r] :137, [t_set_match_r] :182, [t_cfold] :418,                 *)
+(* [t_fission_r] ecPhlLoopTx.ml:115, [t_fusion_r] :170.                  *)
 (* Each needs a *read*-set analysis: [kill] checks that the removed      *)
 (* block writes nothing the postcondition or an enclosing block reads,   *)
 (* [alias]/[set]/[cfold] need fresh-variable and substitution machinery, *)
@@ -2070,11 +2501,15 @@ Proof. by move=> h m Pm; rewrite seq_skip_r; apply: h. Qed.
 
 (* -------------------------------------------------------------------- *)
 (* S5.5  swap / interleave -- NOT FORMALIZED.                            *)
+(* [t_swap_r], ecPhlSwap.ml:100.                                         *)
 (* Needs read/write independence between the swapped fragments, hence    *)
 (* the same missing [reads] analysis as above.                           *)
 
 (* -------------------------------------------------------------------- *)
 (* S5.6  weakmem, proc case, proc rewrite / proc change, change stmt --  *)
+(* four rules reached through an explicit [kinds] list, e.g.             *)
+(* [t_change_stmt] in ecPhlCodeTx.ml:642; see RULES-PHL.md S5.6 for the  *)
+(* per-tactic file:line table.                                           *)
 (* NOT FORMALIZED.                                                       *)
 (* These act on EasyCrypt's goal representation (memory environments,    *)
 (* [kinds] lists, [hl_set_stmt]) rather than on the judgement, and have  *)
