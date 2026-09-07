@@ -9,6 +9,9 @@ From mathcomp.reals     Require Import reals.
 From mathcomp.classical Require Import filter.
 From mathcomp.analysis  Require Import esum counting_distr ereal.
 From mathcomp.analysis  Require Import sequences normedtype topology.
+(* [Require] without [Import]: [realsum] declares its own [summable],     *)
+(* which would shadow [esum]'s [Notation summable := esummable].          *)
+From mathcomp.experimental_reals Require discrete realsum.
                         Require Import misc.
 
 Set Implicit Arguments.
@@ -306,6 +309,61 @@ move=> sf; have sfs := esummable_option sf.
 rewrite /rsum (esum_option sf) fineD //.
 by apply: (esummable_esum_fin_num sfs).
 Qed.
+
+(* ==================================================================== *)
+(* Sequential compactness of [{distr T / R}] for the topology of         *)
+(* pointwise convergence, for an *arbitrary* [T : choiceType].           *)
+(*                                                                      *)
+(* Cantor's diagonal ([misc.diag_cvg]) only extracts a subsequence       *)
+(* convergent at countably many coordinates, and [cmem] -- a dependent   *)
+(* product over all of [IhbType.type] -- is very far from countable.     *)
+(* What saves the day is that a distribution is summable, hence supported *)
+(* on a countable set ([realsum.summable_countn0]); the union over [n] of *)
+(* those supports is still countable ([discrete.cunion_countable]), and   *)
+(* off it every [mu n] is identically [0], so the sequence converges      *)
+(* there for free.                                                      *)
+(*                                                                      *)
+(* [discrete.countable E] is a *data* (a [pcancel] pair on [[psub E]]),  *)
+(* not a Prop, which is what lets [diag_cvg] be applied at [nat] with    *)
+(* [runpickle] as the decoding -- no [countType] instance on a           *)
+(* proof-local subtype needs to be declared.                            *)
+(* ==================================================================== *)
+Section DCompact.
+Context {R : realType} {T : choiceType}.
+
+Lemma dcompact (mu : nat -> {distr T / R}) :
+  { om : nat -> nat
+  | {homo om : x y / (x < y)%N}
+  & forall x, cvgn (fun n => mu (om n) x) }.
+Proof.
+pose E n : pred T := [pred x | mu n x != 0].
+have cS : discrete.countable [pred x | `[< exists i, x \in E i >]].
++ apply: discrete.cunion_countable => n.
+  apply: realsum.summable_countn0.
+  by apply/realsum.esum_summableP; exact: summable_mu.
+set S := [pred x | `[< exists i, x \in E i >]].
+pose v (n k : nat) : R :=
+  if discrete.runpickle cS k is Some s then mu n (discrete.rsval s) else 0.
+have bv : forall n k, `|v n k| <= 1.
++ move=> n k; rewrite /v; case: (discrete.runpickle cS k) => [s|]; last first.
+  - by rewrite normr0.
+  by rewrite ger0_norm ?ge0_mu // le1_mu1.
+case: (diag_cvg (u := v) (M := 1) bv) => om homo_om cvg_v.
+exists om => // x.
+case/boolP: (x \in S) => [xS|xNS]; last first.
++ (* [x] is outside every support: the sequence is constantly [0].       *)
+  have hz : forall n, mu (om n) x = 0.
+  - move=> n; apply/eqP; move: xNS; apply: contraNT => hne.
+    by rewrite inE /=; apply/asboolP; exists (om n); rewrite inE.
+  apply: (@cvgn_eq _ _ (fun=> 0)); first by move=> n; rewrite hz.
+  exact: is_cvg_cst.
+pose s : discrete.pred_sub S := discrete.PSubSub xS.
+apply: (@cvgn_eq _ _ (fun n => v (om n) (discrete.rpickle cS s))).
++ by move=> n; rewrite /v (discrete.rpickleK cS s).
+exact: cvg_v.
+Qed.
+
+End DCompact.
 
 (* ==================================================================== *)
 (* Tightness: a pointwise limit of distributions with full, converging   *)
