@@ -641,6 +641,87 @@ by apply: einfs_le; near: m; exact: nbhs_infty_ge.
 Unshelve. all: end_near. Qed.
 
 (* -------------------------------------------------------------------- *)
+(* Fatou's lemma for [esum] / [espe].                                     *)
+(*                                                                       *)
+(* mathcomp-analysis proves Fatou only for the Lebesgue integral          *)
+(* ([fatou] in analysis/lebesgue_integral_theory/), which is about        *)
+(* [\int[mu]_] over a [measurableType] and has no [esum] counterpart.     *)
+(* But no new analysis is needed: [limn_einf u] *is* the supremum of the  *)
+(* nondecreasing sequence [einfs u] ([limn_einf_supE] above), which is    *)
+(* exactly the shape that monotone convergence for [esum]                 *)
+(* ([exchange_esum_ereal_sup], analysis/esum.v) consumes.                 *)
+(*                                                                       *)
+(* Beware the one trap: for [0 <= c] the identity                         *)
+(* [c * ereal_inf S = ereal_inf (c *: S)] is FALSE ([c = +oo],            *)
+(* [S = {1/k}] gives [0] on the left and [+oo] on the right), so the      *)
+(* scalar cannot be pushed inside [einfs].  Only [<=] holds -- and only   *)
+(* [<=] is ever needed below.                                            *)
+Section EsumFatou.
+Context {R : realType} {T : choiceType}.
+
+Lemma ge0_einfs (u : (\bar R)^nat) n :
+  (forall k, (0 <= u k)%E) -> (0 <= einfs u n)%E.
+Proof. by move=> h; apply: le_ereal_inf_tmp => /= _ [k /= _] <-. Qed.
+
+(* Fatou for [esum], in its general form: an arbitrary non-negative       *)
+(* family indexed by [T * nat], summed over an arbitrary [S : set T].     *)
+Lemma esum_fatou (S : set T) (w : T -> nat -> \bar R) :
+  (forall x n, (0 <= w x n)%E) ->
+  (esum S (fun x => limn_einf (w x))
+     <= limn_einf (fun n => esum S (w ^~ n)))%E.
+Proof.
+move=> hw.
+pose u := fun (x : T) (n : nat) => einfs (w x) n.
+have u_ge0 : forall x n, (0 <= u x n)%E.
++ by move=> x n; apply: ge0_einfs => k; exact: hw.
+have u_nd : forall x, nondecreasing_seq (u x).
++ by move=> x; exact: nondecreasing_einfs.
+have -> : esum S (fun x => limn_einf (w x))
+        = esum S (fun x => ereal_sup (range (u x))).
++ by apply: eq_esum => x _; exact: limn_einf_supE.
+rewrite (@exchange_esum_ereal_sup R T u u_ge0 u_nd S).
+rewrite limn_einf_supE; apply: ge_ereal_sup => _ [n _ <-].
+apply: (@le_trans _ _ (einfs (fun k => esum S (w ^~ k)) n)); last first.
++ by apply: ereal_sup_ubound; exists n.
+apply: le_ereal_inf_tmp => /= _ [k /= nk] <-.
+by apply: le_esum => x _; exact: einfs_le.
+Qed.
+
+(* The form used by [erhl]: [dlim] is the *unconditional* pointwise       *)
+(* liminf ([dlim_EFin]), so -- unlike [esum_dlim_r]                       *)
+(* (analysis/probability_theory/counting_distr.v) -- no [nd f] is needed. *)
+Lemma espe_fatou (f : nat -> {distr T / R}) (E : T -> \bar R) :
+  (forall x, (0 <= E x)%E) ->
+  (espe (dlim f) E <= limn_einf (fun n => espe (f n) E))%E.
+Proof.
+move=> hE.
+have fam_ge0 : forall (t : T) n, (0 <= einfs (fun k => (f k t)%:E) n)%E.
++ by move=> t n; apply: ge0_einfs => k; rewrite lee_fin ge0_mu.
+(* [E x] may be [+oo], so the scalar only goes in one way -- see above.   *)
+have key : forall x : T,
+  (E x * (dlim f x)%:E <= limn_einf (fun n => E x * (f n x)%:E))%E.
++ move=> x.
+  have -> : (E x * (dlim f x)%:E
+           = ereal_sup (range (fun n => E x * einfs (fun k => (f k x)%:E) n)))%E.
+  - rewrite dlim_EFin limn_einf_supE.
+    by rewrite (@ge0_ereal_supZl_range R T
+                  (fun t n => einfs (fun k => (f k t)%:E) n)
+                  fam_ge0 (E x) x (hE x)).
+  rewrite limn_einf_supE; apply: ge_ereal_sup => _ [n _ <-].
+  apply: (@le_trans _ _ (einfs (fun k => (E x * (f k x)%:E)%E) n)); last first.
+  - by apply: ereal_sup_ubound; exists n.
+  apply: le_ereal_inf_tmp => /= _ [k /= nk] <-.
+  by apply: lee_wpmul2l; [exact: hE | exact: einfs_le].
+rewrite /espe.
+apply: (@le_trans _ _
+  (esum [set: T] (fun x => limn_einf (fun n => (E x * (f n x)%:E)%E)))).
++ by apply: le_esum => x _; exact: key.
+by apply: esum_fatou => x n; rewrite mule_ge0 // lee_fin ge0_mu.
+Qed.
+
+End EsumFatou.
+
+(* -------------------------------------------------------------------- *)
 (* The pointwise limit of a convergent sequence of distributions is       *)
 (* [dlim] -- the non-monotone companion of [dlim_limE].                   *)
 Lemma cvg_dlim_pt {R : realType} {T : choiceType}
@@ -715,6 +796,85 @@ Proof.
 rewrite propeqE; split=> /cvg_ex[l hl]; apply/cvg_ex; exists l;
   by move: hl; rewrite (cvg_shiftn N u (nbhs l)).
 Qed.
+
+(* -------------------------------------------------------------------- *)
+(* Bolzano-Weierstrass in sigma-type form.  mathcomp-analysis proves the  *)
+(* theorem; all that is added here is the packaging, which [diag_cvg]     *)
+(* needs because it *computes* with the extracted subsequence.            *)
+Lemma bw_subseq {R : realType} (u : nat -> R) : bounded_fun u ->
+  {a : nat -> nat | {homo a : x y / (x < y)%N} & cvgn (u \o a)}.
+Proof.
+move=> /bolzano_weierstrass/cid2[f incr_f cvg_f].
+rewrite leEnat in incr_f.
+exists f; last exact: cvg_f.
+by move=> x y; rewrite !ltnNge incr_f.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+(* Cantor's diagonal extraction: a uniformly bounded family indexed by a  *)
+(* *countable* set admits a single subsequence along which every          *)
+(* coordinate converges.                                                 *)
+(*                                                                       *)
+(* [al a th] extracts, out of the subsequence [th], one more subsequence  *)
+(* making coordinate [a] converge; [w th k] is that extraction for the    *)
+(* [k]-th element of [A] (identity if [k] does not decode); [Om k] is the *)
+(* composite of the first [k] of them, and the answer is its diagonal.    *)
+(* The work is showing the diagonal is strictly increasing and is, from   *)
+(* rank [pickle a + 1] on, a subsequence of the one chosen for [a].       *)
+Lemma diag_cvg {R : realType} {A : countType} (u : nat -> A -> R) (M : R) :
+  (forall n a, `|u n a| <= M) ->
+  {Om : nat -> nat | {homo Om : x y / (x < y)%N} &
+     forall a : A, cvgn (fun n => u (Om n) a)}.
+Proof.
+move=> bu.
+have al a th: {al : nat -> nat |
+  {homo al : x y / (x < y)%N} & cvgn (u^~ a \o th \o al)}.
++ case: (@bw_subseq R (u^~ a \o th)) => [|al mono_al cvg_al]; last by exists al.
+  by apply: (bounded_funP (M := M)) => n /=; exact: bu.
+have homo_al a th : {homo tag (al a th) : x y / (x < y)%N} by case: (al a th).
+pose w th n := odflt idfun (omap (fun a => tag (al a th)) (choice.unpickle n)).
+have homo_w k th: {homo th : m n / (m < n)%N} -> {homo w th k : m n / (m < n)%N}.
++ move=> homo_th m n lt_mn; rewrite /w; case: choice.unpickle => //=.
+  * by move=> a; apply/homo_al.
+pose Om := fix Om k :=
+  if k is k'.+1 then
+    let s := w (Om k').2 k' in (s, (Om k').2 \o s)
+  else (idfun, idfun).
+have Om1SE i: (Om i.+1).1 =1 w (Om i).2 i by [].
+have Om2E i: (Om i).2 =1 \big[comp/idfun]_(0 <= j < i) (Om j.+1).1.
++ elim: i => /= [|i ih] n; first by rewrite big_geq.
+  by rewrite big_nat_recr //= -ih.
+have OmD2E n m: (Om (n + m)%N).2 =1
+  (Om n).2 \o \big[comp/idfun]_(0 <= j < m) (Om (n.+1+j)%N).1 => [k /=|].
++ rewrite !Om2E (big_cat_nat _ (n := n)) ?leq_addr //=.
+  congr (_ _); rewrite -{1}[n]add0n big_addn addKn.
+  by apply/eq_bigcomp => {}k _; rewrite addnC.
+have homoOm2 n: {homo (Om n).2 : x y / (x < y)%N}.
++ by elim: n => //= n ih; apply/homo_comp => //=; apply/homo_w.
+have homoOm1 n: {homo (Om n).1 : x y / (x < y)%N}.
++ by case: n => //= n; apply/homo_w/homoOm2.
+exists (fun n => (Om n).2 n) => [|a].
++ move=> m n lt_mn; rewrite -{1}[n](subnK (ltnW lt_mn)) addnC.
+  rewrite OmD2E (@leq_trans ((Om m).2 n)) //; first by apply/homoOm2.
+  rewrite (homo_leq_mono (homoOm2 _)) homo_geidfun //.
+  by apply/homo_bigcomp => k _; apply/homoOm1.
+have [p pE]: exists p, p = (choice.pickle a).+1 by exists (choice.pickle a).+1.
+rewrite -(is_cvg_shiftn p); pose Tp n := (Om (n + p)%N).2 (n + p)%N.
+have h: exists2 s, {homo s : x y / (x < y)%N} & Tp =1 (Om p).2 \o s.
++ exists (fun n => (\big[comp/idfun]_(0 <= j < n) (Om (p.+1+j)%N).1) (n+p)%N).
+  * move=> x y ltxy; rewrite -(homo_ltn_mono (homoOm2 p)).
+    have /=<- := OmD2E p x (x+p)%N; have /=<- := OmD2E p y (y+p)%N.
+    rewrite (leq_trans (homoOm2 _ (x+p)%N (y+p)%N _)) ?ltn_add2r //.
+    rewrite -{2}[y](@subnK x) ?[(x <= y)%N]ltnW // addnA addnAC.
+    rewrite [in X in (_ <= X)%N]OmD2E (homo_leq_mono (homoOm2 _)).
+    by apply/homo_geidfun/homo_bigcomp => k _; apply/homoOm1.
+  * by move=> n /=; rewrite /Tp addnC OmD2E.
+case: h => s homos TE; pose X := ((u^~ a) \o (Om p).2) \o s.
+apply/(@cvgn_eq _ _ X); first by move=> k /=; rewrite -/(Tp _) TE.
+apply/cvgn_subseq => //; rewrite {p Tp TE X}pE /=; set xi := Om _.
+by rewrite /w choice.pickleK /=; case: (al a xi.2).
+Qed.
+
 (* -------------------------------------------------------------------- *)
 Lemma max_sup {R : realType} x (E : set R) :
   (E `&` ubound E)%classic x -> sup E = x.
