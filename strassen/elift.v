@@ -19,20 +19,28 @@ Local Open Scope classical_set_scope.
 Local Notation simpm := Monoid.simpm.
 
 (* ==================================================================== *)
-Parameter (R : realType).
+Section truc.
+  Context {R : realType}.
 
 Local Notation distr T := {distr T%type / R}.
 
 (* ==================================================================== *)
-Section SensitivityTx.
-Context {R : realType}.
+(* The sensitivity transform.  [Ω] is abstract: any function with these  *)
+(* four properties will do, and everything below is generic in it.  The  *)
+(* intended instance is [expR] (so that [Ω ε = e^ε] is the multiplicative *)
+(* factor of ε-differential privacy), but it is supplied only where ε is  *)
+(* finally fixed -- nothing in this file, nor in strassen.v, depends on   *)
+(* the choice.                                                           *)
+(*                                                                       *)
+(* NOT wrapped in a section of its own: [edist_set] / [edist] below live  *)
+(* outside it, so an [Ω] declared in an inner section would be discharged *)
+(* before they could mention it.                                         *)
+Context (Ω : R -> R).
 
-Parameter Ω : R -> R.
-
-Axiom ΩD     : {morph Ω : x y / x + y >-> x * y}.
-Axiom Ω0     : Ω 0 = 1.
-Axiom mono_Ω : {mono Ω : x y / x <= y >-> x <= y}.
-Axiom gt0_Ω  : forall x, 0 < Ω x.
+Hypothesis ΩD     : {morph Ω : x y / x + y >-> x * y}.
+Hypothesis Ω0     : Ω 0 = 1.
+Hypothesis mono_Ω : {mono Ω : x y / x <= y >-> x <= y}.
+Hypothesis gt0_Ω  : forall x, 0 < Ω x.
 
 Lemma ltr_Ω : {mono Ω : x y / x < y >-> x < y}.
 Proof. by apply/leW_mono/mono_Ω. Qed.
@@ -42,7 +50,6 @@ Proof. by rewrite -Ω0 mono_Ω. Qed.
 
 Lemma ge0_Ω x : 0 <= Ω x.
 Proof. by apply/ltW/gt0_Ω. Qed.
-End SensitivityTx.
 
 (* ==================================================================== *)
 Definition edist_set {A : choiceType} (ε : R) (μ1 μ2 : distr A) :=
@@ -300,10 +307,11 @@ Local Notation elift_r μ :=
    , (forall a b, (Some a, b) \in dinsupp μ.2 -> P (a, b))
    & edist ε (deliftL μ.1) (deliftR μ.2) <= δ].
 
-Local Notation R η := (forall a b,
+(* Named [bnd], not [R]: [R] is now the ambient [realType] section variable. *)
+Local Notation bnd η := (forall a b,
   η.2 (Some a, b) <= η.1 (a, Some b) <= Ω ε * η.2 (Some a, b)).
 
-Lemma elift_bnd : elift ε δ μ1 μ2 P -> { η : T | elift_r η /\ R η }.
+Lemma elift_bnd : elift ε δ μ1 μ2 P -> { η : T | elift_r η /\ bnd η }.
 Proof.
 case=> -[ηL ηR] /= [eqL eqR hSL hSR hD].
 pose ML a b := Num.min (ηL (a, Some b)) (Ω ε * ηR (Some a, b)).
@@ -517,7 +525,7 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 Section ELiftBndTheory.
-Hypothesis η : { η : T | elift_r η /\ R η }.
+Hypothesis η : { η : T | elift_r η /\ bnd η }.
 
 Lemma exlift_dfstL : dfst (tag η).1 =1 μ1.
 Proof. by case: (tagged η); case. Qed.
@@ -546,3 +554,5 @@ Lemma exlift_leRL a b :
 Proof. by case: (tagged η) => _ /(_ a b) /andP[]. Qed.
 End ELiftBndTheory.
 End ELiftBnd.
+
+End truc.

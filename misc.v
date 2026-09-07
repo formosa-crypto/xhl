@@ -640,6 +640,58 @@ near=> m; apply: (le_trans _ (h m)).
 by apply: einfs_le; near: m; exact: nbhs_infty_ge.
 Unshelve. all: end_near. Qed.
 
+(* Dual of [limn_einf_supE].  [sequences.v] proves [limn_esup u =           *)
+(* limn (esups u)] but not the [ereal_inf] form.                            *)
+Lemma limn_esup_infE {R : realType} (u : (\bar R)^nat) :
+  limn_esup u = ereal_inf (range (esups u)).
+Proof. by rewrite limn_esup_lim; apply/cvg_lim => //; exact: cvg_esups_inf. Qed.
+
+(* [liminf = limsup = l] forces convergence.  mathcomp-analysis has the     *)
+(* converse ([cvg_limn_einf_sup]) but not this direction; [einfs] and       *)
+(* [esups] squeeze [u] and both converge to [l].                            *)
+Lemma cvg_limn_einf_esup {R : realType} (v : (\bar R)^nat) (l : \bar R) :
+  (limn_esup v <= l)%E -> (l <= limn_einf v)%E -> (v @ \oo --> l)%classic.
+Proof.
+move=> hsup hinf.
+have hei : limn_einf v = l.
++ by apply/eqP; rewrite eq_le hinf andbT (le_trans (limn_einf_sup v)).
+have hes : limn_esup v = l.
++ by apply/eqP; rewrite eq_le hsup /= -hei limn_einf_sup.
+have cvi : (einfs v @ \oo --> l)%classic.
++ by rewrite -hei limn_einf_supE; exact: cvg_einfs_sup.
+have cvs : (esups v @ \oo --> l)%classic.
++ by rewrite -hes limn_esup_infE; exact: cvg_esups_inf.
+apply: (@squeeze_cvge _ _ _ _ (einfs v) v (esups v)).
++ apply: nearW => n; apply/andP; split.
+  - exact: (einfs_le v (leqnn n)).
+  by apply/ereal_sup_ubound; exists n => /=.
++ exact: cvi.
+exact: cvs.
+Qed.
+
+(* Congruence for [limn_einf] under a pointwise equality -- avoids needing   *)
+(* functional extensionality to change the sequence under a [limn_einf].     *)
+Lemma eq_limn_einf {R : realType} (u v : (\bar R)^nat) :
+  u =1 v -> limn_einf u = limn_einf v.
+Proof.
+move=> e; have es n : einfs u n = einfs v n.
++ congr ereal_inf; apply/seteqP; split => [_ [k hk <-]|_ [k hk <-]];
+    by exists k => //; rewrite e.
+rewrite !limn_einf_supE; congr ereal_sup.
+by apply/seteqP; split => [_ [n _ <-]|_ [n _ <-]]; exists n => //; rewrite es.
+Qed.
+
+(* A convergent real sequence has [limn_einf] equal to its limit.           *)
+Lemma limn_einf_EFin {R : realType} (w : nat -> R) (l : R) :
+  ((w @ \oo --> l)%classic) -> limn_einf (fun n => (w n)%:E) = l%:E.
+Proof.
+move=> cw.
+have cE : ((fun n => (w n)%:E) @ \oo --> l%:E)%classic.
++ by apply: cvg_EFin; [apply: nearW | exact: cw].
+have ci : cvgn (fun n => (w n)%:E) by apply/cvg_ex; exists (l%:E).
+by rewrite (is_cvg_limn_einfE ci); apply: cvg_lim cE.
+Qed.
+
 (* -------------------------------------------------------------------- *)
 (* Fatou's lemma for [esum] / [espe].                                     *)
 (*                                                                       *)
@@ -787,8 +839,14 @@ move=> homo_s cu; apply: cvgP.
 by apply: (cvg_comp s u (cvg_homo_oo homo_s) cu).
 Qed.
 
+(* Avoids functional extensionality: [near_eq_is_cvg] rests on              *)
+(* [near_eq_cvg_eq] (classical/filter.v), which compares the two image      *)
+(* filters set-wise ([filterS2] + [seteqP]) instead of equating [u] and [v]. *)
 Lemma cvgn_eq {R : realType} (u v : nat -> R) : u =1 v -> cvgn v -> cvgn u.
-Proof. by move=> /funext ->. Qed.
+Proof.
+move=> e cv; apply: (near_eq_is_cvg (f := v) (g := u)) => //.
+by apply: nearW => n; rewrite e.
+Qed.
 
 Lemma is_cvg_shiftn {R : realType} (N : nat) (u : nat -> R) :
   cvgn (fun n => u (n + N)%N) = cvgn u.
