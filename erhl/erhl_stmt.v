@@ -9,6 +9,7 @@ From xhl                Require Import misc rsum.
 From xhl.pwhile         Require Import notations inhabited pwhile psemantic passn range.
 From xhl.prhl           Require Import prhl.
 From xhl.ehl            Require Import ehl_stmt.
+From xhl.strassen       Require Import deficiency.
 
 Import GRing.Theory Order.Theory Num.Theory.
 Import numFieldNormedType.Exports.
@@ -30,8 +31,7 @@ Lemma esumEFinE {T : choiceType} (f : T -> R) :
   esum [set: T] (EFin \o f) = (rsum f)%:E.
 Proof. by move=> sf; rewrite /rsum fineK// (esummable_esum_fin_num sf). Qed.
 
-Lemma dweightE {T : choiceType} (d : Distr T) : dweight d = rsum d.
-Proof. by rewrite prE_rsum; apply: eq_rsum => x /=; rewrite mul1r. Qed.
+(* [dweightE] now lives in rsum.v. *)
 
 (* ==================================================================== *)
 (* Star-extension of a sub-distribution                                  *)
@@ -110,13 +110,7 @@ Qed.
 (* are instances of it.                                                 *)
 (* ==================================================================== *)
 
-Lemma dletE_rsum {A B : choiceType} (mu : Distr A) (f : A -> Distr B) y :
-  (\dlet_(x <- mu) f x) y = rsum (fun x => mu x * f x y).
-Proof. by rewrite dletE. Qed.
-
-Lemma espE_rsum {A : choiceType} (mu : Distr A) (g : A -> R) :
-  \E_[mu] g = rsum (fun x => g x * mu x).
-Proof. by []. Qed.
+(* [dletE_rsum] and [espE_rsum] now live in rsum.v. *)
 
 Lemma dweight_dlet {A B : choiceType} (d : Distr A) (t : A -> Distr B) :
   dweight (\dlet_(a <- d) t a) = rsum (fun a => d a * dweight (t a)).
@@ -199,17 +193,7 @@ move=> h; rewrite /espe; apply: le_esum => x _; apply: lee_wpmul2r.
 exact: h.
 Qed.
 
-Lemma dmargin_comp {A B C : choiceType} (f : B -> C) (g : A -> B) (mu : Distr A) :
-  dmargin f (dmargin g mu) = dmargin (f \o g) mu.
-Proof. by rewrite [LHS]dmarginE dlet_dmargin. Qed.
-
-(* Congruence for [dmargin] under a pointwise equality -- avoids needing    *)
-(* functional extensionality to change the mapped function.                 *)
-Lemma eq_dmargin {A B : choiceType} (k k' : A -> B) (mu : Distr A) :
-  k =1 k' -> dmargin k mu = dmargin k' mu.
-Proof.
-by move=> e; rewrite !dmarginE; apply: eq_in_dlet => // a _; rewrite e.
-Qed.
+(* [dmargin_comp] and [eq_dmargin] now live in rsum.v. *)
 
 Lemma eexp_dmargin {T U : choiceType} (mu : Distr T) (h : T -> U)
     (F : U -> \bar R) :
@@ -315,15 +299,18 @@ Definition slift (nu : Distr (A * B)%type) : Distr (option A * option B)%type :=
 Lemma scoupling_slift (d1 : Distr A) (d2 : Distr B) nu :
   iscoupling d1 d2 nu -> scoupling d1 d2 (slift nu).
 Proof.
+(* [eq_dmargin] (rsum.v) changes the mapped function from a pointwise      *)
+(* equality, so no function equality -- hence no extensionality -- is       *)
+(* needed here.                                                            *)
 have e1 : (fun o : option (A * B)%type =>
     fst (if o is Some p then (Some p.1, Some p.2) else (None, None)))
-  = omap fst by apply/funext; case.
+  =1 omap fst by case.
 have e2 : (fun o : option (A * B)%type =>
     snd (if o is Some p then (Some p.1, Some p.2) else (None, None)))
-  = omap snd by apply/funext; case.
+  =1 omap snd by case.
 case=> h1 h2; split; rewrite /slift dmargin_comp /comp.
-+ by rewrite e1 dstar_dmargin h1.
-by rewrite e2 dstar_dmargin h2.
++ by rewrite (eq_dmargin _ e1) dstar_dmargin h1.
+by rewrite (eq_dmargin _ e2) dstar_dmargin h2.
 Qed.
 
 End SCoupling.
@@ -458,6 +445,14 @@ Proof. by case: s s' x => [] [] []. Qed.
 (* holds, but only via functional extensionality (equality of a record of  *)
 (* dependent functions).  Proved here rather than in pwhile.v so the core  *)
 (* files stay untouched.  Only [erhl_nmodL] / [erhl_nmodR] use it.         *)
+(*                                                                        *)
+(* This is the ONLY explicit appeal to extensionality left in this file,   *)
+(* and it is irreducible: the conclusion *is* the function equality, so    *)
+(* there is no pointwise ([=1]) congruence to route it through -- every    *)
+(* consumer needs [f] as a whole.  Elsewhere in the file, changing the     *)
+(* function under a [dmargin] goes through [rsum.eq_dmargin], and changing *)
+(* a sequence under [-->] / [limn] goes through an image-filter equality   *)
+(* ([near_eq_cvg_eq], classical/filter.v).                                *)
 Lemma hupd_id (F : IhbType.type -> Type)
     (f : forall U : IhbType.type, ident -> F U) (T : IhbType.type) (x : ident) :
   @hupd F f T x (f T x) = f.
@@ -668,40 +663,64 @@ by rewrite (ge0_muleDl _ hAb hBb).
 Qed.
 
 (* ==================================================================== *)
-(*                        THE TRUSTED BASE                               *)
+(*                     THE TRUSTED BASE -- EMPTY                         *)
 (*                                                                      *)
-(* The one -- and only one -- fact this development assumes.             *)
-(*                                                                      *)
-(* Two axioms used to sit here alongside it, both now proved:            *)
+(* This development assumes nothing of its own.  Three axioms used to    *)
+(* sit here; all three are now proved:                                   *)
 (*                                                                      *)
 (*   . Fatou's lemma for [esum]/[espe], as [misc.espe_fatou], on top of  *)
 (*     [exchange_esum_ereal_sup] (analysis/esum.v) and [limn_einf_supE]  *)
 (*     (misc.v);                                                        *)
 (*                                                                      *)
 (*   . sequential compactness of [Distr T], as [rsum.dcompact], from     *)
-(*     Cantor's diagonal ([misc.diag_cvg], the [countType] core of       *)
-(*     [strcvg] in strassen/strassen.v) plus countability of the support *)
-(*     of a summable family (experimental_reals/realsum.v).              *)
+(*     Cantor's diagonal ([misc.diag_cvg]) plus countability of the      *)
+(*     support of a summable family (experimental_reals/realsum.v);      *)
 (*                                                                      *)
-(* Nothing else in erhl/ is admitted; [Print Assumptions soundness]      *)
-(* reports exactly this one plus mathcomp-classical's usual three.       *)
+(*   . Strassen's theorem with deficiency, as                            *)
+(*     [strassen.deficiency.strassen_coupling] -- see [strassen_deficiency] *)
+(*     just below.  Discharging it also removed [strassen.v]'s           *)
+(*     [Axiom DCT] (now [rsum.rsum_dct], from [misc.esum_fatou]) and     *)
+(*     [elift.v]'s [Parameter Ω] with its four axioms (Ω is now a        *)
+(*     section variable, instantiated with [expR] in deficiency.v).      *)
+(*                                                                      *)
+(* [Print Assumptions soundness] reports exactly mathcomp-classical's    *)
+(* usual three, plus the development's own [pwhile.R] / [pwhile.ident].  *)
 (* ==================================================================== *)
 
 (* ---------------------------------------------------------------------- *)
 (* Strassen's theorem with deficiency (paper Prop. 3.2), in                *)
 (* star-coupling form.  Sole consumer: [erhl_strassen] (erhl/erhl.v).      *)
 (*                                                                        *)
-(* strassen/strassen.v cannot supply it: it declares its own              *)
-(* [Parameter R : realType] (via elift.v), which no [Parameter] can be     *)
-(* made to agree with pwhile's; [CountableStrassen] needs [countType]      *)
-(* while [cmem] is a dependent product over all [IhbType.type]            *)
-Axiom strassen_deficiency :
-  forall (D1 D2 : Distr cmem) (Rl : rel cmem) (delta : R),
-    dweight D1 = 1 -> dweight D2 = 1 -> 0 <= delta ->
-    (forall M : pred cmem, \P_[D1] M <= \P_[D2] (rimage Rl M) + delta) ->
-    exists2 nu, scoupling D1 D2 nu &
-      (espe nu (rstar (fun m' : rmem => ((~~ Rl m'.1 m'.2)%:R)%:E))
-         <= delta%:E)%E.
+(* [strassen.deficiency.strassen_coupling] gives it in ordinary coupling   *)
+(* form; since both sides have weight 1 the two forms coincide, and the    *)
+(* translation is [slift] / [scoupling_slift] / [espe_slift] above.        *)
+Lemma strassen_deficiency
+    (D1 D2 : Distr cmem) (Rl : rel cmem) (delta : R) :
+  dweight D1 = 1 -> dweight D2 = 1 -> 0 <= delta ->
+  (forall M : pred cmem, \P_[D1] M <= \P_[D2] (rimage Rl M) + delta) ->
+  exists2 nu, scoupling D1 D2 nu &
+    (espe nu (rstar (fun m' : rmem => ((~~ Rl m'.1 m'.2)%:R)%:E))
+       <= delta%:E)%E.
+Proof.
+move=> w1 w2 hd hM.
+(* [rimage] and [strassen.imS] are the same predicate, modulo [exists2]. *)
+have hM' : forall M : pred cmem,
+    \P_[D1] M <= \P_[D2] [pred y | `[< exists2 x, x \in M & Rl x y >]] + delta.
++ move=> M.
+  have e : [pred m2 | `[< exists m1, M m1 && Rl m1 m2 >]]
+        =i [pred y | `[< exists2 x, x \in M & Rl x y >]].
+  - move=> y; rewrite !inE; apply/idP/idP.
+    * move/asboolP => [x /andP[hx hxy]]; apply/asboolP.
+      by exists x.
+    move/asboolP => [x hx hxy]; apply/asboolP.
+    by exists x; apply/andP; split.
+  by rewrite -(@eq_pr _ _ _ _ D2 e); exact: hM M.
+have [kap [hf hs] hle] := strassen_coupling w1 w2 hd hM'.
+exists (slift kap); first exact: scoupling_slift.
+rewrite espe_slift; first by move=> m'; rewrite lee_fin ler0n.
+rewrite espe_indic lee_fin.
+exact: hle.
+Qed.
 
 (* ==================================================================== *)
 (* Validity                                                              *)
@@ -865,15 +884,15 @@ have c2' : forall b, ((fun n => dstar (mu2 (omega n)) b) @ \oo
                (cvg_homo_oo homo_om) (c2 b)).
 have cf : forall a, ((fun n => dfst (nu (omega n)) a) @ \oo
                         --> dstar D1 a)%classic.
-+ move=> a; have -> : (fun n => dfst (nu (omega n)) a)
-                    = (fun n => dstar (mu1 (omega n)) a).
-  - by apply: funext => n; rewrite hf.
++ move=> a; have -> : ((fun n => dfst (nu (omega n)) a) @ \oo)
+                    = ((fun n => dstar (mu1 (omega n)) a) @ \oo).
+  - by apply: near_eq_cvg_eq; apply: nearW => n; rewrite hf.
   exact: c1' a.
 have cs : forall b, ((fun n => dsnd (nu (omega n)) b) @ \oo
                         --> dstar D2 b)%classic.
-+ move=> b; have -> : (fun n => dsnd (nu (omega n)) b)
-                    = (fun n => dstar (mu2 (omega n)) b).
-  - by apply: funext => n; rewrite hs.
++ move=> b; have -> : ((fun n => dsnd (nu (omega n)) b) @ \oo)
+                    = ((fun n => dstar (mu2 (omega n)) b) @ \oo).
+  - by apply: near_eq_cvg_eq; apply: nearW => n; rewrite hs.
   exact: c2' b.
 have wt : dweight nu0 = 1.
 + by apply: (dlim_weight1 (dweight_dstar D1) (dweight_dstar D2) cf cs cvom).
@@ -1006,9 +1025,9 @@ have cvw : cvgn (fun n => dweight (mu n)).
   - move=> n p le; rewrite !dweightE; apply: le_rsum; last exact: summable_mu.
     by move=> x; rewrite ge0_mu /= (hmono n p le).
   by exists 1 => _ [n _ <-]; exact: le1_pr.
-have hfe : (fun n => \esum_(x in [set: cmem]) (((predT x)%:R * mu n x)%:E))
-         = (fun n => (dweight (mu n))%:E).
-+ by apply: funext => n; rewrite prE.
+have hfe : ((fun n => \esum_(x in [set: cmem]) (((predT x)%:R * mu n x)%:E)) @ \oo)
+         = ((fun n => (dweight (mu n))%:E) @ \oo).
++ by apply: near_eq_cvg_eq; apply: nearW => n; rewrite prE.
 have key : (dweight (dlim mu))%:E = limn (fun n => (dweight (mu n))%:E).
 + by rewrite prE (@esum_dlim _ _ mu nd_mu predT) hfe.
 have cvE : ((fun n => (dweight (mu n))%:E) @ \oo
@@ -1025,14 +1044,18 @@ Lemma cvg_dstar_dlim (mu : nat -> Distr cmem) :
   (forall n p, (n <= p)%N -> mu n <=1 mu p) ->
   forall a, ((fun n => dstar (mu n) a) @ \oo --> dstar (dlim mu) a)%classic.
 Proof.
+(* Only the *image filters* need to agree, not the sequences themselves:   *)
+(* [near_eq_cvg_eq] gets that from a pointwise equality, so no             *)
+(* extensionality is needed.                                              *)
 move=> hmono [x|].
-+ have -> : (fun n => dstar (mu n) (Some x)) = (fun n => mu n x).
-  - by apply: funext => n; rewrite dstar_someE.
++ have -> : ((fun n => dstar (mu n) (Some x)) @ \oo) = ((fun n => mu n x) @ \oo).
+  - by apply: near_eq_cvg_eq; apply: nearW => n; rewrite dstar_someE.
   rewrite dstar_someE; apply: cvg_dlim_pt.
   apply: nondecreasing_is_cvgn; first by move=> n p le; exact: hmono.
   by exists 1 => _ [n _ <-]; exact: le1_mu1.
-have -> : (fun n => dstar (mu n) None) = (fun n => 1 - dweight (mu n)).
-+ by apply: funext => n; rewrite dstar_noneE.
+have -> : ((fun n => dstar (mu n) None) @ \oo)
+        = ((fun n => 1 - dweight (mu n)) @ \oo).
++ by apply: near_eq_cvg_eq; apply: nearW => n; rewrite dstar_noneE.
 rewrite dstar_noneE.
 by apply: cvgnB; [exact: cvg_cst | exact: cvg_dweight_dlim].
 Qed.

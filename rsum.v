@@ -98,6 +98,22 @@ rewrite fsbig_finite; first exact: finite_seq.
 by rewrite (perm_big r pr).
 Qed.
 
+(* A single term is bounded by the whole sum. *)
+Lemma le_rsum1 f x : (forall y, 0 <= f y) ->
+  esummable [set: T] (EFin \o f) -> f x <= rsum f.
+Proof.
+move=> f0 sf; have h := gerfinseq_rsum (f := f) (r := [:: x]) isT f0 sf.
+by rewrite big_seq1 in h.
+Qed.
+
+(* A non-negative family with vanishing sum vanishes. *)
+Lemma rsum_eq0 f x : (forall y, 0 <= f y) ->
+  esummable [set: T] (EFin \o f) -> rsum f = 0 -> f x = 0.
+Proof.
+move=> f0 sf h0; apply/eqP; rewrite eq_le f0 andbT -h0.
+exact: le_rsum1.
+Qed.
+
 Lemma rsumZ f c : (forall x, 0 <= f x) ->
   rsum (fun x => c * f x) = c * rsum f.
 Proof.
@@ -217,6 +233,42 @@ Lemma prE_rsum {R : realType} {T : choiceType}
   \P_[mu] E = rsum (fun x => (E x)%:R * mu x).
 Proof. by []. Qed.
 
+Lemma dweightE {R : realType} {T : choiceType} (d : {distr T / R}) :
+  dweight d = rsum d.
+Proof. by rewrite prE_rsum; apply: eq_rsum => x /=; rewrite mul1r. Qed.
+
+Lemma dletE_rsum {R : realType} {A B : choiceType}
+    (mu : {distr A / R}) (f : A -> {distr B / R}) y :
+  (\dlet_(x <- mu) f x) y = rsum (fun x => mu x * f x y).
+Proof. by rewrite dletE. Qed.
+
+Lemma espE_rsum {R : realType} {T : choiceType}
+    (mu : {distr T / R}) (g : T -> R) :
+  \E_[mu] g = rsum (fun x => g x * mu x).
+Proof. by []. Qed.
+
+Lemma dmargin_comp {R : realType} {A B C : choiceType}
+    (f : B -> C) (g : A -> B) (mu : {distr A / R}) :
+  dmargin f (dmargin g mu) = dmargin (f \o g) mu.
+Proof.
+by apply/distr_eqP => z; exact: (dlet_dmargin mu g (fun y => dunit (f y)) z).
+Qed.
+
+(* Congruence for [dmargin] under a pointwise equality -- avoids needing    *)
+(* functional extensionality to change the mapped function.                 *)
+Lemma eq_dmargin {R : realType} {A B : choiceType}
+    (k k' : A -> B) (mu : {distr A / R}) :
+  k =1 k' -> dmargin k mu = dmargin k' mu.
+Proof.
+move=> e; apply/distr_eqP => z.
+apply: (eq_in_dlet (mu := mu) (nu := mu)); last by [].
+by move=> a _ y; rewrite e.
+Qed.
+
+Lemma dmargin_id {R : realType} {A : choiceType} (mu : {distr A / R}) :
+  dmargin idfun mu = mu.
+Proof. by apply/distr_eqP => z; exact: (dlet_dunit_id mu z). Qed.
+
 Lemma pr_approx {R : realType} {T : choiceType} (mu : {distr T / R}) (e : R) :
   0 < e -> exists2 r : seq T, uniq r & dweight mu - e < \sum_(x <- r) mu x.
 Proof.
@@ -311,6 +363,108 @@ by apply: (esummable_esum_fin_num sfs).
 Qed.
 
 (* ==================================================================== *)
+(* Dominated convergence for [rsum].                                     *)
+(*                                                                      *)
+(* mathcomp-analysis proves dominated convergence only for the Lebesgue  *)
+(* integral (lebesgue_integral_dominated_convergence.v), over a          *)
+(* [measurableType]; there is no [esum] counterpart.  But it follows from *)
+(* [misc.esum_fatou] by the textbook argument: Fatou applied to the       *)
+(* non-negative families [g + un] and [g - un].  Only the first is        *)
+(* written out ([esum_dom_le]); the second is that same bound applied to  *)
+(* [- un].                                                              *)
+(* ==================================================================== *)
+
+(* One half of dominated convergence: Fatou against the dominating [g].   *)
+Lemma esum_dom_le {R : realType} {T : choiceType}
+    (un : nat -> T -> R) (u g : T -> R) :
+     (forall x, ((un^~ x) @ \oo --> u x)%classic)
+  -> (forall n x, - g x <= un n x)
+  -> esummable [set: T] (EFin \o g)
+  -> esummable [set: T] (EFin \o u)
+  -> (forall n, esummable [set: T] (EFin \o un n))
+  -> (\esum_(x in [set: T]) (u x)%:E
+        <= limn_einf (fun n => \esum_(x in [set: T]) (un n x)%:E))%E.
+Proof.
+move=> cvu bdn sg su sn.
+pose Sg := (\esum_(x in [set: T]) (g x)%:E)%E.
+pose Sn n := (\esum_(x in [set: T]) (un n x)%:E)%E.
+have fSg : Sg \is a fin_num by exact: (esummable_esum_fin_num sg).
+(* [g + h] splits off [Sg], for any summable [h] *)
+have eD (h : T -> R) : esummable [set: T] (EFin \o h) ->
+    (\esum_(x in [set: T]) ((g x + h x))%:E
+   = Sg + \esum_(x in [set: T]) (h x)%:E)%E.
++ move=> sh; rewrite -(esummable_esumD sg sh).
+  by apply: eq_esum => x _; rewrite /= EFinD.
+have h0 : forall x n, (0 <= ((g x + un n x))%:E)%E.
++ move=> x n; rewrite lee_fin.
+  have -> : g x + un n x = un n x - (- g x) by rewrite opprK addrC.
+  by rewrite subr_ge0; exact: bdn.
+have hlim x : limn_einf (fun n => ((g x + un n x))%:E) = ((g x + u x))%:E.
++ by apply: limn_einf_EFin; apply: cvgnD; [exact: cvg_cst | exact: cvu x].
+have e1 : esum [set: T] (fun x => limn_einf (fun n => ((g x + un n x))%:E))
+        = (Sg + \esum_(x in [set: T]) (u x)%:E)%E.
++ rewrite -(eD u su); apply: eq_esum => x _; exact: hlim x.
+have e2 : (fun n => esum [set: T] (fun x => ((g x + un n x))%:E))
+        =1 (fun n => (Sg + Sn n)%E).
++ by move=> n; exact: eD (un n) (sn n).
+have := esum_fatou [set: T] h0.
+by rewrite e1 (eq_limn_einf e2) (limn_einf_shift _ fSg) leeD2lE.
+Qed.
+
+Lemma rsum_dct {R : realType} {T : choiceType}
+    (un : nat -> T -> R) (u g : T -> R) :
+     (forall x, ((un^~ x) @ \oo --> u x)%classic)
+  -> (forall n x, `|un n x| <= g x)
+  -> esummable [set: T] (EFin \o g)
+  -> esummable [set: T] (EFin \o u)
+     /\ ((fun n => rsum (un n)) @ \oo --> rsum u)%classic.
+Proof.
+move=> cvu bd sg.
+have ge0_g x : 0 <= g x by apply: le_trans (bd 0%N x); exact: normr_ge0.
+have bdn n x : - g x <= un n x <= g x by rewrite -ler_norml; exact: bd.
+(* [u] inherits the domination, hence the summability *)
+have bdu x : `|u x| <= g x.
++ rewrite ler_norml; apply/andP; split.
+  - apply: (cvgr_to_ge (cvu x)); apply: nearW => n.
+    by case/andP: (bdn n x).
+  apply: (cvgr_to_le (cvu x)); apply: nearW => n.
+  by case/andP: (bdn n x).
+have sm h : (forall x, `|h x| <= g x) -> esummable [set: T] (EFin \o h).
++ move=> hb; rewrite /esummable; apply: (le_lt_trans _ sg).
+  apply: le_esum => x _ /=.
+  by rewrite !lee_fin (le_trans (hb x)) // ler_norm.
+have su := sm _ bdu.
+have sn n := sm _ (bd n).
+pose Su := (\esum_(x in [set: T]) (u x)%:E)%E.
+pose Sn n := (\esum_(x in [set: T]) (un n x)%:E)%E.
+have fSu : Su \is a fin_num by exact: (esummable_esum_fin_num su).
+have low : (Su <= limn_einf Sn)%E.
++ by apply: (esum_dom_le cvu _ sg su sn) => n x; case/andP: (bdn n x).
+(* the [limsup] half is [esum_dom_le] applied to [- un] *)
+have upp : (limn_esup Sn <= Su)%E.
++ have cvuN x : (((fun n => - un n x)) @ \oo --> - u x)%classic.
+  - by apply: cvgN; exact: cvu x.
+  have suN : esummable [set: T] (EFin \o (fun x => - u x)).
+  - by apply: sm => x; rewrite normrN; exact: bdu.
+  have snN n : esummable [set: T] (EFin \o (fun x => - un n x)).
+  - by apply: sm => x; rewrite normrN; exact: bd.
+  have := esum_dom_le (un := fun n x => - un n x) (u := fun x => - u x)
+                      (g := g) cvuN _ sg suN snN.
+  rewrite (esummable_esumN su) -/Su.
+  have eN : (fun n => \esum_(x in [set: T]) (- un n x)%:E)%E =1 (-%E \o Sn).
+  - by move=> n; rewrite /Sn /= -(esummable_esumN (sn n));
+       apply: eq_esum => x _; rewrite /= EFinN.
+  rewrite (eq_limn_einf eN) limn_einfN => h.
+  rewrite -leeN2; apply: h => n x.
+  by rewrite lerN2; case/andP: (bdn n x).
+split=> //.
+have cvS : (Sn @ \oo --> Su)%classic by exact: (cvg_limn_einf_esup upp low).
+rewrite /rsum -/Su.
+have -> : (fun n => fine (\esum_(x in [set: T]) (un n x)%:E)%E) = fine \o Sn by [].
+by apply: fine_cvg; rewrite -(fineK fSu) in cvS.
+Qed.
+
+(* ==================================================================== *)
 (* Sequential compactness of [{distr T / R}] for the topology of         *)
 (* pointwise convergence, for an *arbitrary* [T : choiceType].           *)
 (*                                                                      *)
@@ -363,7 +517,44 @@ apply: (@cvgn_eq _ _ (fun n => v (om n) (discrete.rpickle cS s))).
 exact: cvg_v.
 Qed.
 
+(* An increasing sequence of finite sets exhausting the support.  Same    *)
+(* countability input as [dcompact]: this is the [choiceType] replacement  *)
+(* for [strassen.v]'s [E i := seq_fset (pmap unpickle (iota 0 i))], which  *)
+(* needed a [countType].  Note it only covers the *support* -- off it      *)
+(* every truncation agrees with [mu] anyway, both being [0].               *)
+Lemma dsupp_exhaust (mu : {distr T / R}) :
+  { c : nat -> {fset T} |
+    forall x, x \in dinsupp mu -> exists N, forall n, (N <= n)%N -> x \in c n }.
+Proof.
+have cS : discrete.countable [pred x | mu x != 0].
++ by apply: realsum.summable_countn0; apply/realsum.esum_summableP; exact: summable_mu.
+exists (fun i => seq_fset tt
+  (pmap (fun k => omap (fun s => discrete.rsval s) (discrete.runpickle cS k))
+        (iota 0 i))).
+move=> x hx; pose s : discrete.pred_sub [pred y | mu y != 0] :=
+  discrete.PSubSub hx.
+exists (discrete.rpickle cS s).+1 => n hn.
+rewrite seq_fsetE mem_pmap; apply/mapP.
+exists (discrete.rpickle cS s); last by rewrite (discrete.rpickleK cS s).
+by rewrite mem_iota leq0n add0n.
+Qed.
+
 End DCompact.
+
+(* Two families, one subsequence -- the [choiceType] counterpart of        *)
+(* [strassen.strcvg2].                                                    *)
+Lemma dcompact2 {R : realType} {T U : choiceType}
+    (mu1 : nat -> {distr T / R}) (mu2 : nat -> {distr U / R}) :
+  { om : nat -> nat | {homo om : x y / (x < y)%N} &
+    [/\ forall x, cvgn (fun n => mu1 (om n) x)
+      & forall y, cvgn (fun n => mu2 (om n) y) ] }.
+Proof.
+case: (dcompact mu1) => om1 mono1 cvg1.
+case: (dcompact (mu2 \o om1)) => om2 mono2 cvg2.
+(exists (om1 \o om2); last split) => // [m n|x].
++ by move/mono2/mono1.
+by apply/(cvgn_subseq (u := (mu1 \o om1)^~ x) (s := om2)).
+Qed.
 
 (* ==================================================================== *)
 (* Tightness: a pointwise limit of distributions with full, converging   *)
