@@ -1,7 +1,7 @@
 (* -------------------------------------------------------------------- *)
-(* ----------------- *) Require Import ClassicalFacts Setoid Morphisms.
-From mathcomp.ssreflect Require Import all_ssreflect.
-From mathcomp.algebra   Require Import all_algebra.
+From Stdlib             Require Import ClassicalFacts Setoid Morphisms.
+From mathcomp           Require Import boot order.
+From mathcomp.algebra   Require Import algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals constructive_ereal.
 From mathcomp.analysis  Require Import counting_distr.
@@ -37,10 +37,17 @@ Variant Rnd : Type -> Type :=
 Variant Call : Type -> Type :=
   | CallE (f:ident) : Call unit.
 
+(* [EnterBlock bs] installs the block's initial local store and *returns the
+ * outer memory*, so that the continuation can hand it back to [LeaveBlock],
+ * which is what makes [mret]'s first argument available at block exit
+ * without threading a memory through [com_sem]. *)
 Variant InstrE {ident : eqType}  {mem : memType ident} : Type -> Type :=
   | Assig : forall t : IhbType.type,  vars t -> expr_ ident mem t  -> InstrE unit
+  | GAssig : forall t : IhbType.type,  vars t -> expr_ ident mem t  -> InstrE unit
   | RAssig :  forall t : IhbType.type,  vars t -> expr_ ident mem {distr t / R}  -> InstrE unit
-  | EvalCond : bexpr -> InstrE bool.
+  | EvalCond : bexpr -> InstrE bool
+  | EnterBlock : seq (@binding ident mem) -> InstrE mem
+  | LeaveBlock : mem -> seq (@binding ident mem) -> InstrE unit.
 
 Section ParSem.
 
@@ -73,7 +80,11 @@ Section ParSem.
     | abort => ITree.spin
     | skip => Ret tt
     | x <<- e => trigger (Assig x e)
+    | gassign _ x e => trigger (GAssig x e)
     | x <$- e => trigger (RAssig x e)
+    | block bs c rs =>
+        bind (trigger (EnterBlock bs))
+          (fun m0 => bind (com_sem c) (fun _ => trigger (LeaveBlock m0 rs)))
     | If e then c1 else c2 =>
            bind (trigger (EvalCond e))
              (fun b =>  match b with
@@ -114,6 +125,19 @@ Section InstrSem.
               (fun m =>
                  let m := m.[x <- (esem e m)] in
                  trigger (@Put cmem m))
+      | GAssig _ x e =>
+            bind (trigger (@Get cmem))
+              (fun m =>
+                 let m := m.{x <- (esem e m)} in
+                 trigger (@Put cmem m))
+      | EnterBlock bs =>
+            bind (trigger (@Get cmem))
+              (fun m =>
+                 bind (trigger (@Put cmem (minit m bs)))
+                   (fun _ => Ret m))
+      | LeaveBlock m0 rs =>
+            bind (trigger (@Get cmem))
+              (fun m' => trigger (@Put cmem (mret m0 m' rs)))
       | RAssig _ x e =>
             bind (trigger (@Get cmem))
             (fun m =>

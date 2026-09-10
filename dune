@@ -5,6 +5,9 @@
      HB
      elpi
      elpi_elpi
+     Paco
+     ExtLib
+     ITree
      mathcomp
      micromega_plugin
      Stdlib )
