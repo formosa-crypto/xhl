@@ -31,8 +31,24 @@ Local Open Scope ring_scope.
 Local Open Scope syn_scope.
 Local Open Scope mem_scope.
 
+(* ==================================================================== *)
+(* The whole file is read at the concrete memory [cmem] of pwhile.v, *)
+(* over an alphabet [A] and identifiers [ident].  Only the declarations  *)
+(* that actually mention them are parameterized on section close.        *)
+(* ==================================================================== *)
+Section ITreeSem.
+Context {R : realType} {A : codeType} {ident : countType}.
+
+Local Notation Distr T := {distr T%type / R}.
+Local Notation cmem    := (cmem A ident).
+Local Notation vars    := (vars_ ident).
+Local Notation expr    := (@expr_ A ident cmem).
+Local Notation cmd     := (@cmd_ R A ident cmem ident).
+Local Notation bexpr   := (expr bool).
+Local Notation dexpr T := (expr (Distr T)).
+
 Variant Rnd : Type -> Type :=
-  | GetRnd : forall t : IhbType.type, {distr t / R} -> Rnd t.
+  | GetRnd : forall t : A, {distr t / R} -> Rnd t.
 
 Variant Call : Type -> Type :=
   | CallE (f:ident) : Call unit.
@@ -40,14 +56,18 @@ Variant Call : Type -> Type :=
 (* [EnterBlock bs] installs the block's initial local store and *returns the
  * outer memory*, so that the continuation can hand it back to [LeaveBlock],
  * which is what makes [mret]'s first argument available at block exit
- * without threading a memory through [com_sem]. *)
-Variant InstrE {ident : eqType}  {mem : memType ident} : Type -> Type :=
-  | Assig : forall t : IhbType.type,  vars t -> expr_ ident mem t  -> InstrE unit
-  | GAssig : forall t : IhbType.type,  vars t -> expr_ ident mem t  -> InstrE unit
-  | RAssig :  forall t : IhbType.type,  vars t -> expr_ ident mem {distr t / R}  -> InstrE unit
-  | EvalCond : bexpr -> InstrE bool
-  | EnterBlock : seq (@binding ident mem) -> InstrE mem
-  | LeaveBlock : mem -> seq (@binding ident mem) -> InstrE unit.
+ * without threading a memory through [com_sem].
+ *
+ * [InstrE] keeps its own identifiers and memory, as before; what used to
+ * pin them to the concrete ones was the global [vars]/[bexpr] notations of
+ * pwhile.v, spelled out here at [I]/[mem]. *)
+Variant InstrE {I : eqType} {mem : memType A I} : Type -> Type :=
+  | Assig : forall t : A,  vars_ I t -> expr_ A I mem t  -> InstrE unit
+  | GAssig : forall t : A,  vars_ I t -> expr_ A I mem t  -> InstrE unit
+  | RAssig :  forall t : A,  vars_ I t -> expr_ A I mem {distr t / R}  -> InstrE unit
+  | EvalCond : expr_ A I mem bool -> InstrE bool
+  | EnterBlock : seq (@binding A I mem) -> InstrE mem
+  | LeaveBlock : mem -> seq (@binding A I mem) -> InstrE unit.
 
 Section ParSem.
 
@@ -170,7 +190,7 @@ Section PropSem.
       | RetF r => dunit r
       | TauF t => dinterp' (observe t) n
       | VisF _ e k =>
-          match e in Rnd A return (A -> itree Rnd T) -> {distr T / R} with
+          match e in Rnd Ty return (Ty -> itree Rnd T) -> {distr T / R} with
           | GetRnd _ mu =>
               fun k0 => \dlet_(t <- mu) (dinterp' (observe (k0 t)) n)
           end k
@@ -229,3 +249,5 @@ Definition interp_full (c:cmd) (ps: ident -> cmd) : cmem -> {distr cmem / R} :=
 (*       t. *)
 
 (* End Truc2. *)
+
+End ITreeSem.

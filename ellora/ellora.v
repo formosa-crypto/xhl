@@ -18,6 +18,23 @@ Local Open Scope syn_scope.
 Local Open Scope sem_scope.
 Local Open Scope mem_scope.
 
+(* ==================================================================== *)
+(* Read at the concrete memory [cmem] of pwhile.v, over an alphabet  *)
+(* [A] and identifiers [ident].                                          *)
+(* ==================================================================== *)
+Section Ellora.
+Context {R : realType} {A : codeType} {ident : countType}.
+
+Local Notation Distr T := {distr T%type / R}.
+Local Notation cmem    := (cmem A ident).
+Local Notation vars    := (vars_ ident).
+Local Notation expr    := (@expr_ A ident cmem).
+Local Notation dexpr T := (expr (Distr T)).
+Local Notation cmd     := (@cmd_ R A ident cmem ident).
+Local Notation assn    := (pred cmem).
+Local Notation ssem    := (@ssem_ _ _ _ ident cmem).
+Local Notation mnull   := (@dnull R cmem).
+
 (* -------------------------------------------------------------------- *)
 Local Notation dmem  := (Distr cmem).
 Local Notation dassn := (pred  dmem).
@@ -199,7 +216,7 @@ Arguments dassn_map : simpl never.
 
 Notation "P .[ F ]" := (dassn_map P F) : assn.
 
-Notation psi := (ident -> cmd_ ident cmem ident).
+Notation psi := (ident -> cmd_ R A ident cmem ident).
 
 (* -------------------------------------------------------------------- *)
 Local Notation iwhilen k b c := (iterc k (IfT b then c)).
@@ -215,13 +232,13 @@ Inductive sellora : psi -> (ident -> dassn) -> (ident -> dassn2) -> dassn -> das
 
 | ESkip P pre post  ps : sellora ps pre post P P skip
 
-| EAssign {t : IhbType.type} P (x : vars t) (e : expr t) pre post ps:
+| EAssign {t : A} P (x : vars t) (e : expr t) pre post ps:
     sellora ps pre post (P.[fun mu => dssem ps (x <<- e) mu])%A P (x <<- e)
 
-| EGAssign {t : IhbType.type} P (x : vars t) (e : expr t) pre post ps:
+| EGAssign {t : A} P (x : vars t) (e : expr t) pre post ps:
     sellora ps pre post (P.[fun mu => dssem ps (G x <<- e) mu])%A P (G x <<- e)
 
-| ESample {t : IhbType.type} P (x : vars t) (d : dexpr t) pre post ps:
+| ESample {t : A} P (x : vars t) (d : dexpr t) pre post ps:
     sellora ps pre post (P.[fun mu => dssem ps (x <$- d) mu])%A P (x <$- d)
 
 | ECond P P' Q Q' e c1 c2 ps pre post :
@@ -423,8 +440,8 @@ pose F n := \dlet_(x <- mu) ssem ps (whilen b c n) x.
 have ->: \dlim_(n) F n = \dlim_(n) F n.+1.
 + by apply/distr_eqP=> m; rewrite dlim_bump.
 apply: (uclosed_and Quclosed (@uclosed_square (`[{~~ b}])%A)).
-+ move=> n; pose R := ssem ps (iwhilen n b c ;; IfT b then abort).
-  rewrite [X in X \in _](_ : _ = \dlet_(x <- mu) R x) {}/R {}/F.
++ move=> n; pose Rw := ssem ps (iwhilen n b c ;; IfT b then abort).
+  rewrite [X in X \in _](_ : _ = \dlet_(x <- mu) Rw x) {}/Rw {}/F.
   * by apply eq_in_dlet => // m _; rewrite whilen_iterc.
   move: P0_mu; rewrite -(subnn n); move: mu (leqnn n).
   elim: {1 4 5}n => [|m ihm] mu Hn.
@@ -435,8 +452,8 @@ apply: (uclosed_and Quclosed (@uclosed_square (`[{~~ b}])%A)).
     rewrite !bsemE; case: ifPn; first by rewrite dnullE eqxx.
     by rewrite dunit1E pnatr_eq0 eqb0 negbK => ? /eqP<-.
   move=> PS_mu; pose d := \dlet_(x <- mu) ssem ps (IfT b then c) x.
-  pose R x := ssem ps (iterc m (IfT b then c) ;; IfT b then abort) x.
-  rewrite [dlet _ _](_ : _ = \dlet_(x <- d) R x) {}/R {}/d.
+  pose Rw x := ssem ps (iterc m (IfT b then c) ;; IfT b then abort) x.
+  rewrite [dlet _ _](_ : _ = \dlet_(x <- d) Rw x) {}/Rw {}/d.
   + rewrite dlet_dlet; apply eq_in_dlet=> // m1 _.
     by rewrite ssem_seqE itercSl -ssem_seqE sem_seqA ssem_seqE.
   apply ihm; first by apply ltnW. by rewrite -subnSK //; apply hP.
@@ -841,20 +858,21 @@ Proof.
       - by move=> nu /= /implyP H; apply: H; apply/asboolP.
       - by move=> nu /asboolP ->; apply/asboolP. }
     pose I n := iter n (seqc^~ (IfT e then c0)) skip.
-    pose A n := eqmu (dssem ps' (I n) mu).
+    (* [A] is the alphabet of the enclosing section *)
+    pose Ai n := eqmu (dssem ps' (I n) mu).
     pose B n := eqmu (dssem ps' (I n ;; IfT e then abort) mu).
     pose Qinf := eqmu (dssem ps' (While e Do c0) mu).
-    apply/(EConseq _ _ (@EWhileTClosed A B Qinf _ _ _ _ _ _ _ _)).
+    apply/(EConseq _ _ (@EWhileTClosed Ai B Qinf _ _ _ _ _ _ _ _)).
     { by move=> nu /asboolP ->; apply/asboolP => /=;
         rewrite /dssem !bsemE dlet_dunit_id. }
     { move=> nu /andP[/asboolP -> _]; apply/implyP => Pmu.
       exact: (Hhl mu Pmu). }
-    { move=> n; rewrite /A {2}/I; set D := dssem ps' (iter _ _ _) _.
+    { move=> n; rewrite /Ai {2}/I; set D := dssem ps' (iter _ _ _) _.
       have ->: D = dssem ps' (IfT e then c0) (dssem ps' (I n) mu)
         by rewrite /D iterS dssem_seqE.
       apply/rel_cpl_if; first exact: rc0.
       by move=> d; apply: rel_cpl_skip. }
-    { move=> n; rewrite /A /B; set D := dssem ps' (_ ;; _) _.
+    { move=> n; rewrite /Ai /B; set D := dssem ps' (_ ;; _) _.
       have ->: D = dssem ps' (IfT e then abort) (dssem ps' (I n) mu)
         by rewrite /D dssem_seqE.
       apply/rel_cpl_if; first by move=> d; apply: rel_cpl_abort.
@@ -1024,3 +1042,5 @@ by apply ellora_kellora.
 Qed.
 
 End Complete.
+
+End Ellora.

@@ -31,6 +31,8 @@ Proof. by move=> T U V f g eq; apply/funext=> x; apply/funext. Qed.
 
 (* -------------------------------------------------------------------- *)
 Section DistrRecast.
+Context {R : realType}.
+Local Notation Distr T := {distr T%type / R}.
 Variables (T U V : choiceType) (f g : T -> Distr U) (mu nu : Distr T).
 
 Lemma dlet_null : \dlet_(i <- dnull) f i = dnull.
@@ -102,6 +104,7 @@ End DistrRecast.
 
 (* -------------------------------------------------------------------- *)
 Section DLimRecast.
+Context {R : realType}.
 Variables (T U : choiceType).
 Variables (f : nat -> {distr T / R}) (h : T -> {distr U / R}).
 
@@ -112,6 +115,8 @@ End DLimRecast.
 
 (* -------------------------------------------------------------------- *)
 Section DProj.
+Context {R : realType}.
+Local Notation Distr T := {distr T%type / R}.
 Context {T : choiceType} (mu : Distr (T * T)).
 
 Lemma dprojE s x :
@@ -125,10 +130,15 @@ Proof. by case: s => /=; [apply/summable_fst | apply/summable_snd]. Qed.
 End DProj.
 
 (* -------------------------------------------------------------------- *)
+Section Ubn.
+Context {R : realType}.
+Local Notation Distr T := {distr T%type / R}.
+
 Fixpoint ubn {A : choiceType} (f : A -> Distr A) (t : pred A) n := fun a =>
   if n is n.+1 return Distr A then
     if t a then \dlet_(x <- f a) ubn f t n x else dunit a
   else dnull.
+End Ubn.
 
 (* -------------------------------------------------------------------- *)
 Reserved Notation "m .[ x <- v ]"
@@ -146,23 +156,27 @@ Reserved Notation "m .[+ x <- v ]"
 Reserved Notation "m .[+]" (at level 2, format "m .[+]").
 
 (* -------------------------------------------------------------------- *)
-Notation "m .[ x ]"     := (@mget _ _ (vtype x%V) m (vname x%V)) : mem_scope.
-Notation "m .[ x <- v ]" := (@mset _ _ (vtype x%V) m (vname x%V) v) : mem_scope.
+Notation "m .[ x ]"     := (@mget _ _ _ (vtype x%V) m (vname x%V)) : mem_scope.
+Notation "m .[ x <- v ]" := (@mset _ _ _ (vtype x%V) m (vname x%V) v) : mem_scope.
 
-Notation "m .{ x }"     := (@mgetg _ _ (vtype x%V) m (vname x%V)) : mem_scope.
-Notation "m .{ x <- v }" := (@msetg _ _ (vtype x%V) m (vname x%V) v) : mem_scope.
+Notation "m .{ x }"     := (@mgetg _ _ _ (vtype x%V) m (vname x%V)) : mem_scope.
+Notation "m .{ x <- v }" := (@msetg _ _ _ (vtype x%V) m (vname x%V) v) : mem_scope.
 
-Notation "m .[+ x <- v ]" := (@mpush _ _ (vtype x%V) m (vname x%V) v) : mem_scope.
+Notation "m .[+ x <- v ]" := (@mpush _ _ _ (vtype x%V) m (vname x%V) v) : mem_scope.
 
 Notation "m .[+]" := (mnew m) (at level 2, format "m .[+]") : mem_scope.
 
 (* -------------------------------------------------------------------- *)
 Section Semantics.
-  Context {X Y : eqType} {cmem: memType X} {ps : Y -> (@cmd_  X cmem Y)}.
+  Context {R : realType} {A : codeType} {X Y : eqType} {cmem: memType A X}
+          {ps : Y -> (@cmd_ R A X cmem Y)}.
 
-Notation vars    := (@vars_ X).
-Notation expr    := (@expr_ X cmem).
-Notation cmd     := (@cmd_  X cmem Y).
+Local Notation Distr T := {distr T%type / R}.
+
+Notation vars    := (vars_ X).
+Notation expr    := (@expr_ A X cmem).
+Notation cmd     := (@cmd_ R A X cmem Y).
+Notation binding := (@binding A X cmem).
 Notation bexpr   := (expr bool).
 Notation dexpr T := (expr (Distr T)).
 
@@ -171,7 +185,7 @@ Notation mnull  := (@dnull R cmem).
 
 (* -------------------------------------------------------------------- *)
 Fixpoint esem {T : Type} (e : expr T) (m : cmem) : T :=
-  match e in expr_ _ _ T return T with
+  match e in expr_ _ _ _ T return T with
   | var_ T x => m.[x]
   | cst_ T c => c
   | prp_ P   => P m
@@ -181,10 +195,11 @@ Fixpoint esem {T : Type} (e : expr T) (m : cmem) : T :=
 
 (* -------------------------------------------------------------------- *)
 Definition minit (m : cmem) (bs : seq binding) : cmem :=
-  foldl (fun m' b => let: existT _ (x, e) := b in m'.[x <- esem e m]) m.[+] bs.
+  foldl (fun m' (b : binding) => let: existT _ (x, e) := b in m'.[x <- esem e m])
+        m.[+] bs.
 
 Definition mret (m m' : cmem) (rs : seq binding) : cmem :=
-  foldl (fun mm b => let: existT _ (r, e') := b in mm.[r <- esem e' m'])
+  foldl (fun mm (b : binding) => let: existT _ (r, e') := b in mm.[r <- esem e' m'])
         (mrestore m m') rs.
 
 (* -------------------------------------------------------------------- *)
@@ -271,8 +286,8 @@ Lemma ssem_seqE c1 c2 m :
   ssem (c1 ;; c2) m = \dlet_(m' <- ssem c1 m) (ssem c2 m').
 Proof. by rewrite unlock. Qed.
 
-Lemma esem_varE {T : IhbType.type} (x : vars T) m :
-   esem (@var_ _ _ T x) m = m.[x].
+Lemma esem_varE {T : A} (x : vars T) m :
+   esem (@var_ _ _ _ T x) m = m.[x].
 Proof. by []. Qed.
 
 Lemma esem_cstE {T : Type} (c : T) m : esem (cst_ c) m = c.
@@ -285,8 +300,8 @@ Lemma esem_appE {T U : Type} (e1 : expr (T -> U)) (e2 : expr T) m :
   esem (app_ e1 e2) m = (esem e1 m) (esem e2 m).
 Proof. by []. Qed.
 
-Lemma esem_gvarE {T : IhbType.type} (x : vars T) m :
-   esem (@gvar_ _ _ T x) m = m.{x}.
+Lemma esem_gvarE {T : A} (x : vars T) m :
+   esem (@gvar_ _ _ _ T x) m = m.{x}.
 Proof. by []. Qed.
 
 Lemma ssem_gassnE {T} (x : vars T) (e : expr T) m :
@@ -393,7 +408,7 @@ Lemma dlim_ift (e : expr bool) (C : nat -> cmd) (c : cmd) m :
   = if esem e m then \dlim_(n) ssem (C n) m else ssem c m.
 Proof.
 pose F n := if esem e m then ssem (C n) m else ssem c m.
-rewrite -(@eq_dlim _ F) {}/F => [k |].
+rewrite -(@eq_dlim _ _ F) {}/F => [k |].
 + by rewrite !semE.
 by case: ifPn => _; rewrite ?dlimC.
 Qed.
@@ -403,7 +418,7 @@ Lemma dlim_iff (e : expr bool) (C : nat -> cmd) (c : cmd) m :
   = if esem e m then ssem c m else \dlim_(n) ssem (C n) m.
 Proof.
 pose F n := if esem e m then ssem c m else ssem (C n) m.
-rewrite -(@eq_dlim _ F) {}/F => [k|].
+rewrite -(@eq_dlim _ _ F) {}/F => [k|].
 + by rewrite !semE.
 by case: ifPn => _; rewrite ?dlimC.
 Qed.
@@ -523,11 +538,13 @@ End Semantics.
 
 (* -------------------------------------------------------------------- *)
 Section EqCmd.
-Context {I J : eqType} {M : memType I} {ps : J -> (@cmd_  I M J)}.
-Local Notation cmd := (cmd_ I M J).
+Context {R : realType} {A : codeType} {I J : eqType} {M : memType A I}
+        {ps : J -> (@cmd_ R A I M J)}.
+Local Notation Distr T := {distr T%type / R}.
+Local Notation cmd := (cmd_ R A I M J).
 
 Definition eqcmd (c1 c2 : cmd) :=
-  forall m, @ssem_ _ _ _ ps c1 m = @ssem_ _ _ _ ps c2 m.
+  forall m, @ssem_ _ _ _ _ _ ps c1 m = @ssem_ _ _ _ _ _ ps c2 m.
 
 Global Instance eqcmd_R : Equivalence eqcmd.
 Proof.
@@ -590,7 +607,7 @@ Qed.
 Global Instance cond_m : Proper (eq ==> eqcmd ==> eqcmd ==> eqcmd) cond.
 Proof. by move=> ?? H1 ?? H2 ?? H3 m; rewrite !semE H1; case: ifP. Qed.
 
-Global Instance block_m : Proper (eq ==> eqcmd ==> eq ==> eqcmd) (@block I M J).
+Global Instance block_m : Proper (eq ==> eqcmd ==> eq ==> eqcmd) (@block R A I M J).
 Proof.
 move=> ?? <- c1 c2 hc ?? <- m.
 by rewrite !ssem_blockE hc.
@@ -659,14 +676,55 @@ by rewrite dlet_unit !semE bm.
 Qed.
 End EqCmd.
 
-Arguments eqcmd {_} {_} {_} _.
+Arguments eqcmd {_} {_} {_} {_} {_} _.
 
-Arguments ssem_ {_} {_} {_} _.
+Arguments ssem_ {_} {_} {_} {_} {_} _.
 
 Notation "c1 '=C' c2 ';' ps" := (eqcmd ps c1 c2) (at level 70, no associativity).
 
+Arguments ssem_ R A X Y cmem ps s%_S m%_M.
+Arguments esem A X cmem T e%_X m%_M.
+
+Notation "e `_ m" := (@esem _ _ _ _ e%X m%M) : sem_scope.
+
 (* -------------------------------------------------------------------- *)
-Lemma unrolln_while {J: eqType} n (e : expr bool) c (ps: (J -> cmd_ _ _ J)) :
+(* The one-sided update notations.  They mention neither the alphabet nor
+ * the reals, and clients (prhl.v) need them, so they are declared here,
+ * *outside* the section below -- a notation does not survive [End]. *)
+Reserved Notation "m .[ x @ s <- v ]"
+  (at level 1, x, s, v at level 200, format "m .[ x @ s  <-  v ]").
+
+Reserved Notation "m .[~1 x <- v ]"
+  (at level 1, x, v at level 200, format "m .[~1  x  <-  v ]").
+
+Reserved Notation "m .[~2 x <- v ]"
+  (at level 1, x, v at level 200, format "m .[~2  x  <-  v ]").
+
+Notation "m .[ x @ s <- v ]" := m.[x # s <- v].
+Notation "m .[~1 x <- v ]"   := m.[x @ '1 <- v].
+Notation "m .[~2 x <- v ]"   := m.[x @ '2 <- v].
+
+(* ==================================================================== *)
+(* Everything below is read at the concrete memories [cmem] / [rmem] of  *)
+(* pwhile.v, over an alphabet [A] and identifiers [ident].           *)
+(* ==================================================================== *)
+Section Concrete.
+Context {R : realType} {A : codeType} {ident : countType}.
+
+Local Notation Distr T := {distr T%type / R}.
+Local Notation cmem  := (cmem A ident).
+Local Notation rmem  := (rmem A ident).
+Local Notation vars  := (vars_ ident).
+Local Notation expr  := (@expr_ A ident cmem).
+Local Notation assn  := (pred cmem).
+Local Notation dassn := (pred (Distr cmem)).
+
+Local Notation ssem   := (@ssem_ _ _ _ ident cmem).
+Local Notation mdistr := (Distr cmem).
+Local Notation mnull  := (@dnull R cmem).
+
+(* -------------------------------------------------------------------- *)
+Lemma unrolln_while {J: eqType} n (e : expr bool) c (ps: (J -> cmd_ R A ident cmem J)) :
   (While e Do c) =C (iterc n (IfT e then c) ;; While e Do c) ; ps.
 Proof.
 rewrite ssem_iterop_iter; elim: n => [|n ih] /=.
@@ -675,17 +733,17 @@ by rewrite -seqA -ih => m; rewrite unroll_while.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma if_same {J: eqType} (e : expr bool) c (ps: (J -> cmd_ _ _ J)) :
+Lemma if_same {J: eqType} (e : expr bool) c (ps: (J -> cmd_ R A ident cmem J)) :
   If e then c else c =C c ; ps.
 Proof. by move=> m; rewrite !semE; case: (esem _ _). Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma if_seq {J: eqType} (e : expr bool) c c1 c2 (ps: (J -> cmd_ _ _ J)) :
+Lemma if_seq {J: eqType} (e : expr bool) c c1 c2 (ps: (J -> cmd_ R A ident cmem J)) :
   (If e then c1 else c2 ;; c) =C If e then (c1 ;; c) else (c2 ;; c) ; ps.
 Proof. by move=> m; rewrite !semE; case: ifPn. Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma le_while {J: eqType} (e : expr bool) c1 c2 m (ps: (J -> cmd_ _ _ J)):
+Lemma le_while {J: eqType} (e : expr bool) c1 c2 m (ps: (J -> cmd_ R A ident cmem J)):
      (forall m, esem e m -> ssem_ ps c1 m <=1 ssem_ ps c2 m)
   -> ssem_ ps (While e Do c1) m <=1 ssem_ ps (While e Do c2) m.
 Proof.
@@ -695,7 +753,7 @@ by case: ifP => // hem; apply/le_dlet => {} m' //; apply: lec.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma xsplit_while {J: eqType} (e e1 e2 : expr bool) c (ps: (J -> cmd_ _ _ J)):
+Lemma xsplit_while {J: eqType} (e e1 e2 : expr bool) c (ps: (J -> cmd_ R A ident cmem J)):
      (forall m, esem e2 m -> esem e m)
   -> (forall m, esem e m -> ~~ esem e1 m -> esem e2 m)
   -> (While e Do c) =C (While e Do (If e1 then c else While e2 Do c)); ps.
@@ -738,19 +796,16 @@ by apply: (le_trans (le_whilen _ _ _ _ _)).
 Qed.
 
 (* (* -------------------------------------------------------------------- *) *)
-Notation ssem   := (@ssem_ _ ident cmem).
-Notation mdistr := (Distr cmem).
-Notation mnull  := (@dnull R cmem).
-
-Arguments ssem_ X Y cmem ps s%_S m%_M.
-Arguments esem X cmem T e%_X m%_M.
-
-Notation "e `_ m" := (@esem _ _ _ e%X m%M) : sem_scope.
-
 (* -------------------------------------------------------------------- *)
-Definition dssem ps c mu := (\dlet_(m <- mu) ssem ps c m).
+Definition dssem (ps : ident -> cmd_ R A ident cmem ident)
+    (c : cmd_ R A ident cmem ident) (mu : mdistr) :=
+  (\dlet_(m <- mu) ssem ps c m).
 
-Instance dsem_m ps : Proper (@eqcmd _ _ _ ps ==> eq ==> eq) (dssem ps).
+(* [Global]: the instance now lives in a section, and a plain [Instance]
+ * registration would be discharged away at [End Concrete] -- the definition
+ * would survive but typeclass resolution would no longer find it, and the
+ * setoid rewrites through [dssem] (ellora.v) would fail. *)
+Global Instance dsem_m ps : Proper (@eqcmd _ _ _ _ _ ps ==> eq ==> eq) (dssem ps).
 Proof. by move=> c1 c2 eqc /= mu _ <-; apply/eq_in_dlet. Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -771,29 +826,17 @@ by apply/distr_eqP=> m; rewrite /dssem bsemE dlet_dlet.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Definition lossless (P : assn) c :=
+Definition lossless (P : assn) (c : cmd_ R A ident cmem ident) :=
   forall ps m, m \in P -> dweight (ssem ps c m) = 1.
 
-Definition dlossless (P : dassn) c :=
+Definition dlossless (P : dassn) (c : cmd_ R A ident cmem ident) :=
   forall ps mu, mu \in P -> dweight (dssem ps c mu) = 1.
 
 (* -------------------------------------------------------------------- *)
-Reserved Notation "m .[ x @ s <- v ]"
-  (at level 1, x, s, v at level 200, format "m .[ x @ s  <-  v ]").
-
-Reserved Notation "m .[~1 x <- v ]"
-  (at level 1, x, v at level 200, format "m .[~1  x  <-  v ]").
-
-Reserved Notation "m .[~2 x <- v ]"
-  (at level 1, x, v at level 200, format "m .[~2  x  <-  v ]").
-
-Notation rsem    := (@ssem_ _ rmem).
-Notation rmdistr := (Distr rmem).
-Notation rmnull  := (@dnull R rmem).
-
-Notation "m .[ x @ s <- v ]" := m.[x # s <- v].
-Notation "m .[~1 x <- v ]"   := m.[x @ '1 <- v].
-Notation "m .[~2 x <- v ]"   := m.[x @ '2 <- v].
+(* [@ssem_ _ rmem] read [rmem] as the [Y] of [ssem_]; it is the memory. *)
+Local Notation rsem    := (@ssem_ _ _ _ rmem).
+Local Notation rmdistr := (Distr rmem).
+Local Notation rmnull  := (@dnull R rmem).
 
 Lemma mselect_mset T s s' (m : rmem) (x : vars T) (v : T) :
   m.[x @ s <- v] # s' = if s == s' then (m#s).[x <- v] else m#s'.
@@ -812,20 +855,20 @@ Definition esemE := (@esem_appE, @esem_cstE, esem_1E, esem_2E).
 
 Definition ssemE := (esemE, @semE).
 
-Lemma mget_iE {T : IhbType.type} (m : rmem) (x : vars T) s :
+Lemma mget_iE {T : A} (m : rmem) (x : vars T) s :
   m.[irvar s x] = (m#s).[x].
 Proof. by case:s x=> -[]. Qed.
 
-Lemma mset_iE {T : IhbType.type} (m : rmem) (x : vars T) (v : T) s :
+Lemma mset_iE {T : A} (m : rmem) (x : vars T) (v : T) s :
   m.[x#s <- v] =
   (((m#'1).[x <- v], m.1)#s, (m.2, (m#'2).[x <- v])#s)%M.
 Proof. by case:x m s => xid [m1 m2] []. Qed.
 
-Lemma mgetg_iE {T : IhbType.type} (m : rmem) (x : vars T) s :
+Lemma mgetg_iE {T : A} (m : rmem) (x : vars T) s :
   m.{irvar s x} = (m#s).{x}.
 Proof. by case:s x=> -[]. Qed.
 
-Lemma msetg_iE {T : IhbType.type} (m : rmem) (x : vars T) (v : T) s :
+Lemma msetg_iE {T : A} (m : rmem) (x : vars T) (v : T) s :
   m.{x#s <- v} =
   (((m#'1).{x <- v}, m.1)#s, (m.2, (m#'2).{x <- v})#s)%M.
 Proof. by case:x m s => xid [m1 m2] []. Qed.
@@ -869,8 +912,10 @@ Proof. by case: m0 m => a1 a2 [b1 b2]. Qed.
 (*   rsem (c#'2) m = \dlet_(m2 <- ssem c m.2) (dunit (m.1, m2)). *)
 (* Proof. by apply ssem_iE. Qed. *)
 
+End Concrete.
+
 (* -------------------------------------------------------------------- *)
-Notation "`[{ e }]" := (@esem _ _ _ e%X) (at level 2, format "`[{ e }]").
+Notation "`[{ e }]" := (@esem _ _ _ _ e%X) (at level 2, format "`[{ e }]").
 
 (* -------------------------------------------------------------------- *)
 Ltac diff_v := try (right; (assumption || rewrite eq_sym; assumption)).
@@ -880,6 +925,10 @@ Notation SET := ((_.[_ <- _].[_])%pattern) (only parsing).
 Ltac mem_t := rewrite ?mget_iE ![SET](mget_eq, mget_neq); diff_v.
 
 (* -------------------------------------------------------------------- *)
+Section UbnTheory.
+Context {R : realType}.
+Local Notation Distr T := {distr T%type / R}.
+
 Lemma le_ubn_body {A : choiceType} (f g : A -> Distr A) (t : pred A) n :
   f <=2 g -> ubn f t n <=2 ubn g t n.
 Proof.
@@ -901,10 +950,11 @@ elim: p n => [|p ihp] n; first by rewrite leqn0 => /eqP->.
 rewrite leq_eqVlt => /orP[/eqP->//|]; rewrite ltnS => le.
 by move=> a m'; apply/(le_trans (ihp _ le a m'))/le_ubn_n.
 Qed.
+End UbnTheory.
 
 (* -------------------------------------------------------------------- *)
 Lemma mono_ssem_aux
-  {X Y : eqType} {cmem: memType X}
+  {R : realType} {A : codeType} {X Y : eqType} {cmem: memType A X}
   (l l' : (Y * cmem) -> {distr cmem / R}) c  (m : cmem) :
   (forall x, l x <=1 l' x) -> ssem_aux l c m <=1 ssem_aux l' c m.
 Proof.
@@ -914,19 +964,21 @@ move=> le_ll'; elim: c m =>
 - by case: ifP => _; [exact: ih1 | exact: ih2].
 - have hb : ssem_aux l c <=2 ssem_aux l' c by move=> a a'; exact: ih.
   apply/leub_dlim => n m0.
-  apply: (le_trans (@le_ubn_body _ _ _ (esem e) n hb m m0)).
+  apply: (le_trans (@le_ubn_body _ _ _ _ (esem e) n hb m m0)).
   by apply/dlim_ub => n1 n2 hle; exact: homo_ubn_n.
 by apply/le_dlet => [|x _]; [exact: ih1 | exact: ih2].
 Qed.
 
-Lemma mono_ubnf {X Y : eqType} {cmem: memType X} {ps : Y -> (@cmd_  X cmem Y)} n :
+Lemma mono_ubnf {R : realType} {A : codeType} {X Y : eqType} {cmem: memType A X}
+  {ps : Y -> (@cmd_ R A X cmem Y)} n :
   ubnf ps n <=2 ubnf ps n.+1.
 Proof.
 elim: n => [|n ih] [f m'] m /=; first exact: lef_dnull.
 by apply/mono_ssem_aux => x; exact: ih.
 Qed.
 
-Lemma homo_ubnf {X Y : eqType} {cmem: memType X} {ps : Y -> (@cmd_  X cmem Y)} n p :
+Lemma homo_ubnf {R : realType} {A : codeType} {X Y : eqType} {cmem: memType A X}
+  {ps : Y -> (@cmd_ R A X cmem Y)} n p :
   (n <= p)%N -> ubnf ps n <=2 ubnf ps p.
 Proof.
 elim: p n => [|p ihp] n; first by rewrite leqn0 => /eqP->.
@@ -936,8 +988,9 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 Section MISC.
-Context {X Y : eqType} {mem : memType X}.
-Definition psi := Y -> (@cmd_ X mem Y).
+Context {R : realType} {A : codeType} {X Y : eqType} {mem : memType A X}.
+Local Notation Distr T := {distr T%type / R}.
+Definition psi := Y -> (@cmd_ R A X mem Y).
 
 Lemma dlim_whilen n e c0 (ps':psi) s:
   ssem_aux (ubnf ps' n) (While e Do c0) s =
@@ -1026,7 +1079,7 @@ by apply: eq_dlim => n /=.
 Qed.
 
 Lemma while_true_null s :
-  dnull = \dlim_(n) ubn [eta dunit (T:=mem)] xpredT n s.
+  (dnull : Distr mem) = \dlim_(n) ubn [eta dunit (T:=mem)] xpredT n s.
 Proof.
   rewrite -(dlimC dnull).
   apply eq_dlim => n0.
@@ -1047,7 +1100,7 @@ Proof.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Fixpoint noblock (c : cmd_ X mem Y) : Prop :=
+Fixpoint noblock (c : cmd_ R A X mem Y) : Prop :=
   match c with
   | abort | skip | assign _ _ _ | gassign _ _ _ | random _ _ _ | call _ => True
   | block _ _ _ => False
@@ -1056,7 +1109,9 @@ Fixpoint noblock (c : cmd_ X mem Y) : Prop :=
   | seqc c1 c2   => noblock c1 /\ noblock c2
   end.
 
-Fixpoint nocall (c:cmd) : Prop :=
+(* [cmd] here used to be the *concrete* notation of pwhile.v, inside this
+ * memory-generic section; read generically, as [noblock] just above. *)
+Fixpoint nocall (c : cmd_ R A X mem Y) : Prop :=
   match c with
   | abort    => True
   | skip     => True
@@ -1074,9 +1129,10 @@ Fixpoint nocall (c:cmd) : Prop :=
 End MISC.
 
 Section Inliner.
-  Context {X Y : eqType} {mem : memType X}.
+  Context {R : realType} {A : codeType} {X Y : eqType} {mem : memType A X}.
+  Local Notation Distr T := {distr T%type / R}.
 
-Fixpoint inliner (c : cmd_ X mem Y) inline :=
+Fixpoint inliner (c : cmd_ R A X mem Y) inline :=
   match c with
   | block bs p rs => block bs (inliner p inline) rs
   | cond b p1 p2 => cond b (inliner p1 inline) (inliner p2 inline)
@@ -1102,7 +1158,7 @@ Fixpoint k_inliner2 n c (ps : psi) :=
 
 Definition k_inliner_ps2 n ps := fun p => k_inliner2 n (ps p) ps.
 
-Definition false_ps : @psi X Y mem  := (fun _ => while (cst_ true) skip).
+Definition false_ps : @psi R A X Y mem := (fun _ => while (cst_ true) skip).
 
 Lemma ubnf_dnull n p s:
   (ubnf false_ps) n (p, s) = dnull.
@@ -1124,7 +1180,7 @@ exact: ubnf_dnull.
 Qed.
 
 Lemma kinliner1_cblock n ps' bs p rs :
-  k_inliner1 (S n) (@block X mem Y bs p rs) ps' =
+  k_inliner1 (S n) (@block R A X mem Y bs p rs) ps' =
   block bs (k_inliner1 (S n) p ps') rs.
 Proof.
   reflexivity.
@@ -1156,7 +1212,7 @@ Qed.
 
 
 Lemma kinliner2_cblock n ps' bs p rs :
-  k_inliner2 (S n) (@block X mem Y bs p rs) ps' =
+  k_inliner2 (S n) (@block R A X mem Y bs p rs) ps' =
   block bs (k_inliner2 (S n) p ps') rs.
 Proof.
   reflexivity.

@@ -20,15 +20,17 @@ Local Open Scope mem_scope.
 
 (* -------------------------------------------------------------------- *)
 Section hl.
-Context {X Y : eqType} {mem : memType X}.
+Context {R : realType} {A : codeType} {X Y : eqType} {mem : memType A X}.
+
+Local Notation Distr T := {distr T%type / R}.
 
 Definition assn := (pred mem).
 Definition assn2 := (mem -> pred mem).
 
-Definition forall_in {T : IhbType.type} (mu : mem -> Distr T) (P : T -> assn) : assn :=
+Definition forall_in {T : A} (mu : mem -> Distr T) (P : T -> assn) : assn :=
   `[< fun m => forall t,  t \in dinsupp (mu m) -> P t m >]%A.
 
-Definition cmd  := (@cmd_ X mem Y).
+Definition cmd  := (@cmd_ R A X mem Y).
 Definition psi := Y -> cmd.
 
 (* -------------------------------------------------------------------- *)

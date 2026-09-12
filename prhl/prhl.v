@@ -20,6 +20,9 @@ Local Open Scope mem_scope.
 
 (* -------------------------------------------------------------------- *)
 Section Couplings.
+(* [Rl], not [R]: this file uses [R] for intermediate assertions. *)
+Context {Rl : realType}.
+Local Notation Distr T := {distr T%type / Rl}.
 Context {A B : choiceType} (μ1 : Distr A) (μ2 : Distr B).
 
 Definition iscoupling (ν : Distr (A * B)) :=
@@ -28,6 +31,8 @@ End Couplings.
 
 (* -------------------------------------------------------------------- *)
 Section CouplingsTheory.
+Context {Rl : realType}.
+Local Notation Distr T := {distr T%type / Rl}.
 Context {A B C D : choiceType}.
 
 Lemma iscoupling_eq (μ1 μ2 μ1' μ2' : Distr _) (ν : Distr (A * B)) :
@@ -38,11 +43,11 @@ Lemma iscoupling_prod (μ : Distr (A * B)) :
   iscoupling (dfst μ) (dsnd μ) μ.
 Proof. by []. Qed.
 
-Lemma iscoupling_dnull : @iscoupling A B dnull dnull dnull.
+Lemma iscoupling_dnull : @iscoupling Rl A B dnull dnull dnull.
 Proof. by split; rewrite dmarginE dlet_null. Qed.
 
 Lemma iscoupling_dunit a b :
-  @iscoupling A B (dunit a) (dunit b) (dunit (a, b)).
+  @iscoupling Rl A B (dunit a) (dunit b) (dunit (a, b)).
 Proof. by split; rewrite dmarginE dlet_unit. Qed.
 
 Lemma iscoupling_swap (μ1 μ2 : Distr A) (ν : Distr (A * A)) :
@@ -81,13 +86,27 @@ by split; apply/eq_dlim => n; case: (hC n).
 Qed.
 End CouplingsTheory.
 
-(* -------------------------------------------------------------------- *)
+(* ==================================================================== *)
+(* Read at the concrete relational memory [rmem] of pwhile.v, over   *)
+(* an alphabet [A] and identifiers [ident].                              *)
+(* ==================================================================== *)
+Section prhl.
+Context {Rl : realType} {A : codeType} {ident : countType}.
+
+Local Notation Distr T := {distr T%type / Rl}.
+Local Notation cmem  := (cmem A ident).
+Local Notation rmem  := (rmem A ident).
+Local Notation vars  := (vars_ ident).
+Local Notation expr  := (@expr_ A ident cmem).
+Local Notation dexpr T := (expr (Distr T)).
+Local Notation cmd   := (@cmd_ Rl A ident cmem ident).
+Local Notation assn  := (pred cmem).
+Local Notation rassn := (pred rmem).
+
 Implicit Types P Q S I : rassn.
 Implicit Types c       : cmd.
 
-Definition psi := ident -> (@cmd_ ident cmem ident).
-
-Section prhl.
+Definition psi := ident -> (@cmd_ Rl A ident cmem ident).
 
 Definition prhl_  (ps: psi) P c1 c2 Q  :=
   forall m : rmem, P m ->
@@ -100,9 +119,9 @@ Section Logic.
 Inductive derivable : pred rmem -> cmd -> cmd -> pred rmem -> Prop :=
 | H_Skip : forall P, derivable P skip skip P
 | H_abort P c1 c2 Q : derivable P abort abort Q
-| H_case P A c1 c2 Q :
-     derivable (P /\   A)%A c1 c2 Q
-  -> derivable (P /\ ~ A)%A c1 c2 Q
+| H_case P Pa c1 c2 Q :
+     derivable (P /\   Pa)%A c1 c2 Q
+  -> derivable (P /\ ~ Pa)%A c1 c2 Q
   -> derivable P c1 c2 Q
 | H_swap P c1 c2 Q :
   derivable (pswap P) c2 c1 (pswap Q) -> derivable P c1 c2 Q
@@ -111,9 +130,9 @@ Inductive derivable : pred rmem -> cmd -> cmd -> pred rmem -> Prop :=
   -> (forall m, Q  m -> Q' m)
   -> derivable P  c1 c2 Q
   -> derivable P' c1 c2 Q'
-| H_assignL {t : IhbType.type} (x : vars t) (e : expr t) Q :
+| H_assignL {t : A} (x : vars t) (e : expr t) Q :
   derivable [pred m : rmem | Q m.[~1 x <- `[{ e }] m.1]] (x <<- e) skip Q
-| H_rndL {t : IhbType.type} P (x : vars t) (d : dexpr t) Q :
+| H_rndL {t : A} P (x : vars t) (d : dexpr t) Q :
      P =1 [pred m : rmem
        |  dweight (`[{ d }] m.1) == 1
        & `[< range [pred v | Q m.[~1 x <- v]] (`[{ d }] m.1) >]]
@@ -232,12 +251,12 @@ by rewrite !ssemE; split; rewrite dmarginE dlet_null.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma prhl_case P A c1 c2 Q :
-     prhl (P /\   A)%A c1 c2 Q
-  -> prhl (P /\ ~ A)%A c1 c2 Q
+Lemma prhl_case P Pa c1 c2 Q :
+     prhl (P /\   Pa)%A c1 c2 Q
+  -> prhl (P /\ ~ Pa)%A c1 c2 Q
   -> prhl P c1 c2 Q.
 Proof.
-move=> hA hNA m Pm; case/boolP: (A m) => [Am | NAm].
+move=> hA hNA m Pm; case/boolP: (Pa m) => [Am | NAm].
 + by apply/hA; rewrite -(rwP andP).
 + by apply/hNA; rewrite -(rwP andP).
 Qed.
@@ -250,7 +269,7 @@ by rewrite !ssemE -!dmargin_dunit; apply/iscoupling_prod.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma prhl_assignL {t : IhbType.type} (x : vars t) (e : expr t) Q :
+Lemma prhl_assignL {t : A} (x : vars t) (e : expr t) Q :
   prhl [pred m : rmem | Q m.[~1 x <- `[{ e }] m.1]] (x <<- e) skip Q.
 Proof.
 move=> m /= Qmxe; exists (dunit (m.[~1 x <- `[{ e }] m.1])); last first.
@@ -261,7 +280,7 @@ rewrite !ssemE; apply/(iscoupling_eq _ _ (iscoupling_prod _)).
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma prhl_rndL {t : IhbType.type} P (x : vars t) (d : dexpr t) Q :
+Lemma prhl_rndL {t : A} P (x : vars t) (d : dexpr t) Q :
      P =1 [pred m : rmem
        |  dweight (`[{ d }] m.1) == 1
        & `[< range [pred v | Q m.[~1 x <- v]] (`[{ d }] m.1) >]]

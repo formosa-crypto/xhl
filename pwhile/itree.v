@@ -32,8 +32,24 @@ Local Open Scope ring_scope.
 Local Open Scope syn_scope.
 Local Open Scope mem_scope.
 
+(* ==================================================================== *)
+(* The whole file is read at the concrete memory [cmem] of pwhile.v, *)
+(* over an alphabet [A] and identifiers [ident].  Only the declarations  *)
+(* that actually mention them are parameterized on section close.        *)
+(* ==================================================================== *)
+Section ITreeSem.
+Context {R : realType} {A : codeType} {ident : countType}.
+
+Local Notation Distr T := {distr T%type / R}.
+Local Notation cmem    := (cmem A ident).
+Local Notation vars    := (vars_ ident).
+Local Notation expr    := (@expr_ A ident cmem).
+Local Notation cmd     := (@cmd_ R A ident cmem ident).
+Local Notation bexpr   := (expr bool).
+Local Notation dexpr T := (expr (Distr T)).
+
 Variant Rnd : Type -> Type :=
-  | GetRnd : forall t : IhbType.type, {distr t / R} -> Rnd t.
+  | GetRnd : forall t : A, {distr t / R} -> Rnd t.
 
 Variant Call : Type -> Type :=
   | CallE (f:ident) (m: cmem): Call cmem.
@@ -110,7 +126,8 @@ Section Misc.
   by apply/(le_trans (le_gf n y))/dlim_ub.
   Qed.
 
-  Lemma ubnS {A : choiceType} (f : A -> Distr A) (t : pred A) n a :
+  (* [A] is the alphabet of the enclosing section here *)
+  Lemma ubnS {S : choiceType} (f : S -> Distr S) (t : pred S) n a :
     ubn f t n.+1 a = if t a then \dlet_(x <- f a) ubn f t n x else dunit a.
   Proof. by []. Qed.
 
@@ -126,7 +143,7 @@ Section PropSem.
       | RetF r => dunit r
       | TauF t => dinterp' (observe t) n
       | VisF _ e k =>
-          match e in Rnd A return (A -> itree Rnd T) -> {distr T / R} with
+          match e in Rnd Ty return (Ty -> itree Rnd T) -> {distr T / R} with
           | GetRnd _ mu =>
               fun k0 => \dlet_(t <- mu) (dinterp' (observe (k0 t)) n)
           end k
@@ -139,7 +156,7 @@ Section PropSem.
   Lemma le_dinterp'_n (t : itree' Rnd T) n : dinterp' t n <=1 dinterp' t n.+1.
   Proof.
   elim: n t => [|n ih] t x /=; first exact: lef_dnull.
-  case: t => [r|t|A e k] //=; case: e k => t0 mu k /=.
+  case: t => [r|t|Ty e k] //=; case: e k => t0 mu k /=.
   by apply/le_in_dlet => // v _; apply: ih.
   Qed.
 
@@ -154,7 +171,7 @@ Section PropSem.
     dinterp' (observe t) n <=1 dinterp t.
   Proof. by rewrite /dinterp; apply: dlim_ub; apply: homo_dinterp'. Qed.
 
-  Lemma le_dinterp'_vis (t0 : IhbType.type) (mu : {distr t0 / R})
+  Lemma le_dinterp'_vis (t0 : A) (mu : {distr t0 / R})
     (k : t0 -> itree Rnd T) n :
     dinterp' (observe (Vis (GetRnd mu) k)) n <=1 \dlet_(v <- mu) dinterp (k v).
   Proof.
@@ -185,7 +202,7 @@ Section PropSem.
   Lemma dinterp_tau (t : itree Rnd T) : dinterp (Tau t) = dinterp t.
   Proof. by rewrite /dinterp -dlim_bumpE /=. Qed.
 
-  Lemma dinterp_vis (t0 : IhbType.type) (mu : {distr t0 / R})
+  Lemma dinterp_vis (t0 : A) (mu : {distr t0 / R})
     (k : t0 -> itree Rnd T) :
     dinterp (Vis (GetRnd mu) k) = \dlet_(v <- mu) dinterp (k v).
   Proof.
@@ -204,7 +221,7 @@ Section BindSem.
       <=1 \dlet_(m <- dinterp' (observe t) n) dinterp' (observe (k m)) n.
   Proof.
   elim: n => [|n ih] t k x /=; first exact: lef_dnull.
-  case: (observe t) => [r|t'|A e ke] /=.
+  case: (observe t) => [r|t'|Ty e ke] /=.
   - by rewrite dlet_unit.
   - by apply/(le_trans (ih _ _ _))/le_in_dlet => // m _; apply: le_dinterp'_n.
   - case: e ke => t0 mu ke /=.
@@ -218,7 +235,7 @@ Section BindSem.
   Proof.
   elim: n => [|n ih] p t k x.
   - by rewrite /= dlet_null; apply: lef_dnull.
-  - rewrite addSn /=; case: (observe t) => [r|t'|A e ke] /=.
+  - rewrite addSn /=; case: (observe t) => [r|t'|Ty e ke] /=.
     + have h : dinterp' (observe (k r)) p <=1 dinterp' (observe (k r)) (n + p).+1.
         by apply: homo_dinterp'; apply/leqW/leq_addl.
       by rewrite dlet_unit; apply: h.
@@ -413,7 +430,7 @@ Section SsemLim.
   - have -> : ssem_aux (fun a => dlim (fun n => l n a)) c
             = (fun a => dlim (fun n => ssem_aux (l n) c a)).
       by apply/funext => a; apply: ih.
-    rewrite (@eq_dlim _ _ (fun k => dlim (fun n => ubn (ssem_aux (l n) c)
+    rewrite (@eq_dlim _ _ _ (fun k => dlim (fun n => ubn (ssem_aux (l n) c)
                                                      (esem e) k m))).
     + by move=> k; apply: dlim_ubn => n p le a a'; apply: homo_ssem_aux_l.
     + apply: dlim_dlim_com.
@@ -501,7 +518,7 @@ Section CallSem.
   Lemma dinterp_icm_spin :
     dinterp (ICM (@ITree.spin (Call +' Rnd) cmem)) = dnull.
   Proof.
-  rewrite /dinterp (@eq_dlim _ _ (fun _ => dnull)) ?dlimC //.
+  rewrite /dinterp (@eq_dlim _ _ _ (fun _ => dnull)) ?dlimC //.
   by elim=> //= n ->.
   Qed.
 
@@ -605,7 +622,7 @@ Section CallSem.
     + exact: ih2.
   - rewrite cs_whileE ssem_aux_whileE.
     apply/(le_trans (le_dinterp'_W_fuel (icm_whileE c a) _ _ _)).
-    apply/(le_trans (@le_ubn_body _ _ (ssem_aux (ubnf ps n.+1) c)
+    apply/(le_trans (@le_ubn_body _ _ _ (ssem_aux (ubnf ps n.+1) c)
                        (esem a) n.+1 ih m x)).
     apply: (@dlim_ub _ _ (fun k => ubn (ssem_aux (ubnf ps n.+1) c) (esem a) k m)
                      n.+1).
@@ -660,10 +677,12 @@ Section FullSem.
     interp_full abort ps m = ssem_ ps abort m.
   Proof.
     rewrite ssem_abortE /interp_full /= /dinterp.
-    by rewrite (@eq_dlim _ _ (fun _ => dnull)) ?dlimC //; exact: dinterp'_mrec_spin.
+    by rewrite (@eq_dlim _ _ _ (fun _ => dnull)) ?dlimC //; exact: dinterp'_mrec_spin.
   Qed.
 
   Theorem interp_fullE (ps : ident -> cmd) c m : interp_full c ps m = ssem_ ps c m.
   Proof. exact: dinterp_icm_ssem. Qed.
 
 End FullSem.
+
+End ITreeSem.

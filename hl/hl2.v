@@ -20,19 +20,23 @@ Local Open Scope sem_scope.
 Local Open Scope mem_scope.
 
 Section hl.
-   Context {X Y : eqType} {mem : memType X}.
+   (* [Rl], not [R]: this file uses [R] for intermediate assertions. *)
+   Context {Rl : realType} {A : codeType} {X Y : eqType} {mem : memType A X}.
+
+Local Notation Distr T := {distr T%type / Rl}.
 
 Notation "`[ 'forall' x 'in' mu => Q ]" :=
-  (@forall_in  mem _ mu%A (fun x => Q)).
+  (@forall_in _ _ _ mem _ mu%A (fun x => Q)).
 
 Notation "`[ 'forall' x 'in' mu | m => Q ]" :=
-  (@forall_in _ mem _ mu%A (fun x m => Q)).
+  (@forall_in _ _ _ mem _ mu%A (fun x m => Q)).
 
-Notation assn := (@assn _ mem).
-Notation assn2 := (@assn2 _ mem).
+Notation assn := (@assn _ _ mem).
+Notation assn2 := (@assn2 _ _ mem).
 
-Notation phi := (@phi X Y mem).
-Notation psi := (@psi _ Y mem).
+Notation phi := (@phi _ X Y mem).
+Notation cmd := (@cmd Rl A X Y mem).
+Notation psi := (@psi Rl A X Y mem).
 
 Section Logic.
 
@@ -45,11 +49,11 @@ Inductive derivable : phi -> assn -> cmd -> assn -> Prop :=
       derivable cl P abort Q
   | H_Skip : forall P cl,
       derivable cl P skip P
-  | H_Asgn : forall {T : IhbType.type} x (e:expr_ X mem T) (Q : assn) cl,
+  | H_Asgn : forall {T : A} x (e:expr_ A X mem T) (Q : assn) cl,
       derivable cl [pred m | Q m.[x <- `[{e}]%A m]] (x <<- e) Q
-  | H_GAsgn : forall {T : IhbType.type} x (e:expr_ X mem T) (Q : assn) cl,
+  | H_GAsgn : forall {T : A} x (e:expr_ A X mem T) (Q : assn) cl,
       derivable cl [pred m | Q (m.{x <- `[{e}]%A m})] (G x <<- e) Q
-  | H_Random : forall {T : IhbType.type} x (d:expr_ X mem (Distr T)) (Q : assn) cl,
+  | H_Random : forall {T : A} x (d:expr_ A X mem (Distr T)) (Q : assn) cl,
       derivable cl `[forall v in `[{d}] | m => Q m.[x <- v]]%A (x <$- d) Q
   | H_Block : forall (P Q : assn) bs c rs cl,
       (forall m, derivable cl
@@ -57,11 +61,11 @@ Inductive derivable : phi -> assn -> cmd -> assn -> Prop :=
                    c
                    [pred m'' | Q (mret m m'' rs)]) ->
       derivable cl P (block bs c rs) Q
-  | H_If : forall (Pr Po : assn) (e:expr_ X mem bool) (c1 c2:cmd) cl,
+  | H_If : forall (Pr Po : assn) (e:expr_ A X mem bool) (c1 c2:cmd) cl,
       derivable cl (Pr /\ `[{e}])%A   c1 Po ->
       derivable cl (Pr /\ `[{~~e}])%A c2 Po ->
       derivable cl Pr (If e then c1 else c2)%S Po
-  | H_While : forall (I : assn) (e:expr_ X mem bool) (c:cmd) cl,
+  | H_While : forall (I : assn) (e:expr_ A X mem bool) (c:cmd) cl,
       derivable cl (I /\ `[{e}])%A c I ->
       derivable cl I (While e Do c) (I /\ `[{~~e}])%A
   | H_Seq : forall P c Q d R cl,
@@ -113,11 +117,11 @@ Proof. by move=> m hm /=; apply: range_dunit. Qed.
 Lemma ahl_abort l (P Q : assn) : ahl l P abort Q.
 Proof. by move=> m hm /=; apply: range_dnull. Qed.
 
-Lemma ahl_assign l {T : IhbType.type} x (e : expr_ X mem T) (Q : assn) :
+Lemma ahl_assign l {T : A} x (e : expr_ A X mem T) (Q : assn) :
   ahl l [pred m | Q m.[x <- `[{e}]%A m]] (x <<- e) Q.
 Proof. by move=> m hm /=; apply: range_dunit. Qed.
 
-Lemma ahl_gassign l {T : IhbType.type} x (e : expr_ X mem T) (Q : assn) :
+Lemma ahl_gassign l {T : A} x (e : expr_ A X mem T) (Q : assn) :
   ahl l [pred m | Q (m.{x <- `[{e}]%A m})] (G x <<- e) Q.
 Proof. by move=> m hm /=; apply: range_dunit. Qed.
 
@@ -132,11 +136,11 @@ apply: (range_dlet (H m (minit m bs) _)); last first.
 by rewrite /= Pm eqxx.
 Qed.
 
-Lemma ahl_random l {T : IhbType.type} x (d : expr_ X mem (Distr T)) (Q : assn) :
+Lemma ahl_random l {T : A} x (d : expr_ A X mem (Distr T)) (Q : assn) :
   ahl l `[forall v in `[{d}] | m => Q m.[x <- v]] (x <$- d) Q.
 Proof.
 move=> m /asboolP /= h /=.
-apply (@range_dlet _ _ [pred v | Q m.[x <- v]]) => v /=.
+apply (@range_dlet _ _ _ [pred v | Q m.[x <- v]]) => v /=.
   by apply h. by apply range_dunit.
 Qed.
 
@@ -144,14 +148,14 @@ Lemma ahl_seq l (R Pr Po : assn) (c1 c2 : cmd) :
   ahl l Pr c1 R -> ahl l R c2 Po -> ahl l Pr (c1;;c2) Po.
 Proof. by move=> H1 H2 m /H1 Hm /=; apply/(range_dlet Hm H2). Qed.
 
-Lemma ahl_if l (Pr Po : assn) (e : expr_ X mem bool) (c1 c2 : cmd) :
+Lemma ahl_if l (Pr Po : assn) (e : expr_ A X mem bool) (c1 c2 : cmd) :
   ahl l (Pr /\ `[{e}]) c1 Po -> ahl l (Pr /\ `[{~~e}]) c2 Po ->
   ahl l Pr (If e then c1 else c2)%S Po.
 Proof.
 by move=> H1 H2 m Hm /=; case: ifPn => He; [apply H1 | apply H2] => /=; rewrite Hm.
 Qed.
 
-Lemma ahl_while l (I : assn) (e : expr_ X mem bool) (c : cmd) :
+Lemma ahl_while l (I : assn) (e : expr_ A X mem bool) (c : cmd) :
   ahl l (I /\ `[{e}]) c I -> ahl l I (While e Do c) (I /\ `[{~~e}]).
 Proof.
 move=> Hc m Hm /=; apply/range_dlim => k.
@@ -301,7 +305,7 @@ Definition cl_mgt : phi :=
   fun f => (xpredT, (fun s0 s => s \in dinsupp (ssem_ ps (ps f) s0))).
 
 Lemma in_dinsupp_dunit (T : choiceType) (t : T) :
-  t \in dinsupp (dunit t : {distr T / R}).
+  t \in dinsupp (dunit t : Distr T).
 Proof. by rewrite in_dinsupp dunit1E eqxx oner_neq0. Qed.
 
 Lemma rel_complete_d (c : cmd) (P Q : assn) :

@@ -21,24 +21,22 @@ Local Open Scope sem_scope.
 Local Open Scope mem_scope.
 
 (* -------------------------------------------------------------------- *)
-Implicit Types P Q S I : assn.
-Implicit Types c       : cmd.
-Implicit Types d       : R.
-Implicit Types ps     : ident -> (@cmd_ ident cmem ident).
-
-(* -------------------------------------------------------------------- *)
 Variant bd := Le | Ge | Eq.
 
 Implicit Types r : bd.
 
-Definition rel_of_bd (r : bd) : rel R :=
+(* [R] implicit rather than a global [Parameter]: [bd] itself is R-free. *)
+Definition rel_of_bd {R : realType} (r : bd) : rel R :=
   match r with
   | Le => [rel x y | x <= y]
   | Ge => [rel x y | y <= x]
   | Eq => [rel x y | x == y]
   end.
 
-Coercion rel_of_bd : bd >-> rel.
+(* No [Coercion] on [rel_of_bd]: with [R] no longer a global [Parameter] it
+ * would not respect the uniform inheritance condition ([R] precedes the
+ * source [bd] and cannot be read off it).  It is applied explicitly at the
+ * two places that need it, just below. *)
 
 Declare Scope bd_scope.
 
@@ -48,14 +46,33 @@ Notation "'>=" := Ge (at level 0) : bd_scope.
 
 Bind Scope bd_scope with bd.
 
+(* ==================================================================== *)
+(* Read at the concrete memory [cmem] of pwhile.v, over an alphabet  *)
+(* [A] and identifiers [ident].                                          *)
+(* ==================================================================== *)
 Section phl.
+Context {R : realType} {A : codeType} {ident : countType}.
+
+Local Notation Distr T := {distr T%type / R}.
+Local Notation cmem  := (cmem A ident).
+Local Notation vars  := (vars_ ident).
+Local Notation expr  := (@expr_ A ident cmem).
+Local Notation bexpr := (expr bool).
+Local Notation dexpr T := (expr (Distr T)).
+Local Notation cmd   := (@cmd_ R A ident cmem ident).
+Local Notation assn  := (pred cmem).
+
+Implicit Types P Q S I : assn.
+Implicit Types c       : cmd.
+Implicit Types d       : R.
+Implicit Types ps     : ident -> (@cmd_ R A ident cmem ident).
 
 (* -------------------------------------------------------------------- *)
 (* Classical pHoare triple                                              *)
 (* -------------------------------------------------------------------- *)
 
 Definition phl_ ps P c Q r d :=
-  forall m : cmem, P m -> r (\P_[ssem_ ps c m] Q) d.
+  forall m : cmem, P m -> rel_of_bd r (\P_[ssem_ ps c m] Q) d.
 
 (* ehl_ ps (lift P (fun _ => EFin d) c (fun m => (Q m)%/R) *)
 
@@ -67,7 +84,7 @@ Arguments phl_ ps _%_assn _%_syn_scope _%_assn _%_bd_scope _%_ring_scope.
 Definition assn2 := (cmem -> pred cmem).
 
 Definition kphl_ ps (P : assn) (c : cmd) (Q : assn2) r d:=
-  forall m: cmem, P m -> r (\P_[ssem_ ps c m] (Q m)) d.
+  forall m: cmem, P m -> rel_of_bd r (\P_[ssem_ ps c m] (Q m)) d.
 
 Arguments kphl_ ps _%_assn _%_syn_scope _%_assn _%_bd_scope _%_ring_scope.
 
@@ -129,9 +146,9 @@ Inductive derivable : psi -> phi -> assn -> cmd -> assn -> bd -> R -> Prop :=
   derivable ps cl predT abort pred0 '= 0
 | H_Skip : forall P ps cl,
     derivable ps cl P skip P '= 1
-| H_Asgn : forall {T : IhbType.type} x (e:expr T) (Q : assn) ps cl,
+| H_Asgn : forall {T : A} x (e:expr T) (Q : assn) ps cl,
     derivable ps cl (fun m => Q m.[x <- `[{e}] m]) (x <<- e) Q '= 1
-| H_Random : forall {T : IhbType.type} x (e:dexpr T) (Q : assn) d ps cl,
+| H_Random : forall {T : A} x (e:dexpr T) (Q : assn) d ps cl,
     let P m :=
       \P_[\dlet_(v <- `[{e}] m) (dunit m.[x <- v])] Q == d
     in
@@ -140,12 +157,12 @@ Inductive derivable : psi -> phi -> assn -> cmd -> assn -> bd -> R -> Prop :=
     derivable ps cl (P /\   `[{e}])%A c1 Q r d
     -> derivable ps cl (P /\ ~ `[{e}])%A c2 Q r d
     -> derivable ps cl P (If e then c1 else c2) Q r d
-| H_Seq : forall (R P Q:assn) c1 c2 dR dNR dRQ dNRQ d ps cl,
+| H_Seq : forall (Rm P Q:assn) c1 c2 dR dNR dRQ dNRQ d ps cl,
     d = dR * dRQ + dNR * dNRQ
-    -> derivable ps cl P     c1 R     '= dR
-    -> derivable ps cl P     c1 (~ R)%A '= dNR
-    -> derivable ps cl R     c2 Q     '= dRQ
-    -> derivable ps cl (~ R)%A c2 Q     '= dNRQ
+    -> derivable ps cl P     c1 Rm    '= dR
+    -> derivable ps cl P     c1 (~ Rm)%A '= dNR
+    -> derivable ps cl Rm    c2 Q     '= dRQ
+    -> derivable ps cl (~ Rm)%A c2 Q     '= dNRQ
     -> derivable ps cl P (c1 ;; c2) Q '= d
 | H_ge0: forall P c Q ps cl, derivable ps cl P c Q '>= 0
 | H_le1: forall P c Q ps cl, derivable ps cl P c Q '<= 1
@@ -292,17 +309,17 @@ Proof.
   by exact: le1_pr.
 Qed.
 
-Lemma phl_seq_eq R P Q c1 c2 dR dNR dRQ dNRQ d :
+Lemma phl_seq_eq Rm P Q c1 c2 dR dNR dRQ dNRQ d :
      d = dR * dRQ + dNR * dNRQ
-  -> phl P     c1 R     '= dR
-  -> phl P     c1 (~ R) '= dNR
-  -> phl R     c2 Q     '= dRQ
-  -> phl (~ R) c2 Q     '= dNRQ
+  -> phl P     c1 Rm    '= dR
+  -> phl P     c1 (~ Rm) '= dNR
+  -> phl Rm    c2 Q     '= dRQ
+  -> phl (~ Rm) c2 Q     '= dNRQ
 
   -> phl P (c1 ;; c2) Q '= d.
 Proof.
 move=> -> PR PNR RQ NRQ m Pm /=; rewrite ssemE pr_dlet.
-apply/eqP; rewrite (exp_split R); first by apply: has_esp_pr.
+apply/eqP; rewrite (exp_split Rm); first by apply: has_esp_pr.
 have [/= /eqP-> /eqP->] := (PR _ Pm, PNR _ Pm); congr (_ + _).
 - case: (dR =P 0) => [->|/eqP nz_dR]; first by rewrite !mul0r.
   congr (_ * _). rewrite espcE; first by apply: has_esp_pr.
@@ -319,12 +336,12 @@ have [/= /eqP-> /eqP->] := (PR _ Pm, PNR _ Pm); congr (_ + _).
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma phl_assgn {T : IhbType.type} Q x (e : expr T) :
+Lemma phl_assgn {T : A} Q x (e : expr T) :
   phl (fun m => Q m.[x <- `[{e}] m]) (x <<- e) Q '= 1.
 Proof. by move=> m Qm /=; rewrite !ssemE pr_dunit Qm. Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma phl_rnd {T : IhbType.type} Q x (e : dexpr T) d :
+Lemma phl_rnd {T : A} Q x (e : dexpr T) d :
   let P m :=
     \P_[\dlet_(v <- `[{e}] m) (dunit m.[x <- v])] Q == d
   in phl P (x <$- e) Q '= d.
@@ -351,7 +368,7 @@ Definition hoare_triple_ctx_l (cl : phi) (ps:psi) (P: assn) (Q: assn2) (r:R) (c:
 
 (** Hoare triple for a procedure with procedure context **)
 
-Definition hoare_triple_proc_ctx_l (cl : phi) (ps_init: ident -> (@cmd_ ident cmem ident)):=
+Definition hoare_triple_proc_ctx_l (cl : phi) (ps_init: ident -> (@cmd_ R A ident cmem ident)):=
   forall p ps, hoare_triple_ctx_l cl ps
             (get_pre (cl p))
             (get_post (cl p))
@@ -452,8 +469,8 @@ apply: derivable_mut.
 + (* H_Random *) move => *; exact: phl_rnd.
 + (* H_If *) eauto 4 with phl.
 + (* H_Seq *)
-  move => R P Q c1 c2 sR dNR sRQ sNRQ ??? H1 ? H2 ? H3 ? H4 ? H5 Hv.
-  by apply: (@phl_seq_eq _ R P Q _ _ sR dNR sRQ sNRQ);auto.
+  move => Rm P Q c1 c2 sR dNR sRQ sNRQ ??? H1 ? H2 ? H3 ? H4 ? H5 Hv.
+  by apply: (@phl_seq_eq _ Rm P Q _ _ sR dNR sRQ sNRQ);auto.
 + (* H_ge0 *) move => *; exact: phl_ge0.
 + (* H_le1 *) move => *; exact: phl_le1.
 + (* H_conseq_lege_eq *) eauto 4 with phl.
