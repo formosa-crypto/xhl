@@ -5,7 +5,7 @@ From mathcomp.algebra   Require Import algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals.
 From mathcomp.analysis  Require Import counting_distr.
-From xhl.pwhile Require Import notations inhabited pwhile psemantic passn range.
+From xhl.pwhile Require Import notations inhabited mem pwhile psemantic passn range.
 From xhl.hl     Require Import hl_stmt.
 
 Set   Implicit Arguments.
@@ -21,18 +21,25 @@ Local Open Scope sem_scope.
 Local Open Scope mem_scope.
 
 Section HL.
-Context {X Y : eqType} {mem : memType X}.
+(* [Rl], not [R]: this file uses [R] for intermediate assertions. *)
+Context {Rl : realType} {A B : codeType} {X Xg Y : eqType}
+        {mem : memType A B X Xg}.
+
+Local Notation Distr T := {distr T%type / Rl}.
 
 Notation "`[ 'forall' x 'in' mu => Q ]" :=
-  (@forall_in  mem _ mu%A (fun x => Q)).
+  (@forall_in _ _ _ _ _ mem _ mu%A (fun x => Q)).
 
 Notation "`[ 'forall' x 'in' mu | m => Q ]" :=
-  (@forall_in _ mem _ mu%A (fun x m => Q)).
+  (@forall_in _ _ _ _ _ mem _ mu%A (fun x m => Q)).
 
-Notation assn := (@assn _ mem).
-Notation assn2 := (@assn2 _ mem).
+Local Notation assn := (@assn _ _ _ _ mem).
+Local Notation assn2 := (@assn2 _ _ _ _ mem).
 
-Notation phi := (@phi X Y mem).
+Local Notation phi := (@phi _ _ X Xg Y mem).
+Local Notation cmd := (@cmd Rl A B X Xg Y mem).
+Local Notation psi := (@psi Rl A B X Xg Y mem).
+Local Notation expr := (@expr_ A B X Xg mem).
 
 Section Logic.
 
@@ -41,11 +48,11 @@ Inductive derivable : psi -> phi -> assn -> cmd -> assn -> Prop :=
       derivable ps cl P abort Q
   | H_Skip : forall P cl ps,
       derivable ps cl P skip P
-  | H_Asgn : forall {T : IhbType.type} x (e:expr_ X mem T) (Q : assn) cl ps,
+  | H_Asgn : forall {T : A} x (e:expr T) (Q : assn) cl ps,
       derivable ps cl [pred m | Q m.[x <- `[{e}]%A m]] (x <<- e) Q
-  | H_GAsgn : forall {T : IhbType.type} x (e:expr_ X mem T) (Q : assn) cl ps,
+  | H_GAsgn : forall {T : B} x (e:expr T) (Q : assn) cl ps,
       derivable ps cl [pred m | Q (m.{x <- `[{e}]%A m})] (G x <<- e) Q
-  | H_Random : forall {T : IhbType.type} x (d:expr_ X mem (Distr T)) (Q : assn) cl ps,
+  | H_Random : forall {T : A} x (d:expr (Distr T)) (Q : assn) cl ps,
       derivable ps cl `[forall v in `[{d}] | m => Q m.[x <- v]]%A (x <$- d) Q
   | H_Block : forall (P Q : assn) bs c rs cl ps,
       (forall m, derivable ps cl
@@ -53,11 +60,11 @@ Inductive derivable : psi -> phi -> assn -> cmd -> assn -> Prop :=
                    c
                    [pred m'' | Q (mret m m'' rs)]) ->
       derivable ps cl P (block bs c rs) Q
-  | H_If : forall (Pr Po : assn) (e:expr_ X mem bool) (c1 c2:cmd) cl ps,
+  | H_If : forall (Pr Po : assn) (e:expr bool) (c1 c2:cmd) cl ps,
       derivable ps cl (Pr /\ `[{e}])%A   c1 Po ->
       derivable ps cl (Pr /\ `[{~~e}])%A c2 Po ->
       derivable ps cl Pr (If e then c1 else c2)%S Po
-  | H_While : forall (I : assn) (e:expr_ X mem bool) (c:cmd) cl ps,
+  | H_While : forall (I : assn) (e:expr bool) (c:cmd) cl ps,
       derivable ps cl (I /\ `[{e}])%A c I ->
       derivable ps cl I (While e Do c) (I /\ `[{~~e}])%A
   | H_Seq : forall P c Q d R cl ps,
@@ -92,7 +99,7 @@ End Logic.
 Section Sound.
 
 Section Rules.
-Context (ps: @psi _ Y mem).
+Context (ps: psi).
 
 Notation hl   := (hl_ ps).
 Notation khl   := (khl_ ps).
@@ -108,7 +115,7 @@ Proof. by move=> Hc Hw m Pm;rewrite -Hc //;apply Hw. Qed.
 
 (* -------------------------------------------------------------------- *)
 
-Instance hl_m : Proper (eq ==> @eqcmd _ _ mem ps ==> eq ==> iff) hl.
+Instance hl_m : Proper (eq ==> @eqcmd _ _ _ _ _ _ mem ps ==> eq ==> iff) hl.
 Proof. by move=> ??-> ??? ??->;split;apply hl_eq. Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -134,21 +141,21 @@ Lemma hl_abort (P Q : assn) : hl P abort Q.
 Proof. by move=> ??;rewrite ssemE;apply range_dnull. Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma hl_assign {T : IhbType.type} x (e:expr_ X mem T) (Q : assn):
+Lemma hl_assign {T : A} x (e:expr T) (Q : assn):
    hl [pred m | Q m.[x <- `[{e}]%A m]] (x <<- e) Q.
 Proof. by move=> m /=;rewrite !semE;apply range_dunit. Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma hl_gassign {T : IhbType.type} x (e:expr_ X mem T) (Q : assn):
+Lemma hl_gassign {T : B} x (e:expr T) (Q : assn):
    hl [pred m | Q (m.{x <- `[{e}]%A m})] (G x <<- e) Q.
 Proof. by move=> m /=;rewrite !semE;apply range_dunit. Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma hl_random {T : IhbType.type} x (d:expr_ X mem (Distr T)) (Q : assn):
+Lemma hl_random {T : A} x (d:expr (Distr T)) (Q : assn):
    hl `[forall v in `[{d}] | m => Q m.[x <- v]] (x <$- d) Q.
 Proof.
 move=> m /asboolP /= h; rewrite !semE.
-apply (@range_dlet _ _ [pred v | Q m.[x<- v]]) => v /=.
+apply (@range_dlet _ _ _ [pred v | Q m.[x<- v]]) => v /=.
   by apply h. by apply range_dunit.
 Qed.
 
@@ -160,7 +167,7 @@ by move=> H1 H2 m /H1 Hm; rewrite ssemE; apply/(range_dlet Hm H2).
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma hl_if (Pr Po : assn) (e:expr_ X mem bool) (c1 c2:cmd):
+Lemma hl_if (Pr Po : assn) (e:expr bool) (c1 c2:cmd):
   hl (Pr /\ `[{e}])%A   c1 Po ->
   hl (Pr /\ `[{~~e}])%A c2 Po ->
   hl Pr (If e then c1 else c2)%S Po.
@@ -182,7 +189,7 @@ by rewrite /= Pm eqxx.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma hl_while (I : assn) (e:expr_ X mem bool) (c:cmd):
+Lemma hl_while (I : assn) (e:expr bool) (c:cmd):
   hl (I /\ `[{e}])%A c I ->
   hl I (While e Do c) (I /\ `[{~~e}])%A.
 Proof.
@@ -319,11 +326,11 @@ End Sound.
 Section Complete.
 
 (* Most-general procedure contract *)
-Definition cl_mgt ps : phi :=
+Definition cl_mgt (ps : psi) : phi :=
   fun f => (xpredT, (fun s0 s => s \in dinsupp (ssem_ ps (ps f) s0))).
 
 Lemma in_dinsupp_dunit (T : choiceType) (t : T) :
-  t \in dinsupp (dunit t : {distr T / R}).
+  t \in dinsupp (dunit t : Distr T).
 Proof. by rewrite in_dinsupp dunit1E eqxx oner_neq0. Qed.
 
 Lemma rel_complete_d (c : cmd) (P Q : assn) ps' :
@@ -425,28 +432,34 @@ End Complete.
 End HL.
 
 Section Misc.
+Context {Rl : realType} {A B : codeType} {X Xg Y : eqType}
+        {mem : memType A B X Xg}.
 
-Notation cmd := (@cmd ident ident cmem).
+Local Notation Distr T := {distr T%type / Rl}.
+Local Notation dmem := (Distr mem).
+Local Notation vars := (vars_ X).
+Local Notation expr := (@expr_ A B X Xg mem).
+
+Notation cmd := (@cmd Rl A B X Xg Y mem).
 
 (* -------------------------------------------------------------------- *)
-Definition eqon (X : pred { t : IhbType.type & vars t } ) (m : cmem) :=
-  (fun m' : cmem => forall x, x \in X -> m.[tagged x] = m'.[tagged x]).
+Definition eqon (X : pred { t : A & vars t } ) (m : mem) :=
+  (fun m' : mem => forall x, x \in X -> m.[tagged x] = m'.[tagged x]).
 
 Arguments eqon : simpl never.
 
 Definition separated X (P : pred dmem) :=
   forall (mu1 mu2 : dmem),
-      (forall m : cmem, \P_[mu1] [pred m' | `[<eqon (predC X) m m'>] ] =
+      (forall m : mem, \P_[mu1] [pred m' | `[<eqon (predC X) m m'>] ] =
                         \P_[mu2] [pred m' | `[<eqon (predC X) m m'>] ])
     -> mu1 \in P -> mu2 \in P.
 
 (* -------------------------------------------------------------------- *)
-Definition bvar (b : @binding ident cmem) : { t : IhbType.type & vars t } :=
+Definition bvar (b : @binding A B X Xg mem) : { t : A & vars t } :=
   let: existT t (x, _) := b in Tagged vars x.
 
 (* -------------------------------------------------------------------- *)
-
-Fixpoint mod (c : cmd) : pred { t : IhbType.type & vars t } :=
+Fixpoint mod (c : cmd) : pred { t : A & vars t } :=
   match c with
   | abort    => pred0
   | skip     => pred0
@@ -462,7 +475,7 @@ Fixpoint mod (c : cmd) : pred { t : IhbType.type & vars t } :=
 end.
 
 (* -------------------------------------------------------------------- *)
-Definition eaccess {t} (e : expr t) : pred { t : IhbType.type & vars t } :=
+Definition eaccess {t} (e : expr t) : pred { t : A & vars t } :=
   match e with
   | var_ _ x => [pred y | `[<y = Tagged _ x>]]
   | _ => pred0
@@ -476,13 +489,13 @@ by move=> c1 c2 c3 eq1 eq2 x xX; rewrite eq1 ?eq2.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Definition bstep (m' : cmem) (mm : cmem) (b : @binding ident cmem) : cmem :=
+Definition bstep (m' : mem) (mm : mem) (b : @binding A B X Xg mem) : mem :=
   let: existT _ (r, e) := b in mm.[r <- `[{e}] m'].
 
-Lemma mretE (m m' : cmem) rs : mret m m' rs = foldl (bstep m') (mrestore m m') rs.
+Lemma mretE (m m' : mem) rs : mret m m' rs = foldl (bstep m') (mrestore m m') rs.
 Proof. by []. Qed.
 
-Lemma mget_foldl (m' : cmem) rs y acc :
+Lemma mget_foldl (m' : mem) rs y acc :
   ~~ has (fun b => `[< y = bvar b >]) rs ->
   (foldl (bstep m') acc rs).[tagged y] = acc.[tagged y].
 Proof.
@@ -493,7 +506,7 @@ move/eq_vars => neq; rewrite mget_neq //.
 by case: eqP neq; intuition.
 Qed.
 
-Lemma mget_mret (m m' : cmem) rs y :
+Lemma mget_mret (m m' : mem) rs y :
   ~~ has (fun b => `[< y = bvar b >]) rs ->
   (mret m m' rs).[tagged y] = m.[tagged y].
 Proof. by move=> h; rewrite mretE mget_foldl // mget_restore. Qed.
@@ -549,13 +562,13 @@ Proof.
   + by move=> m' /eqP <-; apply /asboolP.
   + by move=> m' /andP [].
   apply/hl_while=> m1 /andP[] /asboolP Hm1 _.
-  apply: (@range_weaken _ [pred m' | `[< eqon (~ mod c)%A m1 m' >]]).
+  apply: (@range_weaken _ _ [pred m' | `[< eqon (~ mod c)%A m1 m' >]]).
   + move=> x /asboolP eq_m1_x; apply/asboolP=> z Hz.
     by rewrite Hm1 // eq_m1_x.
   by apply (ihc m1)=> //=.
 + move=> c1 ih1 c2 ih2 m /= [hcall1 hcall2] ; eapply hl_seq; first by apply (ih1 m).
   move=> m1 /asboolP Hm1.
-  apply: (@range_weaken _ [pred m' | `[< eqon (~ mod c2)%A m1 m' >]]).
+  apply: (@range_weaken _ _ [pred m' | `[< eqon (~ mod c2)%A m1 m' >]]).
   + move=> x /asboolP Hx; apply/asboolP=> z /=.
     by case/norP => [/= zc1 zc2]; rewrite Hm1 // Hx.
     by apply (ih2 m1) => /=.

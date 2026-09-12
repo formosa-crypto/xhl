@@ -4,7 +4,7 @@ From mathcomp Require Import boot order algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals.
 From mathcomp.analysis  Require Import counting_distr.
-(* ----------------- *) Require Import pwhile passn.
+(* ----------------- *) Require Import passn.
 From xhl                Require Import misc.
 
 Set   Implicit Arguments.
@@ -15,10 +15,17 @@ Unset SsrOldRewriteGoalsOrder.
 Import GRing.Theory Num.Theory Order.Theory.
 
 Local Open Scope ring_scope.
-Local Open Scope syn_scope.
-Local Open Scope mem_scope.
 
 (* -------------------------------------------------------------------- *)
+(* [R] is a section variable, not the [Parameter] of a particular pwhile:
+ * this file is then chain-neutral -- it states nothing about memories, and
+ * its lemmas apply to distributions over *any* realType, whichever [R] the
+ * client's pwhile happens to declare. *)
+Section RangeDef.
+Context {R : realType}.
+
+Local Notation Distr T := {distr T%type / R}.
+
 Definition range {A : choiceType} (P : pred A) (mu : Distr A) :=
   forall m, m \in dinsupp mu -> P m.
 
@@ -75,3 +82,4 @@ rewrite /range -(pr_pred0 mu)=> Hin;apply eq_in_pr=> x /Hin.
 by rewrite /mem /= /in_mem /= => ->.   (* TODO: simplify this *)
 Qed.
 End Range.
+End RangeDef.

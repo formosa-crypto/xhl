@@ -5,7 +5,7 @@ From mathcomp.algebra   Require Import algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals constructive_ereal.
 From mathcomp.analysis  Require Import counting_distr.
-(* ----------------- *) Require Import inhabited passn pwhile psemantic.
+(* ----------------- *) Require Import inhabited passn mem pwhile psemantic.
 
 From ITree Require Import
   Basics
@@ -31,30 +31,52 @@ Local Open Scope ring_scope.
 Local Open Scope syn_scope.
 Local Open Scope mem_scope.
 
+(* ==================================================================== *)
+(* The whole file is read at the concrete memory [cmem] of pwhile.v, *)
+(* over an alphabet [A] and identifiers [ident].  Only the declarations  *)
+(* that actually mention them are parameterized on section close.        *)
+(* ==================================================================== *)
+Section ITreeSem.
+Context {R : realType} {A B : codeType} {X Xg Y : eqType}
+        {M : memType A B X Xg}.
+
+Local Notation Distr T := {distr T%type / R}.
+Local Notation vars    := (vars_ X).
+Local Notation gvar    := (vars_ Xg).
+Local Notation expr    := (@expr_ A B X Xg M).
+Local Notation cmd     := (@cmd_ R A B X Xg M Y).
+Local Notation bexpr   := (expr bool).
+Local Notation dexpr T := (expr (Distr T)).
+Local Notation psi     := (Y -> cmd).
+
 Variant Rnd : Type -> Type :=
-  | GetRnd : forall t : IhbType.type, {distr t / R} -> Rnd t.
+  | GetRnd : forall t : A, {distr t / R} -> Rnd t.
 
 Variant Call : Type -> Type :=
-  | CallE (f:ident) : Call unit.
+  | CallE (f:Y) : Call unit.
 
 (* [EnterBlock bs] installs the block's initial local store and *returns the
  * outer memory*, so that the continuation can hand it back to [LeaveBlock],
  * which is what makes [mret]'s first argument available at block exit
- * without threading a memory through [com_sem]. *)
-Variant InstrE {ident : eqType}  {mem : memType ident} : Type -> Type :=
-  | Assig : forall t : IhbType.type,  vars t -> expr_ ident mem t  -> InstrE unit
-  | GAssig : forall t : IhbType.type,  vars t -> expr_ ident mem t  -> InstrE unit
-  | RAssig :  forall t : IhbType.type,  vars t -> expr_ ident mem {distr t / R}  -> InstrE unit
-  | EvalCond : bexpr -> InstrE bool
-  | EnterBlock : seq (@binding ident mem) -> InstrE mem
-  | LeaveBlock : mem -> seq (@binding ident mem) -> InstrE unit.
+ * without threading a memory through [com_sem].
+ *
+ * [InstrE] keeps its own identifiers and memory, as before; what used to
+ * pin them to the concrete ones was the global [vars]/[bexpr] notations of
+ * pwhile.v, spelled out here at [I]/[mem]. *)
+Variant InstrE {I Ig : eqType} {mem : memType A B I Ig} : Type -> Type :=
+  | Assig : forall t : A,  vars_ I t -> expr_ A B I Ig mem t  -> InstrE unit
+  | GAssig : forall t : B,  vars_ Ig t -> expr_ A B I Ig mem t  -> InstrE unit
+  | RAssig :  forall t : A,  vars_ I t -> expr_ A B I Ig mem {distr t / R}  -> InstrE unit
+  | EvalCond : expr_ A B I Ig mem bool -> InstrE bool
+  | EnterBlock : seq (@binding A B I Ig mem) -> InstrE mem
+  | LeaveBlock : mem -> seq (@binding A B I Ig mem) -> InstrE unit.
 
 Section ParSem.
 
   Context
     {E: Type -> Type}
     {XI : Rnd -< E}
-    {XII : @InstrE _ cmem -< E}.
+    {XII : @InstrE _ _ M -< E}.
 
   Local Notation continue_loop := (ret (inl tt)).
   Local Notation exit_loop  := (ret (inr tt)).
@@ -96,14 +118,14 @@ Section ParSem.
     | pwhile.call f => trigger (CallE f)
     end.
 
-  Definition handle_Call (ps: ident -> cmd) :
+  Definition handle_Call (ps: psi) :
     Call ~> itree (Call +' E) :=
     fun T (rc : Call T) =>
       match rc with
       | CallE f => com_sem (ps f)
       end.
 
-  Definition interp_call (ps: ident -> cmd)
+  Definition interp_call (ps: psi)
     T (t: itree (Call +' E) T) : itree E T :=
     interp_mrec (handle_Call ps) t.
 
@@ -114,39 +136,39 @@ Section InstrSem.
   Context
     {E: Type -> Type}
     {XI : Rnd -< E}
-    {XS: @stateE cmem -< E}.
+    {XS: @stateE M -< E}.
 
   (* InstrE handler *)
   Definition handle_InstrE : InstrE ~> itree E :=
     fun _ e =>
       match e with
       | Assig _ x e =>
-            bind (trigger (@Get cmem))
+            bind (trigger (@Get M))
               (fun m =>
                  let m := m.[x <- (esem e m)] in
-                 trigger (@Put cmem m))
+                 trigger (@Put M m))
       | GAssig _ x e =>
-            bind (trigger (@Get cmem))
+            bind (trigger (@Get M))
               (fun m =>
                  let m := m.{x <- (esem e m)} in
-                 trigger (@Put cmem m))
+                 trigger (@Put M m))
       | EnterBlock bs =>
-            bind (trigger (@Get cmem))
+            bind (trigger (@Get M))
               (fun m =>
-                 bind (trigger (@Put cmem (minit m bs)))
+                 bind (trigger (@Put M (minit m bs)))
                    (fun _ => Ret m))
       | LeaveBlock m0 rs =>
-            bind (trigger (@Get cmem))
-              (fun m' => trigger (@Put cmem (mret m0 m' rs)))
+            bind (trigger (@Get M))
+              (fun m' => trigger (@Put M (mret m0 m' rs)))
       | RAssig _ x e =>
-            bind (trigger (@Get cmem))
+            bind (trigger (@Get M))
             (fun m =>
                bind (trigger (GetRnd (esem e m)))
                  (fun t =>
                     let m := m.[x <- t] in
-                    trigger (@Put cmem m)))
+                    trigger (@Put M m)))
       | EvalCond e =>
-          bind (@trigger (@Get cmem))(fun m => Ret (esem e m))
+          bind (@trigger (@Get M))(fun m => Ret (esem e m))
       end.
 
   Definition ext_handle_InstrE : InstrE +' E ~> itree E :=
@@ -157,7 +179,7 @@ Section InstrSem.
 
 End InstrSem.
 
-Definition interp_intr (t: itree (InstrE +' stateE cmem  +' Rnd) unit) s :=
+Definition interp_intr (t: itree (InstrE +' stateE M  +' Rnd) unit) s :=
   bind (run_state (interp_InstrE t) s) (fun t => Ret (fst t)) .
 
 Section PropSem.
@@ -170,7 +192,7 @@ Section PropSem.
       | RetF r => dunit r
       | TauF t => dinterp' (observe t) n
       | VisF _ e k =>
-          match e in Rnd A return (A -> itree Rnd T) -> {distr T / R} with
+          match e in Rnd Ty return (Ty -> itree Rnd T) -> {distr T / R} with
           | GetRnd _ mu =>
               fun k0 => \dlet_(t <- mu) (dinterp' (observe (k0 t)) n)
           end k
@@ -182,7 +204,7 @@ Section PropSem.
 
 End PropSem.
 
-Definition interp_full (c:cmd) (ps: ident -> cmd) : cmem -> {distr cmem / R} :=
+Definition interp_full (c:cmd) (ps: psi) : M -> {distr M / R} :=
   fun s => dinterp (interp_intr (interp_call ps (com_sem c)) s).
 
 (* Section Truc2. *)
@@ -229,3 +251,5 @@ Definition interp_full (c:cmd) (ps: ident -> cmd) : cmem -> {distr cmem / R} :=
 (*       t. *)
 
 (* End Truc2. *)
+
+End ITreeSem.

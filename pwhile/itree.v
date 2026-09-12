@@ -5,7 +5,7 @@ From mathcomp.algebra   Require Import algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals constructive_ereal.
 From mathcomp.analysis  Require Import counting_distr.
-(* ----------------- *) Require Import inhabited passn pwhile psemantic.
+(* ----------------- *) Require Import inhabited passn mem pwhile psemantic.
 
 From ITree Require Import
   Basics
@@ -32,11 +32,29 @@ Local Open Scope ring_scope.
 Local Open Scope syn_scope.
 Local Open Scope mem_scope.
 
+(* ==================================================================== *)
+(* The whole file is read at the concrete memory [cmem] of pwhile.v, *)
+(* over an alphabet [A] and identifiers [ident].  Only the declarations  *)
+(* that actually mention them are parameterized on section close.        *)
+(* ==================================================================== *)
+Section ITreeSem.
+Context {R : realType} {A B : codeType} {X Xg Y : eqType}
+        {M : memType A B X Xg}.
+
+Local Notation Distr T := {distr T%type / R}.
+Local Notation vars    := (vars_ X).
+Local Notation gvars   := (vars_ Xg).
+Local Notation expr    := (@expr_ A B X Xg M).
+Local Notation cmd     := (@cmd_ R A B X Xg M Y).
+Local Notation bexpr   := (expr bool).
+Local Notation dexpr T := (expr (Distr T)).
+Local Notation psi     := (Y -> cmd).
+
 Variant Rnd : Type -> Type :=
-  | GetRnd : forall t : IhbType.type, {distr t / R} -> Rnd t.
+  | GetRnd : forall t : A, {distr t / R} -> Rnd t.
 
 Variant Call : Type -> Type :=
-  | CallE (f:ident) (m: cmem): Call cmem.
+  | CallE (f:Y) (m: M): Call M.
 
 Section ParSem.
 
@@ -46,18 +64,18 @@ Section ParSem.
   Local Notation exit_loop s := (ret (inr s)).
 
   Definition isem_while_round {E}
-    (sem_i: cmd -> cmem -> itree E cmem) (c : cmd) (e : bexpr) (m : cmem) :
-    itree E (cmem + cmem) :=
+    (sem_i: cmd -> M -> itree E M) (c : cmd) (e : bexpr) (m : M) :
+    itree E (M + M) :=
     if esem e m then bind (sem_i c m) (fun m => continue_loop m)
     else exit_loop m.
 
   Definition isem_while_loop {E}
-    (sem_i: cmd -> cmem -> itree E cmem)
-    (c : cmd) (e:bexpr) (m : cmem) :
-    itree E cmem :=
+    (sem_i: cmd -> M -> itree E M)
+    (c : cmd) (e:bexpr) (m : M) :
+    itree E M :=
     ITree.iter (isem_while_round sem_i c e) m.
 
-  Fixpoint com_sem (c : cmd) : cmem -> itree (Call +' E) cmem :=
+  Fixpoint com_sem (c : cmd) : M -> itree (Call +' E) M :=
     match c with
     | abort => fun _ => ITree.spin
     | skip => fun m => Ret m
@@ -80,14 +98,14 @@ Section ParSem.
     | pwhile.call f => fun m => bind (trigger (CallE f m)) (fun m => Ret m)
   end.
 
-  Definition handle_Call (ps: ident -> cmd) :
+  Definition handle_Call (ps: psi) :
     Call ~> itree (Call +' E) :=
     fun T (rc : Call T) =>
       match rc with
       | CallE f m => com_sem (ps f) m
       end.
 
-  Definition interp_call (ps: ident -> cmd)
+  Definition interp_call (ps: psi)
     T (t: itree (Call +' E) T) : itree E T :=
     interp_mrec (handle_Call ps) t.
 
@@ -110,7 +128,8 @@ Section Misc.
   by apply/(le_trans (le_gf n y))/dlim_ub.
   Qed.
 
-  Lemma ubnS {A : choiceType} (f : A -> Distr A) (t : pred A) n a :
+  (* [A] is the alphabet of the enclosing section here *)
+  Lemma ubnS {S : choiceType} (f : S -> Distr S) (t : pred S) n a :
     ubn f t n.+1 a = if t a then \dlet_(x <- f a) ubn f t n x else dunit a.
   Proof. by []. Qed.
 
@@ -126,7 +145,7 @@ Section PropSem.
       | RetF r => dunit r
       | TauF t => dinterp' (observe t) n
       | VisF _ e k =>
-          match e in Rnd A return (A -> itree Rnd T) -> {distr T / R} with
+          match e in Rnd Ty return (Ty -> itree Rnd T) -> {distr T / R} with
           | GetRnd _ mu =>
               fun k0 => \dlet_(t <- mu) (dinterp' (observe (k0 t)) n)
           end k
@@ -139,7 +158,7 @@ Section PropSem.
   Lemma le_dinterp'_n (t : itree' Rnd T) n : dinterp' t n <=1 dinterp' t n.+1.
   Proof.
   elim: n t => [|n ih] t x /=; first exact: lef_dnull.
-  case: t => [r|t|A e k] //=; case: e k => t0 mu k /=.
+  case: t => [r|t|Ty e k] //=; case: e k => t0 mu k /=.
   by apply/le_in_dlet => // v _; apply: ih.
   Qed.
 
@@ -154,7 +173,7 @@ Section PropSem.
     dinterp' (observe t) n <=1 dinterp t.
   Proof. by rewrite /dinterp; apply: dlim_ub; apply: homo_dinterp'. Qed.
 
-  Lemma le_dinterp'_vis (t0 : IhbType.type) (mu : {distr t0 / R})
+  Lemma le_dinterp'_vis (t0 : A) (mu : {distr t0 / R})
     (k : t0 -> itree Rnd T) n :
     dinterp' (observe (Vis (GetRnd mu) k)) n <=1 \dlet_(v <- mu) dinterp (k v).
   Proof.
@@ -185,7 +204,7 @@ Section PropSem.
   Lemma dinterp_tau (t : itree Rnd T) : dinterp (Tau t) = dinterp t.
   Proof. by rewrite /dinterp -dlim_bumpE /=. Qed.
 
-  Lemma dinterp_vis (t0 : IhbType.type) (mu : {distr t0 / R})
+  Lemma dinterp_vis (t0 : A) (mu : {distr t0 / R})
     (k : t0 -> itree Rnd T) :
     dinterp (Vis (GetRnd mu) k) = \dlet_(v <- mu) dinterp (k v).
   Proof.
@@ -204,7 +223,7 @@ Section BindSem.
       <=1 \dlet_(m <- dinterp' (observe t) n) dinterp' (observe (k m)) n.
   Proof.
   elim: n => [|n ih] t k x /=; first exact: lef_dnull.
-  case: (observe t) => [r|t'|A e ke] /=.
+  case: (observe t) => [r|t'|Ty e ke] /=.
   - by rewrite dlet_unit.
   - by apply/(le_trans (ih _ _ _))/le_in_dlet => // m _; apply: le_dinterp'_n.
   - case: e ke => t0 mu ke /=.
@@ -218,7 +237,7 @@ Section BindSem.
   Proof.
   elim: n => [|n ih] p t k x.
   - by rewrite /= dlet_null; apply: lef_dnull.
-  - rewrite addSn /=; case: (observe t) => [r|t'|A e ke] /=.
+  - rewrite addSn /=; case: (observe t) => [r|t'|Ty e ke] /=.
     + have h : dinterp' (observe (k r)) p <=1 dinterp' (observe (k r)) (n + p).+1.
         by apply: homo_dinterp'; apply/leqW/leq_addl.
       by rewrite dlet_unit; apply: h.
@@ -255,7 +274,7 @@ End BindSem.
 
 Section WhileSandwich.
 
-  Variables (e : bexpr) (body W : cmem -> itree Rnd cmem).
+  Variables (e : bexpr) (body W : M -> itree Rnd M).
   Hypothesis WE : forall m,
     W m ≅ (if esem e m then ITree.bind (body m) (fun m' => Tau (W m'))
            else Ret m).
@@ -322,13 +341,13 @@ End WhileSandwich.
 
 Section WhileItree.
 
-Lemma isem_while_roundE {E} (sem_i : cmd -> cmem -> itree E cmem) c e m :
+Lemma isem_while_roundE {E} (sem_i : cmd -> M -> itree E M) c e m :
   isem_while_round sem_i c e m
     = (if esem e m then ITree.bind (sem_i c m) (fun m' => Ret (inl m'))
        else Ret (inr m)).
 Proof. by []. Qed.
 
-Lemma isem_while_loopE {E} (sem_i : cmd -> cmem -> itree E cmem) c e m :
+Lemma isem_while_loopE {E} (sem_i : cmd -> M -> itree E M) c e m :
   isem_while_loop sem_i c e m
     ≅ (if esem e m then ITree.bind (sem_i c m)
                           (fun m' => Tau (isem_while_loop sem_i c e m'))
@@ -347,7 +366,7 @@ End WhileItree.
 
 Section WhileSem.
 
-  Variables (sem_i : cmd -> cmem -> itree Rnd cmem) (c : cmd) (e : bexpr).
+  Variables (sem_i : cmd -> M -> itree Rnd M) (c : cmd) (e : bexpr).
 
   Lemma dinterp_while m :
     dinterp (isem_while_loop sem_i c e m)
@@ -362,20 +381,20 @@ Section SsemLim.
     mu = dlim (fun _ : nat => mu).
   Proof. by rewrite dlimC. Qed.
 
-  Lemma dlim_ubn (f : nat -> cmem -> Distr cmem) (t : pred cmem) k :
+  Lemma dlim_ubn (f : nat -> M -> Distr M) (t : pred M) k :
     (forall n p, (n <= p)%N -> f n <=2 f p) ->
     forall a, ubn (fun a => dlim (fun n => f n a)) t k a
               = dlim (fun n => ubn (f n) t k a).
   Proof.
   move=> homo_f; elim: k => [|k ih] a.
-  - by transitivity (dlim (fun _ : nat => dnull : Distr cmem));
+  - by transitivity (dlim (fun _ : nat => dnull : Distr M));
       [rewrite dlimC | apply: eq_dlim].
   - have h1 : forall n p, (n <= p)%N -> f n a <=1 f p a.
       by move=> n p le; apply: homo_f.
     have h2 : forall x n p, (n <= p)%N -> ubn (f n) t k x <=1 ubn (f p) t k x.
       by move=> x n p le; apply: le_ubn_body; apply: homo_f.
     rewrite ubnS; case He: (t a); last first.
-      transitivity (dlim (fun _ : nat => (dunit a : Distr cmem)));
+      transitivity (dlim (fun _ : nat => (dunit a : Distr M)));
         first by rewrite dlimC.
       by apply: eq_dlim => n; rewrite ubnS He.
     transitivity (\dlet_(x <- dlim (fun n => f n a))
@@ -385,7 +404,7 @@ Section SsemLim.
     by apply: eq_dlim => n; rewrite ubnS He.
   Qed.
 
-  Variable (l : nat -> (ident * cmem) -> Distr cmem).
+  Variable (l : nat -> (Y * M) -> Distr M).
   Hypothesis homo_l : forall n p, (n <= p)%N -> l n <=2 l p.
 
   Lemma homo_ssem_aux_l c m n p :
@@ -413,7 +432,7 @@ Section SsemLim.
   - have -> : ssem_aux (fun a => dlim (fun n => l n a)) c
             = (fun a => dlim (fun n => ssem_aux (l n) c a)).
       by apply/funext => a; apply: ih.
-    rewrite (@eq_dlim _ _ (fun k => dlim (fun n => ubn (ssem_aux (l n) c)
+    rewrite (@eq_dlim _ _ _ (fun k => dlim (fun n => ubn (ssem_aux (l n) c)
                                                      (esem e) k m))).
     + by move=> k; apply: dlim_ubn => n p le a a'; apply: homo_ssem_aux_l.
     + apply: dlim_dlim_com.
@@ -431,7 +450,7 @@ Section SsemLim.
 End SsemLim.
 
 Section CallSem.
-  Variable ps : ident -> cmd.
+  Context { ps : psi}.
 
   Local Notation ICM := (interp_mrec (handle_Call (E := Rnd) ps)).
   Local Notation CS := (com_sem (E := Rnd)).
@@ -474,7 +493,7 @@ Section CallSem.
   rewrite (icm_ret v) bind_ret_l; exact: icm_ret.
   Qed.
 
-  Lemma icm_gassign T (y : vars T) (a : expr T) m :
+  Lemma icm_gassign T (y : gvars T) (a : expr T) m :
     ICM (CS (G y <<- a) m) ≅ Ret m.{y <- esem a m}.
   Proof. exact: icm_ret. Qed.
 
@@ -499,9 +518,9 @@ Section CallSem.
   Qed.
 
   Lemma dinterp_icm_spin :
-    dinterp (ICM (@ITree.spin (Call +' Rnd) cmem)) = dnull.
+    dinterp (ICM (@ITree.spin (Call +' Rnd) M)) = dnull.
   Proof.
-  rewrite /dinterp (@eq_dlim _ _ (fun _ => dnull)) ?dlimC //.
+  rewrite /dinterp (@eq_dlim _ _ _ (fun _ => dnull)) ?dlimC //.
   by elim=> //= n ->.
   Qed.
 
@@ -538,32 +557,32 @@ Section CallSem.
   Lemma cs_whileE a c m : CS (While a Do c) m = isem_while_loop CS c a m.
   Proof. by []. Qed.
 
-  Lemma ssem_aux_ifE (l : (ident * cmem) -> Distr cmem) a c1 c2 m :
+  Lemma ssem_aux_ifE (l : (Y * M) -> Distr M) a c1 c2 m :
     ssem_aux l (If a then c1 else c2) m
       = (if esem a m then ssem_aux l c1 m else ssem_aux l c2 m).
   Proof. by []. Qed.
 
-  Lemma ssem_aux_whileE (l : (ident * cmem) -> Distr cmem) a c m :
+  Lemma ssem_aux_whileE (l : (Y * M) -> Distr M) a c m :
     ssem_aux l (While a Do c) m
       = dlim (fun n => ubn (ssem_aux l c) (esem a) n m).
   Proof. by []. Qed.
 
-  Lemma ssem_aux_seqE (l : (ident * cmem) -> Distr cmem) c1 c2 m :
+  Lemma ssem_aux_seqE (l : (Y * M) -> Distr M) c1 c2 m :
     ssem_aux l (c1 ;; c2) m
       = \dlet_(m' <- ssem_aux l c1 m) ssem_aux l c2 m'.
   Proof. by []. Qed.
 
-  Lemma ssem_aux_rndE (l : (ident * cmem) -> Distr cmem) T (y : vars T)
+  Lemma ssem_aux_rndE (l : (Y * M) -> Distr M) T (y : vars T)
       (a : dexpr T) m :
     ssem_aux l (y <$- a) m = \dlet_(v <- esem a m) dunit m.[y <- v].
   Proof. by []. Qed.
 
-  Lemma ssem_aux_gassnE (l : (ident * cmem) -> Distr cmem) T (y : vars T)
+  Lemma ssem_aux_gassnE (l : (Y * M) -> Distr M) T (y : gvars T)
       (a : expr T) m :
     ssem_aux l (G y <<- a) m = dunit m.{y <- esem a m}.
   Proof. by []. Qed.
 
-  Lemma ssem_aux_blockE (l : (ident * cmem) -> Distr cmem) bs c rs m :
+  Lemma ssem_aux_blockE (l : (Y * M) -> Distr M) bs c rs m :
     ssem_aux l (Block bs Do c Return rs) m
       = \dlet_(m' <- ssem_aux l c (minit m bs)) dunit (mret m m' rs).
   Proof. by []. Qed.
@@ -605,7 +624,7 @@ Section CallSem.
     + exact: ih2.
   - rewrite cs_whileE ssem_aux_whileE.
     apply/(le_trans (le_dinterp'_W_fuel (icm_whileE c a) _ _ _)).
-    apply/(le_trans (@le_ubn_body _ _ (ssem_aux (ubnf ps n.+1) c)
+    apply/(le_trans (@le_ubn_body _ _ _ (ssem_aux (ubnf ps n.+1) c)
                        (esem a) n.+1 ih m x)).
     apply: (@dlim_ub _ _ (fun k => ubn (ssem_aux (ubnf ps n.+1) c) (esem a) k m)
                      n.+1).
@@ -649,21 +668,23 @@ End CallSem.
 
 Section FullSem.
 
-  Definition interp_full (c:cmd) (ps: ident -> cmd) : cmem -> {distr cmem / R} :=
+  Definition interp_full (c:cmd) (ps: psi) : M -> {distr M / R} :=
     fun s => dinterp (interp_call ps (com_sem c s)).
 
-  Lemma dinterp'_mrec_spin (ps : ident -> cmd) n :
-    dinterp' (observe (interp_call (E:=Rnd) ps (@ITree.spin (Call +' Rnd) cmem))) n = dnull.
+  Lemma dinterp'_mrec_spin (ps : psi) n :
+    dinterp' (observe (interp_call (E:=Rnd) ps (@ITree.spin (Call +' Rnd) M))) n = dnull.
   Proof. by elim: n => //= n ->. Qed.
 
-  Lemma interp_full_abort (ps : ident -> cmd) m :
+  Lemma interp_full_abort (ps : psi) m :
     interp_full abort ps m = ssem_ ps abort m.
   Proof.
     rewrite ssem_abortE /interp_full /= /dinterp.
-    by rewrite (@eq_dlim _ _ (fun _ => dnull)) ?dlimC //; exact: dinterp'_mrec_spin.
+    by rewrite (@eq_dlim _ _ _ (fun _ => dnull)) ?dlimC //; exact: dinterp'_mrec_spin.
   Qed.
 
-  Theorem interp_fullE (ps : ident -> cmd) c m : interp_full c ps m = ssem_ ps c m.
+  Theorem interp_fullE (ps : psi) c m : interp_full c ps m = ssem_ ps c m.
   Proof. exact: dinterp_icm_ssem. Qed.
 
 End FullSem.
+
+End ITreeSem.
