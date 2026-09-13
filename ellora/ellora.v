@@ -18,10 +18,6 @@ Local Open Scope syn_scope.
 Local Open Scope sem_scope.
 Local Open Scope mem_scope.
 
-(* ==================================================================== *)
-(* Read at the concrete memory [cmem] of pwhile.v, over an alphabet  *)
-(* [A] and identifiers [ident].                                          *)
-(* ==================================================================== *)
 Section Ellora.
 Context {R : realType} {A : codeType} {ident : countType}.
 
@@ -858,7 +854,6 @@ Proof.
       - by move=> nu /= /implyP H; apply: H; apply/asboolP.
       - by move=> nu /asboolP ->; apply/asboolP. }
     pose I n := iter n (seqc^~ (IfT e then c0)) skip.
-    (* [A] is the alphabet of the enclosing section *)
     pose Ai n := eqmu (dssem ps' (I n) mu).
     pose B n := eqmu (dssem ps' (I n ;; IfT e then abort) mu).
     pose Qinf := eqmu (dssem ps' (While e Do c0) mu).

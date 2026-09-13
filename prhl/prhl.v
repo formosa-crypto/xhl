@@ -86,10 +86,7 @@ by split; apply/eq_dlim => n; case: (hC n).
 Qed.
 End CouplingsTheory.
 
-(* ==================================================================== *)
-(* Read at the concrete relational memory [rmem] of pwhile.v, over   *)
-(* an alphabet [A] and identifiers [ident].                              *)
-(* ==================================================================== *)
+(* -------------------------------------------------------------------- *)
 Section prhl.
 Context {Rl : realType} {A : codeType} {ident : countType}.
 

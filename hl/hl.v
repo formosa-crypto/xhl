@@ -429,10 +429,6 @@ End Complete.
 
 End HL.
 
-(* ==================================================================== *)
-(* Read at the concrete memory [cmem] of pwhile.v, over an alphabet  *)
-(* [A] and identifiers [ident].                                          *)
-(* ==================================================================== *)
 Section Misc.
 (* [Rl], not [R]: this file uses [R] for intermediate assertions. *)
 Context {Rl : realType} {A : codeType} {ident : countType}.

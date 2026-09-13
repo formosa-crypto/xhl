@@ -1,13 +1,17 @@
-From HB Require Import structures.
-From mathcomp Require Import ssreflect ssrfun ssrbool ssrnat eqtype choice.
+(* -------------------------------------------------------------------- *)
+From HB                 Require Import structures.
+From mathcomp           Require Import boot order.
+From mathcomp.algebra   Require Import algebra.
+From mathcomp.reals     Require Import reals.
+
 
 Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 
-(* ==================================================================== *)
+(* -------------------------------------------------------------------- *)
 (* inhabited choiceTypes                                                *)
-(* ==================================================================== *)
+(* -------------------------------------------------------------------- *)
 
 HB.mixin Record isInhab T of Choice T := {
   witness : T;
@@ -20,24 +24,21 @@ HB.instance Definition bool_inhab := isInhab.Build bool false.
 
 HB.instance Definition nat_inhab := isInhab.Build nat 0.
 
-(* ==================================================================== *)
+HB.instance Definition int_inhab := isInhab.Build int 0.
+
+HB.instance Definition seq_inhab (T : Inhab.type) := isInhab.Build (seq.seq T) [::].
+
+(* -------------------------------------------------------------------- *)
 (* pwhile types                                                         *)
-(* ==================================================================== *)
+(* -------------------------------------------------------------------- *)
 
 HB.mixin Record isTypeCode T of Equality T := {
-  interp : T -> inhabType;            (* interpretation of a code      *)
+  interp : T -> inhabType;
 }.
 
 #[short(type="codeType")]
 HB.structure Definition TypeCode := { T of Equality T & isTypeCode T }.
 
-(* A code may be written wherever its interpretation is expected: [c] in type
- * position, [Distr c], [v : c].  The path is [TypeCode.sort >-> Inhab.type],
- * and [Inhab.type] carries the carrier's *own* Choice structure -- e.g.
- * [dunit 3%N : Distr (interp Cnat)] elaborates at [nat]'s own choiceType,
- * which is exactly what the [IhbType] structure could not do.
- * The coercion is keyed on [TypeCode.sort], so for a *concrete* alphabet it
- * fires only through the structure: [fun c : excode :> codeType => Distr c]. *)
 Coercion interp : TypeCode.sort >-> Inhab.type.
 
 (* -------------------------------------------------------------------- *)
@@ -63,34 +64,43 @@ Arguments type_eq_dec : clear implicits.
 Arguments ecast_id : clear implicits.
 
 (* -------------------------------------------------------------------- *)
-(* An example code grammar over the two level-1 instances above.  A
-   client wanting products or sequences of program types adds code
-   constructors ([Cprod of C & C], [Cseq of C]) and interprets them with
-   mathcomp's [prod]/[seq] -- the former [prod_ihbType]/[seq_ihbType]
-   instances become data rather than structure. *)
-Inductive excode := Cbool | Cnat.
+Section example.
 
-Definition excode_eqb (c1 c2 : excode) : bool :=
+Inductive excode := Cbool | Cnat | Cint | Cseq (c :excode).
+
+Fixpoint excode_eqb (c1 c2 : excode) : bool :=
   match c1, c2 with
-  | Cbool, Cbool | Cnat, Cnat => true
+  | Cbool, Cbool | Cnat, Cnat | Cint, Cint => true
+  | Cseq t1, Cseq t2 => excode_eqb t1 t2
   | _, _ => false
   end.
 
 Lemma excode_eqP : Equality.axiom excode_eqb.
-Proof. by move=> [] [] /=; constructor. Qed.
+Proof.
+  elim => [||| t1 ih] [||| t2] /=; try by constructor.
+  by apply : (iffP (ih t2))=>  [ -> | []].
+Qed.
 
 HB.instance Definition excode_eqType := hasDecEq.Build excode excode_eqP.
 
-Definition ex_interp (c : excode) : inhabType :=
-  match c with
+Fixpoint ex_interp (t : excode) : inhabType :=
+  match t with
   | Cbool => (bool : inhabType)
   | Cnat  => (nat  : inhabType)
+  | Cint => (int: inhabType)
+  | Cseq t => seq.seq (ex_interp t)
   end.
 
 HB.instance Definition excode_typeCode := isTypeCode.Build excode ex_interp.
 
-(* the interpretation, and the default it induces at each code *)
 Example ex_interp_Cbool : interp Cbool = bool :> Type. Proof. by []. Qed.
 Example ex_interp_Cnat  : interp Cnat  = nat  :> Type. Proof. by []. Qed.
+Example ex_interp_Cint : interp Cint = int :> Type. Proof. by []. Qed.
+Example ex_interp_Cseq  : interp (Cseq Cint)  = seq.seq int  :> Type. Proof. by []. Qed.
+
 Example ex_wit_Cbool : @witness (interp Cbool) = false. Proof. by []. Qed.
 Example ex_wit_Cnat  : @witness (interp Cnat)  = 0%N.   Proof. by []. Qed.
+Example ex_wit_Cint  : @witness (interp Cint)  = 0.   Proof. by []. Qed.
+Example ex_wit_Cseq  : @witness (interp (Cseq Cint))  = [::]. Proof. by []. Qed.
+
+End example.

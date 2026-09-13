@@ -688,9 +688,6 @@ Arguments esem A X cmem T e%_X m%_M.
 Notation "e `_ m" := (@esem _ _ _ _ e%X m%M) : sem_scope.
 
 (* -------------------------------------------------------------------- *)
-(* The one-sided update notations.  They mention neither the alphabet nor
- * the reals, and clients (prhl.v) need them, so they are declared here,
- * *outside* the section below -- a notation does not survive [End]. *)
 Reserved Notation "m .[ x @ s <- v ]"
   (at level 1, x, s, v at level 200, format "m .[ x @ s  <-  v ]").
 
@@ -704,10 +701,6 @@ Notation "m .[ x @ s <- v ]" := m.[x # s <- v].
 Notation "m .[~1 x <- v ]"   := m.[x @ '1 <- v].
 Notation "m .[~2 x <- v ]"   := m.[x @ '2 <- v].
 
-(* ==================================================================== *)
-(* Everything below is read at the concrete memories [cmem] / [rmem] of  *)
-(* pwhile.v, over an alphabet [A] and identifiers [ident].           *)
-(* ==================================================================== *)
 Section Concrete.
 Context {R : realType} {A : codeType} {ident : countType}.
 
@@ -795,16 +788,11 @@ rewrite ssem_seqE le_dlet => // {m' hem he1m he2m} m _ m'.
 by apply: (le_trans (le_whilen _ _ _ _ _)).
 Qed.
 
-(* (* -------------------------------------------------------------------- *) *)
 (* -------------------------------------------------------------------- *)
 Definition dssem (ps : ident -> cmd_ R A ident cmem ident)
     (c : cmd_ R A ident cmem ident) (mu : mdistr) :=
   (\dlet_(m <- mu) ssem ps c m).
 
-(* [Global]: the instance now lives in a section, and a plain [Instance]
- * registration would be discharged away at [End Concrete] -- the definition
- * would survive but typeclass resolution would no longer find it, and the
- * setoid rewrites through [dssem] (ellora.v) would fail. *)
 Global Instance dsem_m ps : Proper (@eqcmd _ _ _ _ _ ps ==> eq ==> eq) (dssem ps).
 Proof. by move=> c1 c2 eqc /= mu _ <-; apply/eq_in_dlet. Qed.
 
@@ -833,7 +821,6 @@ Definition dlossless (P : dassn) (c : cmd_ R A ident cmem ident) :=
   forall ps mu, mu \in P -> dweight (dssem ps c mu) = 1.
 
 (* -------------------------------------------------------------------- *)
-(* [@ssem_ _ rmem] read [rmem] as the [Y] of [ssem_]; it is the memory. *)
 Local Notation rsem    := (@ssem_ _ _ _ rmem).
 Local Notation rmdistr := (Distr rmem).
 Local Notation rmnull  := (@dnull R rmem).

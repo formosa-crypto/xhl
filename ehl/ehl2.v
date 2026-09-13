@@ -565,9 +565,6 @@ Qed.
 
 End Complete.
 
-(* This section leaves the memory-generic setting of [Section ehl] and works
- * at the concrete [cmem] of pwhile.v; [R] and [A] come from the enclosing
- * context, the identifiers are its own. *)
 Section prhl.
 Context {ident : countType}.
 

@@ -385,25 +385,22 @@ fun (f:Y) => ((fun _ => 0)%E,
                    if (r <= ((ssem_ ps (ps f) s0) s)%:E)%E then 0%E else +oo%E)
           ).
 
-(* The logic in section Logic cannot be proven complete. *)
-(*    This is because the to proof completes, the contract "cl_mgt" *)
-(*    is requires. This contract implies that postcondition for procedure *)
-(*    dependents on the resulting distribution of the execution of the program. *)
-(*    However, to proof soundness, the postcondition must be independent from *)
-(*    from this argument. *)
+(* The logic in section Logic cannot be proven complete.
+   This is because the to proof completes, the contract "cl_mgt"
+   is requires. This contract implies that postcondition for procedure
+   dependents on the resulting distribution of the execution of the program.
+   However, to proof soundness, the postcondition must be independent from
+   from this argument.
 
-(*    If the H_rec case in the logic is like in Ellora, then the logic is complete. *)
+   If the H_rec case in the logic is like in Ellora, then the logic is complete.
 
-(*    The ehl2.v file present a logic which is complete. Not, that *)
-(*    the logic in ehl2.v allows to use H_rec more then one time *)
-(*    which is not possible in the logic present in section logic. *)
-(*  *)
+   The ehl2.v file present a logic which is complete. Not, that
+   the logic in ehl2.v allows to use H_rec more then one time
+   which is not possible in the logic present in section logic.
+ *)
 
 End Complete.
 
-(* This section leaves the memory-generic setting of [Section ehl] and works
- * at the concrete [cmem] of pwhile.v; [R] and [A] come from the enclosing
- * context, the identifiers are its own. *)
 Section prhl.
 Context {ident : countType}.
 

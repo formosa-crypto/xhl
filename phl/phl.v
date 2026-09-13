@@ -25,18 +25,12 @@ Variant bd := Le | Ge | Eq.
 
 Implicit Types r : bd.
 
-(* [R] implicit rather than a global [Parameter]: [bd] itself is R-free. *)
 Definition rel_of_bd {R : realType} (r : bd) : rel R :=
   match r with
   | Le => [rel x y | x <= y]
   | Ge => [rel x y | y <= x]
   | Eq => [rel x y | x == y]
   end.
-
-(* No [Coercion] on [rel_of_bd]: with [R] no longer a global [Parameter] it
- * would not respect the uniform inheritance condition ([R] precedes the
- * source [bd] and cannot be read off it).  It is applied explicitly at the
- * two places that need it, just below. *)
 
 Declare Scope bd_scope.
 
@@ -46,10 +40,6 @@ Notation "'>=" := Ge (at level 0) : bd_scope.
 
 Bind Scope bd_scope with bd.
 
-(* ==================================================================== *)
-(* Read at the concrete memory [cmem] of pwhile.v, over an alphabet  *)
-(* [A] and identifiers [ident].                                          *)
-(* ==================================================================== *)
 Section phl.
 Context {R : realType} {A : codeType} {ident : countType}.
 
