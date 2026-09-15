@@ -6,7 +6,7 @@ From mathcomp.analysis  Require Import esum ereal counting_distr.
 From mathcomp.analysis  Require Import sequences normedtype topology.
 From mathcomp           Require finmap.
 From xhl                Require Import misc rsum.
-From xhl.pwhile         Require Import notations inhabited pwhile psemantic passn range.
+From xhl.pwhile         Require Import notations inhabited mem pwhile psemantic passn range.
 From xhl.prhl           Require Import prhl.
 From xhl.ehl            Require Import ehl_stmt.
 From xhl.strassen       Require Import deficiency.
@@ -24,7 +24,10 @@ Local Open Scope ereal_dual_scope.
 #[local] Open Scope order_scope.
 #[local] Open Scope ring_scope.
 
-Local Notation cmd := (@cmd_ ident cmem ident).
+Section erhl.
+Context {R : realType}.
+
+Local Notation Distr T := {distr T%type / R}.
 
 Lemma esumEFinE {T : choiceType} (f : T -> R) :
   esummable [set: T] (EFin \o f) ->
@@ -366,18 +369,22 @@ Qed.
 (* Relational pre- and post-expectations                                 *)
 (* ==================================================================== *)
 Section RCond.
+Context {A : codeType} {X Y : countType} {M : memType A X}.
+
+Local Notation rmem  := (rmem A X M).
+Local Notation assn  := (pred M).
 
 (* Assertions are quantitative: [rmem = cmem * cmem -> \bar R].  The     *)
 (* paper's [E<1>] / [E<2>] are pwhile's [e#'1] / [e#'2].                 *)
-Definition rcond  := rmem -> \bar pwhile.R.
+Definition rcond  := rmem -> \bar R.
 
 (* The "generic" post-expectation also reads the *initial* pair of       *)
 (* memories.  This replaces the paper's type [Z] of logical variables    *)
 (* (cf. [hl_stmt.assn2] and [ehl_stmt.cond2]).                          *)
-Definition rcond2 := rmem -> rmem -> \bar pwhile.R.
+Definition rcond2 := rmem -> rmem -> \bar R.
 
 (* [psi*]: the 0-extension of a post-expectation to starred memories.    *)
-Definition rstar (g : rcond) (p : option cmem * option cmem) : \bar pwhile.R :=
+Definition rstar (g : rcond) (p : option M * option M) : \bar R :=
   if p is (Some m1, Some m2) then g (m1, m2) else 0%E.
 
 Lemma ge0_rstar g p : (forall m, (0 <= g m)%E) -> (0 <= rstar g p)%E.
@@ -397,132 +404,101 @@ Proof. by move=> [m1 m2]. Qed.
 Lemma rswap2K g : forall m0 m, rswap2 (rswap2 g) m0 m = g m0 m.
 Proof. by move=> [??] [??]. Qed.
 
-(* Guard operator [P | phi] of the paper, at the relational type.        *)
-Notation rlift := (@ehl_stmt.lift rident rmem).
-
 (* Image of a set of memories under a relation, the paper's [R(M)].      *)
-Definition rimage (Rl : rel cmem) (M : pred cmem) : pred cmem :=
+Definition rimage (Rl : rel M) (M : assn) : assn :=
   [pred m2 | `[< exists m1, M m1 && Rl m1 m2 >]].
 
 End RCond.
 
-Notation rlift := (@ehl_stmt.lift rident rmem).
+Section Mem_misc.
+Context {A : codeType} {X Y : countType} {M : memType A X}.
+
+Local Notation rmem  := (rmem A X M).
+Local Notation vars   := (vars_ X).
+
+Lemma mselect_msetg {T : A} s s' (m : rmem) (x : vars T) (v : T) :
+  ((m.{x#s <- v})#s')%M = if s == s' then ((m#s).{x <- v})%M else (m#s')%M.
+Proof. by case: s s' x => [] [] []. Qed.
+
+Lemma rmset1E {T : A} (m : rmem) (x : vars T) (v : T) :
+  (m.[~1 x <- v])%M = (((m.1).[x <- v])%M, m.2).
+Proof. by rewrite mset_iE. Qed.
+
+Lemma rmset2E {T : A} (m : rmem) (x : vars T) (v : T) :
+  (m.[~2 x <- v])%M = (m.1, ((m.2).[x <- v])%M).
+Proof. by rewrite mset_iE. Qed.
+
+Lemma rmset_get1 {T : A} (m : rmem) (x : vars T) :
+  (m.[~1 x <- ((m.1).[x])%M])%M = m.
+Proof. by rewrite rmset1E mset_eq -surjective_pairing. Qed.
+
+Lemma rmset_get2 {T : A} (m : rmem) (x : vars T) :
+  (m.[~2 x <- ((m.2).[x])%M])%M = m.
+Proof. by rewrite rmset2E mset_eq -surjective_pairing. Qed.
+
+End Mem_misc.
+
+Section Strassen.
+Context {A : codeType} {X Y : countType} {M : memType A X}.
+
+Local Notation rmem  := (rmem A X M).
 
 (* Expectation through [slift]: the mass parked on (None, None) is        *)
 (* invisible to [rstar], so nothing is lost.                              *)
-Lemma espe_slift (nu : Distr (cmem * cmem)%type) (g : rcond) :
+Lemma espe_slift (nu : Distr (M * M)%type) (g : rcond) :
   (forall m, (0 <= g m)%E) -> espe (slift nu) (rstar g) = espe nu g.
 Proof.
 move=> hg.
-have hpos : forall o : option (cmem * cmem)%type,
+have hpos : forall o : option (M * M)%type,
   (0 <= (rstar g \o (fun o' => if o' is Some p then (Some p.1, Some p.2)
-                               else (@None cmem, @None cmem))) o)%E.
+                               else (@None M, @None M))) o)%E.
 + by move=> o; exact: ge0_rstar.
 have hnone : (rstar g \o (fun o' => if o' is Some p then (Some p.1, Some p.2)
-                                    else (@None cmem, @None cmem))) None = 0%E.
+                                    else (@None M, @None M))) None = 0%E.
 + by [].
 transitivity (espe (dstar nu)
   (rstar g \o (fun o' => if o' is Some p then (Some p.1, Some p.2)
-                         else (@None cmem, @None cmem)))).
+                         else (@None M, @None M)))).
 + by rewrite /slift; apply: eexp_dmargin => p; exact: ge0_rstar.
 rewrite (espe_dstar _ _ hpos hnone).
 by apply: eexp_eq; case=> a b.
 Qed.
 
-(* [psemantic.mselect_mset] for global variables; missing upstream. *)
-Lemma mselect_msetg {T : IhbType.type} s s' (m : rmem) (x : vars T) (v : T) :
-  ((m.{x#s <- v})#s')%M = if s == s' then ((m#s).{x <- v})%M else (m#s')%M.
-Proof. by case: s s' x => [] [] []. Qed.
-
-(* Updating a variable with its own current value is the identity.         *)
-(*                                                                         *)
-(* NOT derivable from [isMemType], whose only laws about [mset] are        *)
-(* [mget]-observations: a [memType] could carry a timestamp bumped by      *)
-(* every [mset] and satisfy all of them.  For the concrete [coremem] it    *)
-(* holds, but only via functional extensionality (equality of a record of  *)
-(* dependent functions).  Proved here rather than in pwhile.v so the core  *)
-(* files stay untouched.  Only [erhl_nmodL] / [erhl_nmodR] use it.         *)
-(*                                                                         *)
-(* This is the ONLY explicit appeal to extensionality left in this file,   *)
-(* and it is irreducible: the conclusion *is* the function equality, so    *)
-(* there is no pointwise ([=1]) congruence to route it through -- every    *)
-(* consumer needs [f] as a whole.  Elsewhere in the file, changing the     *)
-(* function under a [dmargin] goes through [rsum.eq_dmargin], and changing *)
-(* a sequence under [-->] / [limn] goes through an image-filter equality    *)
-(* ([near_eq_cvg_eq], classical/filter.v).                                 *)
-
-(* Probably derivable in the param alpha branch                            *)
-(* If not, mset_get should be a propety of the mixin IsMemtype, and proven for a concrete memory *)
-(* Would avoid this proof and the use of functional extensionality  *)
-Lemma hupd_id (F : IhbType.type -> Type)
-    (f : forall U : IhbType.type, ident -> F U) (T : IhbType.type) (x : ident) :
-  @hupd F f T x (f T x) = f.
-Proof.
-apply: functional_extensionality_dep => U; apply/funext => y.
-case: (pselect (T = U)) => [eq|nT]; last by rewrite hupd_net.
-case: (eqVneq x y) => [<-|nx]; last by rewrite hupd_nex.
-by case: U / eq; rewrite hupd_eq.
-Qed.
-
-Lemma mset_get {T : IhbType.type} (m : cmem) (x : vars T) :
-  (m.[x <- m.[x]])%M = m.
-Proof.
- case: m => m1 m2;
-   rewrite /mset /mget /cmem /mset_ /mget_ /= /coremem_set /=.  hupd_id.
-Qed.
-
-(* One-sided updates of a relational memory, in explicit pair form.       *)
-Lemma rmset1E {T : IhbType.type} (m : rmem) (x : vars T) (v : T) :
-  (m.[~1 x <- v])%M = (((m.1).[x <- v])%M, m.2).
-Proof. by rewrite mset_iE. Qed.
-
-Lemma rmset2E {T : IhbType.type} (m : rmem) (x : vars T) (v : T) :
-  (m.[~2 x <- v])%M = (m.1, ((m.2).[x <- v])%M).
-Proof. by rewrite mset_iE. Qed.
-
-Lemma rmset_get1 {T : IhbType.type} (m : rmem) (x : vars T) :
-  (m.[~1 x <- ((m.1).[x])%M])%M = m.
-Proof. by rewrite rmset1E mset_get -surjective_pairing. Qed.
-
-Lemma rmset_get2 {T : IhbType.type} (m : rmem) (x : vars T) :
-  (m.[~2 x <- ((m.2).[x])%M])%M = m.
-Proof. by rewrite rmset2E mset_get -surjective_pairing. Qed.
-
 (* A star-coupling all of whose mass has [None] on the left sees nothing  *)
 (* of the post-expectation.  Note this needs no sign condition on [g] --  *)
 (* which is what lets [erhl_abort] hold for an arbitrary post.            *)
-Lemma espe_rstar_left0 (X : Distr (option cmem)) (g : rcond) :
-  espe (dmargin (fun o => (@None cmem, o)) X) (rstar g) = 0%E.
+Lemma espe_rstar_left0 (mu : Distr (option M)) (g : rcond) :
+  espe (dmargin (fun o => (@None M, o)) mu) (rstar g) = 0%E.
 Proof.
-rewrite /espe -[RHS](@esum0 R (option cmem * option cmem)%type [set: _]).
+rewrite /espe -[RHS](@esum0 R (option M * option M)%type [set: _]).
 apply: eq_esum; case=> [[a|] b] _ /=; last by rewrite /rstar mul0e.
-have -> : dmargin (fun o => (@None cmem, o)) X (Some a, b) = 0.
-+ rewrite dmarginE dletE_rsum -[RHS](@rsum0 R (option cmem)).
+have -> : dmargin (fun o => (@None M, o)) mu (Some a, b) = 0.
++ rewrite dmarginE dletE_rsum -[RHS](@rsum0 R (option M)).
   by apply: eq_rsum => o; rewrite dunit1E xpair_eqE /= mulr0.
 by rewrite mule0.
 Qed.
 
-Lemma espe_rstar_right0 (X : Distr (option cmem)) (g : rcond) :
-  espe (dmargin (fun o => (o, @None cmem)) X) (rstar g) = 0%E.
+Lemma espe_rstar_right0 (mu : Distr (option M)) (g : rcond) :
+  espe (dmargin (fun o => (o, @None M)) mu) (rstar g) = 0%E.
 Proof.
-rewrite /espe -[RHS](@esum0 R (option cmem * option cmem)%type [set: _]).
+rewrite /espe -[RHS](@esum0 R (option M * option M)%type [set: _]).
 apply: eq_esum; case=> [[a|] [b|]] _; rewrite /rstar /=;
   try by rewrite mul0e.
-have -> : dmargin (fun o => (o, @None cmem)) X (Some a, Some b) = 0.
-+ rewrite dmarginE dletE_rsum -[RHS](@rsum0 R (option cmem)).
+have -> : dmargin (fun o => (o, @None M)) mu (Some a, Some b) = 0.
++ rewrite dmarginE dletE_rsum -[RHS](@rsum0 R (option M)).
   by apply: eq_rsum => o; rewrite dunit1E xpair_eqE /= andbF mulr0.
 by rewrite mule0.
 Qed.
 
 (* Transporting an expectation across [dswap].  Needs [0 <= g] because it   *)
 (* goes through [eexp_dmargin].                                             *)
-Lemma espe_dswap (nu : Distr (option cmem * option cmem)%type) (g : rcond) :
+Lemma espe_dswap (nu : Distr (option M * option M)%type) (g : rcond) :
   (forall m, (0 <= g m)%E) ->
   espe (dswap nu) (rstar g) = espe nu (rstar (rswap g)).
 Proof.
 move=> hg.
 have -> : espe (dswap nu) (rstar g)
-        = espe nu (rstar g \o (fun xy : option cmem * option cmem => (xy.2, xy.1))).
+        = espe nu (rstar g \o (fun xy : option M * option M => (xy.2, xy.1))).
 + by rewrite /dswap; apply: eexp_dmargin => p; exact: ge0_rstar.
 by apply: eexp_eq; case=> [[a|] [b|]]; rewrite /comp /rstar /rswap.
 Qed.
@@ -537,7 +513,7 @@ case/boolP: (x \in dinsupp mu) => [/h -> //|/dinsuppPn ->].
 by rewrite !mule0.
 Qed.
 
-Lemma le_dfst {A B : choiceType} (nu : Distr (A * B)%type) (p : A * B) :
+Lemma le_dfst {C1 C2 : choiceType} (nu : Distr (C1 * C2)%type) (p : C1 * C2) :
   nu p <= dfst nu p.1.
 Proof.
 rewrite dmarginE dletE_rsum.
@@ -545,11 +521,11 @@ have -> : nu p = \sum_(z <- [:: p]) (nu z * dunit z.1 p.1).
 + by rewrite big_seq1 dunit_id mulr1.
 apply: gerfinseq_rsum => //.
 + by move=> z; rewrite mulr_ge0 ?ge0_mu.
-by have := summable_dlet (fun z : (A * B)%type => dunit z.1) nu p.1;
+by have := summable_dlet (fun z : (C1 * C2)%type => dunit z.1) nu p.1;
    apply/eq_esummable.
 Qed.
 
-Lemma le_dsnd {A B : choiceType} (nu : Distr (A * B)%type) (p : A * B) :
+Lemma le_dsnd {C1 C2 : choiceType} (nu : Distr (C1 * C2)%type) (p : C1 * C2) :
   nu p <= dsnd nu p.2.
 Proof.
 rewrite dmarginE dletE_rsum.
@@ -557,15 +533,15 @@ have -> : nu p = \sum_(x <- [:: p]) (nu x * dunit x.2 p.2).
 + by rewrite big_seq1 dunit_id mulr1.
 apply: gerfinseq_rsum => //.
 + by move=> x; rewrite mulr_ge0 ?ge0_mu.
-by have := summable_dlet (fun x : (A * B)%type => dunit x.2) nu p.2;
+by have := summable_dlet (fun x : (C1 * C2)%type => dunit x.2) nu p.2;
    apply/eq_esummable.
 Qed.
 
 (* A star-coupling with [dunit m2] on the right is concentrated on the      *)
 (* slice _ x {Some m2}.  This is what makes one-sided judgments unary.      *)
-Lemma scoupling_supp2 {A : choiceType} (D : Distr A) (m2 : A)
-    (nu : Distr (option A * option A)%type) :
-  scoupling D (dunit m2) nu -> forall p, p \in dinsupp nu -> p.2 = Some m2.
+Lemma scoupling_supp2 {C : choiceType} (mu : Distr C) (m2 : C)
+    (nu : Distr (option C * option C)%type) :
+  scoupling mu (dunit m2) nu -> forall p, p \in dinsupp nu -> p.2 = Some m2.
 Proof.
 case=> _ h2 p hp; apply/eqP; apply: contraT => hne.
 have h0 : dsnd nu p.2 = 0.
@@ -577,23 +553,23 @@ Qed.
 
 (* Pushing a pair of deterministic maps through a star-coupling.  Used by  *)
 (* the [block] rules (return-value restoration).                           *)
-Lemma scoupling_dmargin (d1 d2 : Distr cmem)
-    (nu : Distr (option cmem * option cmem)%type) (k1 k2 : cmem -> cmem) :
+Lemma scoupling_dmargin (d1 d2 : Distr M)
+    (nu : Distr (option M * option M)%type) (k1 k2 : M -> M) :
   scoupling d1 d2 nu ->
   scoupling (dmargin k1 d1) (dmargin k2 d2)
             (dmargin (fun p => (omap k1 p.1, omap k2 p.2)) nu).
 Proof.
 case=> h1 h2; split; rewrite dmargin_comp /comp.
-+ have -> : (fun p : option cmem * option cmem => (omap k1 p.1, omap k2 p.2).1)
++ have -> : (fun p : option M * option M => (omap k1 p.1, omap k2 p.2).1)
           = omap k1 \o fst by [].
   by rewrite -dmargin_comp h1 dstar_dmargin.
-have -> : (fun p : option cmem * option cmem => (omap k1 p.1, omap k2 p.2).2)
+have -> : (fun p : option M * option M => (omap k1 p.1, omap k2 p.2).2)
         = omap k2 \o snd by [].
 by rewrite -dmargin_comp h2 dstar_dmargin.
 Qed.
 
-Lemma espe_dmargin_rstar (nu : Distr (option cmem * option cmem)%type)
-    (k1 k2 : cmem -> cmem) (g : rcond) :
+Lemma espe_dmargin_rstar (nu : Distr (option M * option M)%type)
+    (k1 k2 : M -> M) (g : rcond) :
   (forall m, (0 <= g m)%E) ->
   espe (dmargin (fun p => (omap k1 p.1, omap k2 p.2)) nu) (rstar g)
   = espe nu (rstar (fun m' : rmem => g (k1 m'.1, k2 m'.2))).
@@ -606,8 +582,8 @@ by apply: eexp_eq; case=> [[a|] [b|]]; rewrite /comp /rstar.
 Qed.
 
 (* Star-couplings are full distributions. *)
-Lemma dweight_scoupling (d1 d2 : Distr cmem)
-    (nu : Distr (option cmem * option cmem)%type) :
+Lemma dweight_scoupling (d1 d2 : Distr M)
+    (nu : Distr (option M * option M)%type) :
   scoupling d1 d2 nu -> dweight nu = 1.
 Proof.
 case=> h1 _; have := dweight_dstar d1; rewrite -h1 (pr_dmargin predT fst nu).
@@ -617,8 +593,8 @@ Qed.
 (* When both sides are lossless, a star-coupling puts no mass on a pair    *)
 (* with a [None] component: [dstar_full] kills the [None] cell of either   *)
 (* marginal, and [le_dfst] / [le_dsnd] propagate that to the joint.        *)
-Lemma scoupling_full_supp (D1 D2 : Distr cmem)
-    (nu : Distr (option cmem * option cmem)%type) :
+Lemma scoupling_full_supp (D1 D2 : Distr M)
+    (nu : Distr (option M * option M)%type) :
   dweight D1 = 1 -> dweight D2 = 1 -> scoupling D1 D2 nu ->
   forall p, p \in dinsupp nu ->
     (if p is (Some _, Some _) then true else false).
@@ -631,11 +607,11 @@ have hz2 : forall a, nu (a, None) = 0.
 + move=> a; apply/eqP; rewrite eq_le ge0_mu andbT.
   by have := le_dsnd nu (a, None); rewrite (proj2 hnu) /= (dstar_full D2 w2).
 case=> [[a|] [b|]] hin //.
-+ have h : (Some a, @None cmem) \notin dinsupp nu by apply/dinsuppPn; exact: hz2.
++ have h : (Some a, @None M) \notin dinsupp nu by apply/dinsuppPn; exact: hz2.
   by rewrite hin in h.
-+ have h : (@None cmem, Some b) \notin dinsupp nu by apply/dinsuppPn; exact: hz1.
++ have h : (@None M, Some b) \notin dinsupp nu by apply/dinsuppPn; exact: hz1.
   by rewrite hin in h.
-have h : (@None cmem, @None cmem) \notin dinsupp nu
+have h : (@None M, @None M) \notin dinsupp nu
   by apply/dinsuppPn; exact: hz1.
 by rewrite hin in h.
 Qed.
@@ -645,11 +621,11 @@ Lemma espe_indic {T : choiceType} (mu : Distr T) (E : pred T) :
 Proof. by rewrite prE; apply: eq_esum => x _; rewrite EFinM. Qed.
 
 (* [rstar] is additive, and so is [espe] on non-negative integrands. *)
-Lemma espe_rstarD (nu : Distr (option cmem * option cmem)%type)
-    (A B : rcond) :
-  (forall m, (0 <= A m)%E) -> (forall m, (0 <= B m)%E) ->
-  espe nu (rstar (fun m => (A m + B m)%E))
-  = (espe nu (rstar A) + espe nu (rstar B))%E.
+Lemma espe_rstarD (nu : Distr (option M * option M)%type)
+    (r1 r2 : rcond) :
+  (forall m, (0 <= r1 m)%E) -> (forall m, (0 <= r2 m)%E) ->
+  espe nu (rstar (fun m => (r1 m + r2 m)%E))
+  = (espe nu (rstar r1) + espe nu (rstar r2))%E.
 Proof.
 move=> hA hB; rewrite /espe -esumD.
 + by move=> p _; apply: mule_ge0; [apply: ge0_rstar; exact: hA
@@ -658,8 +634,8 @@ move=> hA hB; rewrite /espe -esumD.
                                  | rewrite lee_fin ge0_mu].
 apply: eq_esum; case=> [[a|] [b|]] _; rewrite /rstar /=;
   try by rewrite mul0e adde0.
-have hAb : (0 <= A (a, b))%E by exact: hA.
-have hBb : (0 <= B (a, b))%E by exact: hB.
+have hAb : (0 <= r1 (a, b))%E by exact: hA.
+have hBb : (0 <= r2 (a, b))%E by exact: hB.
 by rewrite (ge0_muleDl _ hAb hBb).
 Qed.
 
@@ -671,26 +647,26 @@ Qed.
 (* form; since both sides have weight 1 the two forms coincide, and the    *)
 (* translation is [slift] / [scoupling_slift] / [espe_slift] above.        *)
 Lemma strassen_deficiency
-    (D1 D2 : Distr cmem) (Rl : rel cmem) (delta : R) :
+    (D1 D2 : Distr M) (Rl : rel M) (delta : R) :
   dweight D1 = 1 -> dweight D2 = 1 -> 0 <= delta ->
-  (forall M : pred cmem, \P_[D1] M <= \P_[D2] (rimage Rl M) + delta) ->
+  (forall M : pred M, \P_[D1] M <= \P_[D2] (rimage Rl M) + delta) ->
   exists2 nu, scoupling D1 D2 nu &
     (espe nu (rstar (fun m' : rmem => ((~~ Rl m'.1 m'.2)%:R)%:E))
        <= delta%:E)%E.
 Proof.
 move=> w1 w2 hd hM.
 (* [rimage] and [strassen.imS] are the same predicate, modulo [exists2]. *)
-have hM' : forall M : pred cmem,
+have hM' : forall M : pred M,
     \P_[D1] M <= \P_[D2] [pred y | `[< exists2 x, x \in M & Rl x y >]] + delta.
-+ move=> M.
-  have e : [pred m2 | `[< exists m1, M m1 && Rl m1 m2 >]]
-        =i [pred y | `[< exists2 x, x \in M & Rl x y >]].
++ move=> p.
+  have e : [pred m2 | `[< exists m1, p m1 && Rl m1 m2 >]]
+        =i [pred y | `[< exists2 x, x \in p & Rl x y >]].
   - move=> y; rewrite !inE; apply/idP/idP.
     * move/asboolP => [x /andP[hx hxy]]; apply/asboolP.
       by exists x.
     move/asboolP => [x hx hxy]; apply/asboolP.
     by exists x; apply/andP; split.
-  by rewrite -(@eq_pr _ _ _ _ D2 e); exact: hM M.
+   by rewrite -(@eq_pr _ _ _ _ D2 e); exact: hM p.
 have [kap [hf hs] hle] := strassen_coupling w1 w2 hd hM'.
 exists (slift kap); first exact: scoupling_slift.
 rewrite espe_slift; first by move=> m'; rewrite lee_fin ler0n.
@@ -698,12 +674,21 @@ rewrite espe_indic lee_fin.
 exact: hle.
 Qed.
 
+End Strassen.
+
 (* ==================================================================== *)
-(* Validity                                                              *)
+(* Validity                                                             *)
 (* ==================================================================== *)
 Section Validity.
+Context {A : codeType} {X Y : countType} {M : memType A X}.
 
-Definition psi := ident -> (@cmd_ ident cmem ident).
+Local Notation psi := (Y -> (@cmd_ R A X M Y)).
+Local Notation rcond := (@rcond A X M).
+Local Notation rcond2 := (@rcond2 A X M).
+Local Notation rstar := (@rstar A X M).
+Local Notation cmd  := (@cmd_ R A X M Y).
+Local Notation rmem  := (@rmem A X M).
+Local Notation assn  := (pred M).
 
 Implicit Types (f g : rcond) (c d : cmd) (ps : psi).
 
@@ -714,17 +699,17 @@ Definition erhl_ ps f c d g :=
     & (espe nu (rstar g) <= f m)%E.
 
 (* Generic (Z-free) judgment: the post may read the initial memories. *)
-Definition kerhl_ ps f c d (g : rcond2) :=
+Definition kerhl_ (ps:psi) f c d (g : rcond2) :=
   forall m : rmem, exists2 nu,
       scoupling (ssem_ ps c m.1) (ssem_ ps d m.2) nu
     & (espe nu (rstar (g m)) <= f m)%E.
 
 (* Lemma 4.2: the same, phrased with the infimum [psi#]. *)
-Definition scouplings (d1 d2 : Distr cmem) :
-    set (Distr (option cmem * option cmem)%type) :=
+Definition scouplings (d1 d2 : Distr M) :
+    set (Distr (option M * option M)%type) :=
   [set nu | scoupling d1 d2 nu].
 
-Definition psharp g (d1 d2 : Distr cmem) : \bar pwhile.R :=
+Definition psharp g (d1 d2 : Distr M) : \bar R :=
   ereal_inf [set espe nu (rstar g) | nu in scouplings d1 d2].
 
 Definition ierhl_ ps f c d g :=
@@ -807,12 +792,12 @@ Qed.
 (* [H_adapt] already uses removes the need for [<-] entirely, leaving     *)
 (* only the easy, provable [->] direction.                                *)
 (* The easy half, as a standalone lemma. *)
-Lemma psharp_lbound (D1 D2 : Distr cmem) (g : rcond)
-    (nu : Distr (option cmem * option cmem)%type) :
+Lemma psharp_lbound (D1 D2 : Distr M) (g : rcond)
+    (nu : Distr (option M * option M)%type) :
   scoupling D1 D2 nu -> (psharp g D1 D2 <= espe nu (rstar g))%E.
 Proof. by move=> h; apply: ereal_inf_lbound; exists nu. Qed.
 
-Lemma ge0_espe_rstar (nu : Distr (option cmem * option cmem)%type) (g : rcond) :
+Lemma ge0_espe_rstar (nu : Distr (option M * option M)%type) (g : rcond) :
   (forall m, (0 <= g m)%E) -> (0 <= espe nu (rstar g))%E.
 Proof.
 move=> hg; apply: esum_ge0 => p _.
@@ -830,8 +815,8 @@ Qed.
 (* Fatou alone could never give, since Fatou only ever yields [<=].  The  *)
 (* pinching lemma [le_rsum_eqP] then upgrades the two marginal            *)
 (* inequalities to equalities.  Only the last step uses [espe_fatou].     *)
-Lemma scoupling_lim (mu1 mu2 : nat -> Distr cmem) (D1 D2 : Distr cmem)
-    (nu : nat -> Distr (option cmem * option cmem)%type) (g : rcond) :
+Lemma scoupling_lim (mu1 mu2 : nat -> Distr M) (D1 D2 : Distr M)
+    (nu : nat -> Distr (option M * option M)%type) (g : rcond) :
   (forall n, scoupling (mu1 n) (mu2 n) (nu n)) ->
   (forall a, ((fun n => dstar (mu1 n) a) @ \oo --> dstar D1 a)%classic) ->
   (forall b, ((fun n => dstar (mu2 n) b) @ \oo --> dstar D2 b)%classic) ->
@@ -919,7 +904,7 @@ Qed.
 (* family is a Jordan difference [pos_esum g^+ - pos_esum g^-], and for a *)
 (* [g] unbounded below the infimum need not be attained (nor even be      *)
 (* meaningful when both parts diverge).                                   *)
-Lemma psharp_attained (D1 D2 : Distr cmem) (g : rcond) :
+Lemma psharp_attained (D1 D2 : Distr M) (g : rcond) :
   (forall m, (0 <= g m)%E) ->
   exists2 nu, scoupling D1 D2 nu & espe nu (rstar g) = psharp g D1 D2.
 Proof.
@@ -959,7 +944,7 @@ Qed.
 (* --------------------------------------------------------------------- *)
 
 (* The [->] half of Lemma 4.2 needs no hypothesis. *)
-Lemma erhl_ierhl_ptL (D1 D2 : Distr cmem) (g : rcond) (r : \bar pwhile.R) :
+Lemma erhl_ierhl_ptL (D1 D2 : Distr M) (g : rcond) (r : \bar R) :
   (exists2 nu, scoupling D1 D2 nu & (espe nu (rstar g) <= r)%E) ->
   (psharp g D1 D2 <= r)%E.
 Proof.
@@ -967,7 +952,7 @@ by case=> nu hnu hle; apply: (le_trans _ hle); exact: psharp_lbound.
 Qed.
 
 (* Lemma 4.2, pointwise in the pair of output distributions. *)
-Lemma erhl_ierhl_pt (D1 D2 : Distr cmem) (g : rcond) (r : \bar pwhile.R) :
+Lemma erhl_ierhl_pt (D1 D2 : Distr M) (g : rcond) (r : \bar R) :
   (forall m, (0 <= g m)%E) ->
   ((exists2 nu, scoupling D1 D2 nu & (espe nu (rstar g) <= r)%E)
    <-> (psharp g D1 D2 <= r)%E).
@@ -987,7 +972,7 @@ Qed.
 (* Along a monotone approximation the weights converge, hence so do the    *)
 (* star-extensions -- at [Some x] by [dlim_limE], at [None] because        *)
 (* [dstar _ None = 1 - dweight _].                                        *)
-Lemma cvg_dweight_dlim (mu : nat -> Distr cmem) :
+Lemma cvg_dweight_dlim (mu : nat -> Distr M) :
   (forall n p, (n <= p)%N -> mu n <=1 mu p) ->
   ((fun n => dweight (mu n)) @ \oo --> dweight (dlim mu))%classic.
 Proof.
@@ -998,7 +983,7 @@ have cvw : cvgn (fun n => dweight (mu n)).
   - move=> n p le; rewrite !dweightE; apply: le_rsum; last exact: summable_mu.
     by move=> x; rewrite ge0_mu /= (hmono n p le).
   by exists 1 => _ [n _ <-]; exact: le1_pr.
-have hfe : ((fun n => \esum_(x in [set: cmem]) (((predT x)%:R * mu n x)%:E)) @ \oo)
+have hfe : ((fun n => \esum_(x in [set: M]) (((predT x)%:R * mu n x)%:E)) @ \oo)
          = ((fun n => (dweight (mu n))%:E) @ \oo).
 + by apply: near_eq_cvg_eq; apply: nearW => n; rewrite prE.
 have key : (dweight (dlim mu))%:E = limn (fun n => (dweight (mu n))%:E).
@@ -1013,7 +998,7 @@ have -> : dweight (dlim mu) = limn (fun n => dweight (mu n)).
 exact: cvw.
 Qed.
 
-Lemma cvg_dstar_dlim (mu : nat -> Distr cmem) :
+Lemma cvg_dstar_dlim (mu : nat -> Distr M) :
   (forall n p, (n <= p)%N -> mu n <=1 mu p) ->
   forall a, ((fun n => dstar (mu n) a) @ \oo --> dstar (dlim mu) a)%classic.
 Proof.
@@ -1044,8 +1029,8 @@ Qed.
 (* nondecreasing family is constant.  Hence [scoupling_lim], which works   *)
 (* with a merely convergent subsequence.  Used by [erhl_while] and         *)
 (* [recursive_proc].                                                       *)
-Lemma psharp_dlim (mu1 mu2 : nat -> Distr cmem) (g : rcond)
-    (r : \bar pwhile.R) :
+Lemma psharp_dlim (mu1 mu2 : nat -> Distr M) (g : rcond)
+    (r : \bar R) :
   (forall n p, (n <= p)%N -> mu1 n <=1 mu1 p) ->
   (forall n p, (n <= p)%N -> mu2 n <=1 mu2 p) ->
   (forall m, (0 <= g m)%E) ->
@@ -1077,11 +1062,18 @@ End Validity.
 (* [None] standing for [skip].                                          *)
 (* ==================================================================== *)
 Section RContract.
+Context {A : codeType} {X Y : countType} {M : memType A X}.
 
-Definition ocmd (o : option ident) : cmd :=
+Local Notation psi := (Y -> (@cmd_ R A X M Y)).
+Local Notation rcond := (@rcond A X M).
+Local Notation rcond2 := (@rcond2 A X M).
+Local Notation cmd  := (@cmd_ R A X M Y).
+Local Notation rmem  := (@rmem A X M).
+
+Definition ocmd (o : option Y) : cmd :=
   if o is Some f then call f else skip.
 
-Definition obody (ps : psi) (o : option ident) : cmd :=
+Definition obody (ps : psi) (o : option Y) : cmd :=
   if o is Some f then ps f else skip.
 
 Definition rclause : Type := rcond * rcond2.
@@ -1089,7 +1081,7 @@ Definition rclause : Type := rcond * rcond2.
 Definition get_pre (an : rclause) := let: (pre, _) := an in pre.
 Definition get_post (an : rclause) := let: (_, post) := an in post.
 
-Definition rphi : Type := option ident -> option ident -> rclause.
+Definition rphi : Type := option Y -> option Y -> rclause.
 
 (** Empty procedure contract **)
 
@@ -1119,19 +1111,29 @@ Definition rcl_skip_valid (cl : rphi) :=
   forall s : rmem, (get_post (cl None None) s s <= get_pre (cl None None) s)%E.
 
 End RContract.
+End erhl.
 
-HB.mixin Record isRPhi (cl : rphi) := {
+HB.mixin Record isRPhi {R: realType} {A : codeType} {X Y : countType} {M : memType A X}
+  (cl : @rphi R A X Y M) := {
   rpre_pos  : rcl_pre_pos  cl;
   rpost_pos : rcl_post_pos cl;
 }.
 
-HB.structure Definition RPhi := {f of isRPhi f}.
+HB.structure Definition RPhi
+  {R: realType} {A : codeType} {X Y : countType} {M : memType A X} :=
+  {f of @isRPhi R A X Y M f}.
 
-Lemma rpre_pos_rcl_empty : rcl_pre_pos rcl_empty.
+Lemma rpre_pos_rcl_empty
+  {R: realType} {A : codeType} {X Y : countType} {M : memType A X} :
+  rcl_pre_pos (@rcl_empty R A X Y M).
 Proof. by move=> ???; exact: leey. Qed.
 
-Lemma rpost_pos_rcl_empty : rcl_post_pos rcl_empty.
+Lemma rpost_pos_rcl_empty
+  {R: realType} {A : codeType} {X Y : countType} {M : memType A X}:
+  rcl_post_pos (@rcl_empty R A X Y M).
 Proof. by []. Qed.
 
-HB.instance Definition _ :=
-  isRPhi.Build rcl_empty rpre_pos_rcl_empty rpost_pos_rcl_empty.
+HB.instance Definition _ {R: realType} {A : codeType} {X Y : countType}
+  {M : memType A X} :=
+  isRPhi.Build R A X Y M (@rcl_empty R A X Y M)
+    rpre_pos_rcl_empty rpost_pos_rcl_empty.

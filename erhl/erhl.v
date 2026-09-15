@@ -5,7 +5,7 @@ From mathcomp.reals     Require Import reals constructive_ereal.
 From mathcomp.analysis  Require Import esum ereal counting_distr.
 From mathcomp           Require finmap.
 From xhl                Require Import misc rsum.
-From xhl.pwhile         Require Import notations inhabited pwhile psemantic passn range.
+From xhl.pwhile         Require Import notations inhabited mem pwhile psemantic passn range.
 From xhl.prhl           Require Import prhl.
 From xhl.ehl            Require Import ehl_stmt.
 From xhl.ehl            Require ehl.
@@ -23,7 +23,26 @@ Local Open Scope ereal_dual_scope.
 #[local] Open Scope order_scope.
 #[local] Open Scope ring_scope.
 
-Local Notation cmd := (@cmd_ ident cmem ident).
+(* -------------------------------------------------------------------- *)
+Section erhl.
+Context {R : realType} {A : codeType} {X Y : countType} {M : memType A X}.
+
+Local Notation cmd    := (@cmd_ R A X M Y).
+Local Notation rcond  := (@rcond R A X M).
+Local Notation rcond2 := (@rcond2 R A X M).
+Local Notation rphi   := (@rphi R A X Y M).
+Local Notation psi    := (@psi  R A X Y M).
+Local Notation vars  := (vars_ X).
+Local Notation expr  := (@expr_ A X M).
+Local Notation bexpr  := (@expr_ A X M bool).
+Local Notation Distr T := {distr T%type / R}.
+Local Notation dexpr T := (expr (Distr T)).
+Local Notation rmem  := (rmem A X M).
+Local Notation rassn := (pred rmem).
+
+Definition rident := (@rident X).
+
+Local Notation rlift := (@ehl_stmt.lift R A rident rmem).
 
 Implicit Types (f g h : rcond) (c d : cmd) (cl : rphi) (ps : psi).
 
@@ -54,13 +73,13 @@ Inductive derivable : psi -> rphi -> rcond -> cmd -> cmd -> rcond -> Prop :=
     derivable ps cl f skip skip f
 
 (* [Asgn] *)
-| H_Asgn : forall {T1 T2 : IhbType.type}
+| H_Asgn : forall {T1 T2 : A}
     (x : vars T1) (e1 : expr T1) (y : vars T2) (e2 : expr T2) f cl ps,
     derivable ps cl
       (fun m : rmem => f (m.[~1 x <- `[{e1}] m.1]).[~2 y <- `[{e2}] m.2])
       (x <<- e1) (y <<- e2) f
 
-| H_GAsgn : forall {T1 T2 : IhbType.type}
+| H_GAsgn : forall {T1 T2 : A}
     (x : vars T1) (e1 : expr T1) (y : vars T2) (e2 : expr T2) f cl ps,
     derivable ps cl
       (fun m : rmem => f (m.{x#'1 <- `[{e1}] m.1}).{y#'2 <- `[{e2}] m.2})
@@ -68,7 +87,7 @@ Inductive derivable : psi -> rphi -> rcond -> cmd -> cmd -> rcond -> Prop :=
 
 (* [Sample]: the pre-expectation is computed from a coupling [nu] of    *)
 (* the two sampling instructions, supplied by the user.                 *)
-| H_Sample : forall {T1 T2 : IhbType.type}
+| H_Sample : forall {T1 T2 : A}
     (x : vars T1) (d1 : dexpr T1) (y : vars T2) (d2 : dexpr T2)
     (nu : rmem -> Distr (T1 * T2)%type) f cl ps,
     (forall m, (0 <= f m)%E) ->
@@ -114,15 +133,15 @@ Inductive derivable : psi -> rphi -> rcond -> cmd -> cmd -> rcond -> Prop :=
 (* are primitive; the right-hand ones are derived through [H_Swap].   *)
 (* ---------------------------------------------------------------- *)
 
-| H_AsgnL : forall {T : IhbType.type} (x : vars T) (e : expr T) f cl ps,
+| H_AsgnL : forall {T : A} (x : vars T) (e : expr T) f cl ps,
     derivable ps cl (fun m : rmem => f m.[~1 x <- `[{e}] m.1])
       (x <<- e) skip f
 
-| H_GAsgnL : forall {T : IhbType.type} (x : vars T) (e : expr T) f cl ps,
+| H_GAsgnL : forall {T : A} (x : vars T) (e : expr T) f cl ps,
     derivable ps cl (fun m : rmem => f m.{x#'1 <- `[{e}] m.1})
       (G x <<- e) skip f
 
-| H_SampleL : forall {T : IhbType.type} (x : vars T) (d : dexpr T) f cl ps,
+| H_SampleL : forall {T : A} (x : vars T) (d : dexpr T) f cl ps,
     (forall m, (0 <= f m)%E) ->
     let g := fun m : rmem =>
       espe (\dlet_(v <- `[{d}] m.1) dunit m.[~1 x <- v]) f in
@@ -160,14 +179,14 @@ Inductive derivable : psi -> rphi -> rcond -> cmd -> cmd -> rcond -> Prop :=
 | H_Consequence : forall f f' g g' c d cl ps,
     (forall m, (0 <= g m)%E) ->
     derivable ps cl f' c d g' ->
-    (forall (m : rmem) (mu1 mu2 : Distr cmem),
+    (forall (m : rmem) (mu1 mu2 : Distr M),
        (psharp g' mu1 mu2 <= f' m)%E -> (psharp g mu1 mu2 <= f m)%E) ->
     derivable ps cl f c d g
 
 (* [Nmod-L]: the paper's logical variable [v] is the *initial* value of  *)
 (* [x<1>], so quantifying over [v] and guarding the pre-expectation      *)
 (* with [x<1> = v] replaces it.                                         *)
-| H_NmodL : forall {T : IhbType.type} (x : vars T) f g c d cl ps,
+| H_NmodL : forall {T : A} (x : vars T) f g c d cl ps,
     nocall c ->
     (Tagged vars x) \notin hl.mod c ->
     (forall v : T,
@@ -177,9 +196,9 @@ Inductive derivable : psi -> rphi -> rcond -> cmd -> cmd -> rcond -> Prop :=
 
 (* [Strassen] (both directions of the paper's double line).  The set     *)
 (* [M] of memories is universally quantified at the Coq level.           *)
-| H_Strassen : forall (Rl : rel cmem) f c d cl ps,
+| H_Strassen : forall (Rl : rel M) f c d cl ps,
     lossless predT c -> lossless predT d ->
-    (forall M : pred cmem,
+    (forall M : pred M,
        derivable ps cl (fun m : rmem => (1 + f m)%E) c d
          (fun m' : rmem => ((M m'.1)%:R + (~~ rimage Rl M m'.2)%:R)%:E)) ->
     derivable ps cl f c d (fun m' : rmem => ((~~ Rl m'.1 m'.2)%:R)%:E)
@@ -190,7 +209,7 @@ Inductive derivable : psi -> rphi -> rcond -> cmd -> cmd -> rcond -> Prop :=
 (* [le1_pr] -- true of any distribution.  Forcing [lossless] here would make  *)
 (* the rule needlessly weak, the more so as the repo has no lemma deriving    *)
 (* [lossless] for any concrete command.                                      *)
-| H_StrassenInv : forall (Rl : rel cmem) f c d cl ps (M : pred cmem),
+| H_StrassenInv : forall (Rl : rel M) f c d cl ps (M : pred M),
     derivable ps cl f c d (fun m' : rmem => ((~~ Rl m'.1 m'.2)%:R)%:E) ->
     derivable ps cl (fun m : rmem => (1 + f m)%E) c d
       (fun m' : rmem => ((M m'.1)%:R + (~~ rimage Rl M m'.2)%:R)%:E)
@@ -211,7 +230,7 @@ with derivable2 : psi -> rphi -> rcond -> cmd -> cmd -> rcond2 -> Prop :=
 
 (* [Call] and [Call-L] at once: [None] denotes the identity procedure,   *)
 (* i.e. [skip].                                                         *)
-| H_call : forall cl (o1 o2 : option ident) ps,
+| H_call : forall cl (o1 o2 : option Y) ps,
     derivable2 ps cl
       (get_pre (cl o1 o2)) (ocmd o1) (ocmd o2) (get_post (cl o1 o2))
 
@@ -230,7 +249,7 @@ with derivable2 : psi -> rphi -> rcond -> cmd -> cmd -> rcond2 -> Prop :=
 | H_adapt : forall (f1 f2 : rcond) (g1 g2 : rcond2) c d cl ps,
     (forall m0 m, (0 <= g1 m0 m)%E) ->
     derivable2 ps cl f2 c d g2 ->
-    (forall (m : rmem) (mu1 mu2 : Distr cmem),
+    (forall (m : rmem) (mu1 mu2 : Distr M),
        (psharp (g2 m) mu1 mu2 <= f2 m)%E ->
        (psharp (g1 m) mu1 mu2 <= f1 m)%E) ->
     derivable2 ps cl f1 c d g1.
@@ -271,13 +290,13 @@ Qed.
 Lemma erhl_abort f g c : (forall m, (0 <= f m)%E) -> erhl f abort c g.
 Proof.
 move=> hf m.
-exists (dmargin (fun o => (@None cmem, o)) (dstar (ssem_ ps c m.2))).
+exists (dmargin (fun o => (@None M, o)) (dstar (ssem_ ps c m.2))).
 + split; rewrite dmargin_comp /comp.
-  * have -> : (fun o : option cmem => (@None cmem, o).1) = (fun=> @None cmem).
+  * have -> : (fun o : option M => (@None M, o).1) = (fun=> @None M).
     - by [].
     rewrite ssem_abortE dstar_dnull.
     by apply/distr_eqP => o; rewrite dmarginE dletC dweight_dstar mul1r.
-  have -> : (fun o : option cmem => (@None cmem, o).2) = id by [].
+  have -> : (fun o : option M => (@None M, o).2) = id by [].
   by rewrite dmarginE dlet_dunit_id.
 by rewrite espe_rstar_left0; exact: hf.
 Qed.
@@ -290,7 +309,7 @@ by rewrite eexp_dunit /rstar; exact: h.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma erhl_assign {T1 T2 : IhbType.type}
+Lemma erhl_assign {T1 T2 : A}
     (x : vars T1) (e1 : expr T1) (y : vars T2) (e2 : expr T2) f :
   erhl (fun m : rmem => f (m.[~1 x <- `[{e1}] m.1]).[~2 y <- `[{e2}] m.2])
        (x <<- e1) (y <<- e2) f.
@@ -306,7 +325,7 @@ exists (dunit (Some m'.1, Some m'.2)).
 by rewrite eexp_dunit /rstar -surjective_pairing.
 Qed.
 
-Lemma erhl_gassign {T1 T2 : IhbType.type}
+Lemma erhl_gassign {T1 T2 : A}
     (x : vars T1) (e1 : expr T1) (y : vars T2) (e2 : expr T2) f :
   erhl (fun m : rmem => f (m.{x#'1 <- `[{e1}] m.1}).{y#'2 <- `[{e2}] m.2})
        (G x <<- e1) (G y <<- e2) f.
@@ -322,7 +341,7 @@ exists (dunit (Some m'.1, Some m'.2)).
 by rewrite eexp_dunit /rstar -surjective_pairing.
 Qed.
 
-Lemma erhl_sample {T1 T2 : IhbType.type}
+Lemma erhl_sample {T1 T2 : A}
     (x : vars T1) (d1 : dexpr T1) (y : vars T2) (d2 : dexpr T2)
     (nu : rmem -> Distr (T1 * T2)%type) f :
   (forall m, (0 <= f m)%E) ->
@@ -333,7 +352,7 @@ Lemma erhl_sample {T1 T2 : IhbType.type}
 Proof.
 move=> hf hc m.
 pose upd (v : (T1 * T2)%type) := ((m.[~1 x <- v.1]).[~2 y <- v.2] : rmem).
-pose h (o : option (T1 * T2)%type) : (option cmem * option cmem)%type :=
+pose h (o : option (T1 * T2)%type) : (option M * option M)%type :=
   if o is Some v then (Some (upd v).1, Some (upd v).2) else (None, None).
 have hup1 : forall v, (upd v).1 = (m.1.[x <- v.1])%M.
 + by move=> v; rewrite /upd -/(mselect '1 _) !mselect_mset.
@@ -380,7 +399,7 @@ Proof.
 move=> hg H m.
 case: (H m ((minit m.1 bs1, minit m.2 bs2) : rmem)) => nu hnu hle.
 rewrite /bound eqxx in hle.
-exists (dmargin (fun p : option cmem * option cmem =>
+exists (dmargin (fun p : option M * option M =>
           (omap (fun m1' => mret m.1 m1' rs1) p.1,
            omap (fun m2' => mret m.2 m2' rs2) p.2)) nu).
 + have := scoupling_dmargin _ _ _ (fun m1' => mret m.1 m1' rs1)
@@ -414,31 +433,31 @@ Proof.
 move=> hg H1 H2 m.
 have hge : forall p, (0 <= rstar g p)%E by move=> p; exact: ge0_rstar.
 case: (erhlw _ _ _ _ m H1) => nu hnu hle.
-pose k (p : option cmem * option cmem) : Distr (option cmem * option cmem)%type :=
+pose k (p : option M * option M) : Distr (option M * option M)%type :=
   match p with
   | (Some a, Some b) => s2val (erhlw _ _ _ _ (a, b) H2)
-  | (Some a, None)   => dmargin (fun o => (o, @None cmem)) (dstar (ssem_ ps c2 a))
-  | (None, Some b)   => dmargin (fun o => (@None cmem, o)) (dstar (ssem_ ps d2 b))
-  | (None, None)     => dunit (@None cmem, @None cmem)
+  | (Some a, None)   => dmargin (fun o => (o, @None M)) (dstar (ssem_ ps c2 a))
+  | (None, Some b)   => dmargin (fun o => (@None M, o)) (dstar (ssem_ ps d2 b))
+  | (None, None)     => dunit (@None M, @None M)
   end.
 have hk1 : forall p, dfst (k p) = ostar (fun a => ssem_ ps c2 a) p.1.
 + case=> [[a|] [b|]] /=.
   * by have [h1' h2'] := s2valP (erhlw _ _ _ _ (a, b) H2); exact: h1'.
   * rewrite dmargin_comp /comp.
-    have -> : (fun o : option cmem => (o, @None cmem).1) = id by [].
+    have -> : (fun o : option M => (o, @None M).1) = id by [].
     by rewrite dmarginE dlet_dunit_id.
   * rewrite dmargin_comp /comp.
-    have -> : (fun o : option cmem => (@None cmem, o).1) = (fun=> @None cmem) by [].
+    have -> : (fun o : option M => (@None M, o).1) = (fun=> @None M) by [].
     by apply/distr_eqP => o; rewrite dmarginE dletC dweight_dstar mul1r.
   by rewrite dmargin_dunit.
 have hk2 : forall p, dsnd (k p) = ostar (fun b => ssem_ ps d2 b) p.2.
 + case=> [[a|] [b|]] /=.
   * by have [h1' h2'] := s2valP (erhlw _ _ _ _ (a, b) H2); exact: h2'.
   * rewrite dmargin_comp /comp.
-    have -> : (fun o : option cmem => (o, @None cmem).2) = (fun=> @None cmem) by [].
+    have -> : (fun o : option M => (o, @None M).2) = (fun=> @None M) by [].
     by apply/distr_eqP => o; rewrite dmarginE dletC dweight_dstar mul1r.
   * rewrite dmargin_comp /comp.
-    have -> : (fun o : option cmem => (@None cmem, o).2) = id by [].
+    have -> : (fun o : option M => (@None M, o).2) = id by [].
     by rewrite dmarginE dlet_dunit_id.
   by rewrite dmargin_dunit.
 exists (\dlet_(p <- nu) k p).
@@ -503,9 +522,9 @@ Proof.
 move=> hg h m.
 exists (dmargin (fun o => (o, Some m.2)) (dstar (ssem_ ps c m.1))).
 + split; rewrite dmargin_comp /comp.
-  * have -> : (fun o : option cmem => (o, Some m.2).1) = id by [].
+  * have -> : (fun o : option M => (o, Some m.2).1) = id by [].
     by rewrite dmarginE dlet_dunit_id.
-  have -> : (fun o : option cmem => (o, Some m.2).2) = (fun=> Some m.2) by [].
+  have -> : (fun o : option M => (o, Some m.2).2) = (fun=> Some m.2) by [].
   rewrite ssemE dstar_dunit.
   by apply/distr_eqP => o; rewrite dmarginE dletC dweight_dstar mul1r.
 have -> : espe (dmargin (fun o => (o, Some m.2)) (dstar (ssem_ ps c m.1)))
@@ -530,7 +549,7 @@ Proof.
 move=> hg h m2 m1; case: (h (m1, m2)) => nu hnu hle.
 rewrite /= ssemE in hnu.
 have hs := scoupling_supp2 _ _ _ hnu.
-have hH : forall o : option cmem,
+have hH : forall o : option M,
   (0 <= (if o is Some a then g (a, m2) else 0%E))%E.
 + by case=> [a|] //=; exact: hg.
 apply: (le_trans _ hle).
@@ -542,7 +561,7 @@ rewrite -(eexp_dmargin nu fst _ hH).
 by case: hnu => h1 _; rewrite h1 (espe_dstar _ _ hH).
 Qed.
 
-Lemma erhl_assignL {T : IhbType.type} (x : vars T) (e : expr T) f :
+Lemma erhl_assignL {T : A} (x : vars T) (e : expr T) f :
   erhl (fun m : rmem => f m.[~1 x <- `[{e}] m.1]) (x <<- e) skip f.
 Proof.
 move=> m; set m' := (m.[~1 x <- `[{e}] m.1] : rmem).
@@ -555,7 +574,7 @@ exists (dunit (Some m'.1, Some m'.2)).
 by rewrite eexp_dunit /rstar -surjective_pairing.
 Qed.
 
-Lemma erhl_gassignL {T : IhbType.type} (x : vars T) (e : expr T) f :
+Lemma erhl_gassignL {T : A} (x : vars T) (e : expr T) f :
   erhl (fun m : rmem => f m.{x#'1 <- `[{e}] m.1}) (G x <<- e) skip f.
 Proof.
 move=> m; set m' := (m.{x#'1 <- `[{e}] m.1} : rmem).
@@ -568,7 +587,7 @@ exists (dunit (Some m'.1, Some m'.2)).
 by rewrite eexp_dunit /rstar -surjective_pairing.
 Qed.
 
-Lemma erhl_sampleL {T : IhbType.type} (x : vars T) (d : dexpr T) f :
+Lemma erhl_sampleL {T : A} (x : vars T) (d : dexpr T) f :
   (forall m, (0 <= f m)%E) ->
   erhl (fun m : rmem => espe (\dlet_(v <- `[{d}] m.1) dunit m.[~1 x <- v]) f)
        (x <$- d) skip f.
@@ -594,7 +613,7 @@ Proof.
 move=> hg H m.
 case: (H m ((minit m.1 bs, m.2) : rmem)) => nu hnu hle.
 rewrite /bound eqxx in hle.
-exists (dmargin (fun p : option cmem * option cmem =>
+exists (dmargin (fun p : option M * option M =>
           (omap (fun m1' => mret m.1 m1' rs) p.1, omap id p.2)) nu).
 + have := scoupling_dmargin _ _ _ (fun m1' => mret m.1 m1' rs) id hnu.
   rewrite ssem_blockE dmarginE.
@@ -623,7 +642,7 @@ Lemma erhl_whileL f (e : bexpr) c :
 Proof.
 move=> hf h; apply: erhl_oneL => [m|m2].
 + by rewrite /ehl_stmt.lift; case: ifP => // _; exact: leey.
-have -> : (fun m1' : cmem => rlift `[{ ~~ e#'1 }] f (m1', m2))
+have -> : (fun m1' : M => rlift `[{ ~~ e#'1 }] f (m1', m2))
         = ehl_stmt.lift (fun m1' => ~~ `[{e}] m1') (fun m1 => f (m1, m2)).
 + by apply/funext => m1'; rewrite /ehl_stmt.lift !esemE.
 apply: ehl.ehl_while; first by move=> m1; exact: hf.
@@ -689,7 +708,7 @@ Qed.
 Lemma erhl_conseq f f' g g' c d :
   (forall m, (0 <= g m)%E) ->
   erhl f' c d g' ->
-  (forall (m : rmem) (mu1 mu2 : Distr cmem),
+  (forall (m : rmem) (mu1 mu2 : Distr M),
      (psharp g' mu1 mu2 <= f' m)%E -> (psharp g mu1 mu2 <= f m)%E) ->
   erhl f c d g.
 Proof.
@@ -700,7 +719,7 @@ Qed.
 Lemma kerhl_conseq f1 f2 (g1 g2 : rcond2) c d :
   (forall m0 m, (0 <= g1 m0 m)%E) ->
   kerhl f2 c d g2 ->
-  (forall (m : rmem) (mu1 mu2 : Distr cmem),
+  (forall (m : rmem) (mu1 mu2 : Distr M),
      (psharp (g2 m) mu1 mu2 <= f2 m)%E -> (psharp (g1 m) mu1 mu2 <= f1 m)%E) ->
   kerhl f1 c d g1.
 Proof.
@@ -712,7 +731,7 @@ Qed.
 (* of [x<1>]; since [x] is not modified by [c], [hl.mod_spec] says every    *)
 (* reachable memory still carries that value, and [mset_get] then makes the *)
 (* substitution in the post-expectation vacuous.                            *)
-Lemma erhl_nmodL {T : IhbType.type} (x : vars T) f g c d :
+Lemma erhl_nmodL {T : A} (x : vars T) f g c d :
   nocall c ->
   (Tagged vars x) \notin hl.mod c ->
   (forall v : T,
@@ -745,9 +764,9 @@ have hax : ((a).[x])%M = ((m.1).[x])%M.
 by rewrite -hax rmset_get1.
 Qed.
 
-Lemma erhl_strassen (Rl : rel cmem) f c d :
+Lemma erhl_strassen (Rl : rel M) f c d :
   lossless predT c -> lossless predT d ->
-  (forall M : pred cmem,
+  (forall M : pred M,
      erhl (fun m : rmem => (1 + f m)%E) c d
           (fun m' : rmem => ((M m'.1)%:R + (~~ rimage Rl M m'.2)%:R)%:E)) ->
   erhl f c d (fun m' : rmem => ((~~ Rl m'.1 m'.2)%:R)%:E).
@@ -755,53 +774,53 @@ Proof.
 move=> hc hd h m.
 have w1 : dweight (ssem_ ps c m.1) = 1 by apply: hc; rewrite inE.
 have w2 : dweight (ssem_ ps d m.2) = 1 by apply: hd; rewrite inE.
-pose T (P : rmem -> bool) : pred (option cmem * option cmem)%type :=
+pose T (P : rmem -> bool) : pred (option M * option M)%type :=
   [pred p | if p is (Some a, Some b) then P (a, b) else false].
 (* The hypothesis, read as a statement about the two marginals.  This is    *)
 (* exactly the computation of [erhl_strassenInv] run backwards; the extra   *)
 (* ingredient is [scoupling_full_supp], which is where losslessness enters: *)
 (* it lets [T _] be replaced by a predicate depending on one component      *)
 (* only, so that [pr_dmargin] and [pr_dstar] can push it to the marginal.   *)
-have hraw : forall M : pred cmem,
+have hraw : forall M : pred M,
     ((\P_[ssem_ ps c m.1] M)%:E
        + (1 - \P_[ssem_ ps d m.2] (rimage Rl M))%:E <= 1 + f m)%E.
-+ move=> M; case: (h M m) => nu hnu hle.
++ move=> p; case: (h p m) => nu hnu hle.
   have hT : forall P : rmem -> bool,
       espe nu (rstar (fun m' : rmem => ((P m')%:R)%:E)) = (\P_[nu] (T P))%:E.
   - move=> P; rewrite -(espe_indic nu (T P)).
     by apply: eexp_eq; case=> [[a|] [b|]]; rewrite /rstar.
   have hsplit :
     espe nu (rstar (fun m' : rmem =>
-               ((M m'.1)%:R + (~~ rimage Rl M m'.2)%:R)%:E))
-    = (espe nu (rstar (fun m' : rmem => ((M m'.1)%:R)%:E))
-     + espe nu (rstar (fun m' : rmem => ((~~ rimage Rl M m'.2)%:R)%:E)))%E.
+               ((p m'.1)%:R + (~~ rimage Rl p m'.2)%:R)%:E))
+    = (espe nu (rstar (fun m' : rmem => ((p m'.1)%:R)%:E))
+     + espe nu (rstar (fun m' : rmem => ((~~ rimage Rl p m'.2)%:R)%:E)))%E.
   - rewrite -espe_rstarD.
     * by move=> ?; rewrite lee_fin ler0n.
     * by move=> ?; rewrite lee_fin ler0n.
-    by apply: eexp_eq => p; rewrite /rstar; case: p => -[a|] [b|].
-  have e1 : \P_[nu] (T (fun m' => M m'.1)) = \P_[ssem_ ps c m.1] M.
-  - have -> : \P_[nu] (T (fun m' => M m'.1))
+    by apply: eexp_eq => p'; rewrite /rstar; case: p' => -[a|] [b|].
+  have e1 : \P_[nu] (T (fun m' => p m'.1)) = \P_[ssem_ ps c m.1] p.
+  - have -> : \P_[nu] (T (fun m' => p m'.1))
             = \P_[nu] [pred x | fst x \in
-                        [pred o | if o is Some a then M a else false]].
-    * apply: eq_in_pr => p hp; move: (scoupling_full_supp _ _ _ w1 w2 hnu p hp).
-      by case: p hp => [[a|] [b|]] //= _ _; rewrite !inE.
+                        [pred o | if o is Some a then p a else false]].
+    * apply: eq_in_pr => p' hp; move: (scoupling_full_supp _ _ _ w1 w2 hnu p' hp).
+      by case: p' hp => [[a|] [b|]] //= _ _; rewrite !inE.
     by rewrite -(pr_dmargin _ fst) (proj1 hnu) pr_dstar.
-  have e2 : \P_[nu] (T (fun m' => ~~ rimage Rl M m'.2))
-          = 1 - \P_[ssem_ ps d m.2] (rimage Rl M).
-  - have -> : \P_[nu] (T (fun m' => ~~ rimage Rl M m'.2))
+  have e2 : \P_[nu] (T (fun m' => ~~ rimage Rl p m'.2))
+          = 1 - \P_[ssem_ ps d m.2] (rimage Rl p).
+  - have -> : \P_[nu] (T (fun m' => ~~ rimage Rl p m'.2))
             = \P_[nu] [pred x | snd x \in
                         [pred o | if o is Some b
-                                  then ~~ rimage Rl M b else false]].
-    * apply: eq_in_pr => p hp; move: (scoupling_full_supp _ _ _ w1 w2 hnu p hp).
-      by case: p hp => [[a|] [b|]] //= _ _; rewrite !inE.
+                                  then ~~ rimage Rl p b else false]].
+    * apply: eq_in_pr => p' hp; move: (scoupling_full_supp _ _ _ w1 w2 hnu p' hp).
+      by case: p' hp => [[a|] [b|]] //= _ _; rewrite !inE.
     rewrite -(pr_dmargin _ snd) (proj2 hnu).
-    have -> : [pred o | if o is Some b then ~~ rimage Rl M b else false]
-            = [pred o : option cmem | if o is Some b
-                                      then (predC (rimage Rl M)) b else false]
+    have -> : [pred o | if o is Some b then ~~ rimage Rl p b else false]
+            = [pred o : option M | if o is Some b
+                                      then (predC (rimage Rl p)) b else false]
       by [].
     by rewrite pr_dstar pr_predC w2.
   by move: hle; rewrite hsplit !hT e1 e2.
-(* [0 <= f m]: instantiate at [M := pred0], where [rimage] is empty. *)
+(* [0 <= f m]: instantiate at [p := pred0], where [rimage] is empty. *)
 have hz0 : \P_[ssem_ ps d m.2] (rimage Rl pred0) = 0.
 + have -> : \P_[ssem_ ps d m.2] (rimage Rl pred0)
           = \P_[ssem_ ps d m.2] pred0.
@@ -811,7 +830,7 @@ have hf0 : (0 <= f m)%E.
 + have h0 := hraw pred0.
   rewrite pr_pred0 hz0 subr0 in h0.
   by move: h0; rewrite add0e -{1}(adde0 1%:E) leeD2lE.
-have arith : forall a b e : pwhile.R, a + (1 - b) <= 1 + e -> a <= b + e.
+have arith : forall a b e : R, a + (1 - b) <= 1 + e -> a <= b + e.
 + move=> a b e H; rewrite addrC -lerBlDr.
   by move: H; rewrite addrA [a + 1]addrC -addrA lerD2l.
 (* An infinite pre-expectation makes the goal vacuous. *)
@@ -819,27 +838,27 @@ case: (eqVneq (f m) (+oo)%E) => [hoo|hnoo].
 + have [nu hnu] := exists_scoupling (ssem_ ps c m.1) (ssem_ ps d m.2).
   by exists nu => //; rewrite hoo leey.
 have hfn : f m \is a fin_num by rewrite ge0_fin_numE // ltey.
-have [delta hdE] : exists delta : pwhile.R, f m = delta%:E.
+have [delta hdE] : exists delta : R, f m = delta%:E.
 + by exists (fine (f m)); rewrite fineK.
 have hd0 : 0 <= delta by rewrite -lee_fin -hdE.
-have hM : forall M : pred cmem,
-    \P_[ssem_ ps c m.1] M <= \P_[ssem_ ps d m.2] (rimage Rl M) + delta.
-+ move=> M; apply: arith.
-  by have := hraw M; rewrite hdE -!EFinD lee_fin.
+have hM : forall p : pred M,
+    \P_[ssem_ ps c m.1] p <= \P_[ssem_ ps d m.2] (rimage Rl p) + delta.
++ move=> p; apply: arith.
+  by have := hraw p; rewrite hdE -!EFinD lee_fin.
 have [nu hnu hle] :=
   strassen_deficiency (ssem_ ps c m.1) (ssem_ ps d m.2) Rl delta w1 w2 hd0 hM.
 by exists nu => //; rewrite hdE.
 Qed.
 
 (* No [lossless] hypothesis: see the comment on [H_StrassenInv]. *)
-Lemma erhl_strassenInv (Rl : rel cmem) f c d (M : pred cmem) :
+Lemma erhl_strassenInv (Rl : rel M) f c d (p : pred M) :
   erhl f c d (fun m' : rmem => ((~~ Rl m'.1 m'.2)%:R)%:E) ->
   erhl (fun m : rmem => (1 + f m)%E) c d
-       (fun m' : rmem => ((M m'.1)%:R + (~~ rimage Rl M m'.2)%:R)%:E).
+       (fun m' : rmem => ((p m'.1)%:R + (~~ rimage Rl p m'.2)%:R)%:E).
 Proof.
 move=> h m; case: (h m) => nu hnu hle; exists nu => //.
 (* Everything happens inside [nu]; no marginal, hence no AST, is needed. *)
-pose T (P : rmem -> bool) : pred (option cmem * option cmem)%type :=
+pose T (P : rmem -> bool) : pred (option M * option M)%type :=
   [pred p | if p is (Some a, Some b) then P (a, b) else false].
 have hT : forall P : rmem -> bool,
   espe nu (rstar (fun m' : rmem => ((P m')%:R)%:E)) = (\P_[nu] (T P))%:E.
@@ -847,30 +866,30 @@ have hT : forall P : rmem -> bool,
   by apply: eexp_eq; case=> [[a|] [b|]]; rewrite /rstar.
 have hsplit :
   espe nu (rstar (fun m' : rmem =>
-             ((M m'.1)%:R + (~~ rimage Rl M m'.2)%:R)%:E))
-  = (espe nu (rstar (fun m' : rmem => ((M m'.1)%:R)%:E))
-   + espe nu (rstar (fun m' : rmem => ((~~ rimage Rl M m'.2)%:R)%:E)))%E.
+             ((p m'.1)%:R + (~~ rimage Rl p m'.2)%:R)%:E))
+  = (espe nu (rstar (fun m' : rmem => ((p m'.1)%:R)%:E))
+   + espe nu (rstar (fun m' : rmem => ((~~ rimage Rl p m'.2)%:R)%:E)))%E.
 + rewrite -espe_rstarD.
   * by move=> ?; rewrite lee_fin ler0n.
   * by move=> ?; rewrite lee_fin ler0n.
-  by apply: eexp_eq => p; rewrite /rstar; case: p => -[a|] [b|].
+  by apply: eexp_eq => p'; rewrite /rstar; case: p' => -[a|] [b|].
 (* P[T1] + P[T2] = P[T1 n T2] + P[T1 u T2] <= P[Tbad] + 1, and P[Tbad] is *)
 (* exactly the hypothesis.  No marginal is taken, hence no AST is needed. *)
-have hbad : \P_[nu] [predI T (fun m' => M m'.1)
-                       & T (fun m' => ~~ rimage Rl M m'.2)]
+have hbad : \P_[nu] [predI T (fun m' => p m'.1)
+                       & T (fun m' => ~~ rimage Rl p m'.2)]
          <= \P_[nu] (T (fun m' => ~~ Rl m'.1 m'.2)).
 + apply: subset_pr; case=> [[a|] [b|]] //=; rewrite !inE /= => /andP[hM hIm].
   apply/negP => hR; move/negP: hIm; apply.
   by apply/asboolP; exists a; rewrite hM hR.
-have hsum : \P_[nu] (T (fun m' => M m'.1))
-          + \P_[nu] (T (fun m' => ~~ rimage Rl M m'.2))
-          = \P_[nu] [predI T (fun m' => M m'.1)
-                        & T (fun m' => ~~ rimage Rl M m'.2)]
-          + \P_[nu] [predU T (fun m' => M m'.1)
-                        & T (fun m' => ~~ rimage Rl M m'.2)].
+have hsum : \P_[nu] (T (fun m' => p m'.1))
+          + \P_[nu] (T (fun m' => ~~ rimage Rl p m'.2))
+          = \P_[nu] [predI T (fun m' => p m'.1)
+                        & T (fun m' => ~~ rimage Rl p m'.2)]
+          + \P_[nu] [predU T (fun m' => p m'.1)
+                        & T (fun m' => ~~ rimage Rl p m'.2)].
 + by rewrite pr_and subrK.
-have hreal : \P_[nu] (T (fun m' => M m'.1))
-           + \P_[nu] (T (fun m' => ~~ rimage Rl M m'.2))
+have hreal : \P_[nu] (T (fun m' => p m'.1))
+           + \P_[nu] (T (fun m' => ~~ rimage Rl p m'.2))
           <= 1 + \P_[nu] (T (fun m' => ~~ Rl m'.1 m'.2)).
 + by rewrite hsum addrC; apply: lerD; [exact: le1_pr | exact: hbad].
 have hbadE : ((\P_[nu] (T (fun m' : rmem => ~~ Rl m'.1 m'.2)))%:E <= f m)%E.
@@ -913,15 +932,15 @@ have key : forall n o1 o2,
          (ocmd o1) (ocmd o2) (get_post (cl' o1 o2)).
 + elim=> [|n IH] q1 q2 s.
   * case: q1 => [p1|]; case: q2 => [p2|].
-    - exists (dunit (@None cmem, @None cmem)).
+    - exists (dunit (@None M, @None M)).
       + by split; rewrite dmargin_dunit ssem_false_ps dstar_dnull.
       by rewrite eexp_dunit /rstar; exact: hpre.
-    - exists (dunit (@None cmem, Some s.2)).
+    - exists (dunit (@None M, Some s.2)).
       + split; rewrite dmargin_dunit /=.
         * by rewrite ssem_false_ps dstar_dnull.
         by rewrite ssemE dstar_dunit.
       by rewrite eexp_dunit /rstar; exact: hpre.
-    - exists (dunit (Some s.1, @None cmem)).
+    - exists (dunit (Some s.1, @None M)).
       + split; rewrite dmargin_dunit /=.
         * by rewrite ssemE dstar_dunit.
         by rewrite ssem_false_ps dstar_dnull.
@@ -1029,9 +1048,9 @@ apply: derivable_mut.
      exact: (erhl_nmodL _ x _ _ _ _ hnc hmod (fun v => IH v hv)).
 - (* H_Strassen *)
   by move=> Rl f c d cl ps hlc hld _ IH hv;
-     apply: erhl_strassen => // M; exact: IH.
+     apply: erhl_strassen => // ?; exact: IH.
 - (* H_StrassenInv *)
-  by move=> Rl f c d cl ps M _ IH hv; apply: erhl_strassenInv; exact: IH.
+  by move=> Rl f c d cl ps ? _ IH hv; apply: erhl_strassenInv; exact: IH.
 - (* H_krhl *) by move=> f g c d cl ps _ IH hv; apply/erhl_kerhl; exact: IH.
 - (* H_rhl *)
   by move=> f g c d cl ps _ IH hv; apply/kerhl_erhl => s0; exact: IH.
@@ -1065,9 +1084,6 @@ Qed.
 
 End Sound.
 
-#[export] Hint Resolve erhl_skip erhl_abort erhl_assign erhl_assignL
-  erhl_gassign erhl_gassignL erhl_sample erhl_sampleL : erhl.
-
 (* ==================================================================== *)
 (* Derived right-sided rules, and the embedding of pRHL (Lemma 5.2).     *)
 (* ==================================================================== *)
@@ -1076,7 +1092,7 @@ Context (ps : psi).
 
 Notation erhl := (erhl_ ps).
 
-Lemma erhl_assignR {T : IhbType.type} (x : vars T) (e : expr T) f :
+Lemma erhl_assignR {T : A} (x : vars T) (e : expr T) f :
   erhl (fun m : rmem => f m.[~2 x <- `[{e}] m.2]) skip (x <<- e) f.
 Proof.
 move=> m; set m' := (m.[~2 x <- `[{e}] m.2] : rmem).
@@ -1089,7 +1105,7 @@ exists (dunit (Some m'.1, Some m'.2)).
 by rewrite eexp_dunit /rstar -surjective_pairing.
 Qed.
 
-Lemma erhl_gassignR {T : IhbType.type} (x : vars T) (e : expr T) f :
+Lemma erhl_gassignR {T : A} (x : vars T) (e : expr T) f :
   erhl (fun m : rmem => f m.{x#'2 <- `[{e}] m.2}) skip (G x <<- e) f.
 Proof.
 move=> m; set m' := (m.{x#'2 <- `[{e}] m.2} : rmem).
@@ -1102,7 +1118,7 @@ exists (dunit (Some m'.1, Some m'.2)).
 by rewrite eexp_dunit /rstar -surjective_pairing.
 Qed.
 
-Lemma erhl_sampleR {T : IhbType.type} (x : vars T) (d : dexpr T) f :
+Lemma erhl_sampleR {T : A} (x : vars T) (d : dexpr T) f :
   (forall m, (0 <= f m)%E) ->
   erhl (fun m : rmem => espe (\dlet_(v <- `[{d}] m.2) dunit m.[~2 x <- v]) f)
        skip (x <$- d) f.
@@ -1138,7 +1154,7 @@ Lemma erhl_whileR f (e : bexpr) d :
 Proof.
 move=> hf h; apply: (erhl_oneR ps) => [m|m1].
 + by rewrite /ehl_stmt.lift; case: ifP => // _; exact: leey.
-have -> : (fun m2' : cmem => rlift `[{ ~~ e#'2 }] f (m1, m2'))
+have -> : (fun m2' : M => rlift `[{ ~~ e#'2 }] f (m1, m2'))
         = ehl_stmt.lift (fun m2' => ~~ `[{e}] m2') (fun m2 => f (m1, m2)).
 + by apply/funext => m2'; rewrite /ehl_stmt.lift !esemE.
 apply: ehl.ehl_while; first by move=> m2; exact: hf.
@@ -1146,7 +1162,7 @@ have hb := erhl_oneRW ps _ _ _ hf h m1.
 by move=> m2; have := hb m2; rewrite /ehl_stmt.lift !esemE.
 Qed.
 
-Lemma erhl_nmodR {T : IhbType.type} (x : vars T) f g c d :
+Lemma erhl_nmodR {T : A} (x : vars T) f g c d :
   nocall d ->
   (Tagged vars x) \notin hl.mod d ->
   (forall v : T,
@@ -1209,3 +1225,5 @@ by [].
 Qed.
 
 End Derived.
+
+End erhl.

@@ -252,17 +252,15 @@ End SynInject.
 Section Lift.
 Variable (R : realType) (A : codeType) (X : countType) (M: memType A X).
 
-Notation rident := (X * side)%type.
-
 Definition irexpr s :=
   (@iexpr A _ _ M (rmem A X M) (fun x : X => (x, s)) (fun m => (m#s)%M)).
 
 Definition ircmd s :=
   (@icmd R A _ _ X M (rmem A X M) (fun x : X => (x, s)) (fun m => (m#s)%M)).
+
 End Lift.
 
 (* -------------------------------------------------------------------- *)
-Notation rident ident := (ident * side)%type.
 
 Notation irvar s := (@ivar _ _ _ (fun x => (x, s))) (only parsing).
 

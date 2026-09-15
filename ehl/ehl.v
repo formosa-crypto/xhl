@@ -21,7 +21,6 @@ Local Open Scope ereal_dual_scope.
 #[local] Open Scope ring_scope.
 
 (* -------------------------------------------------------------------- *)
-
 Section ehl.
 Context {R : realType} {A : codeType} {X Y : countType} {M : memType A X}.
 
