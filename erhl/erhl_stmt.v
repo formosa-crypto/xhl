@@ -299,9 +299,6 @@ Definition slift (nu : Distr (A * B)%type) : Distr (option A * option B)%type :=
 Lemma scoupling_slift (d1 : Distr A) (d2 : Distr B) nu :
   iscoupling d1 d2 nu -> scoupling d1 d2 (slift nu).
 Proof.
-(* [eq_dmargin] (rsum.v) changes the mapped function from a pointwise      *)
-(* equality, so no function equality -- hence no extensionality -- is       *)
-(* needed here.                                                            *)
 have e1 : (fun o : option (A * B)%type =>
     fst (if o is Some p then (Some p.1, Some p.2) else (None, None)))
   =1 omap fst by case.
@@ -438,21 +435,25 @@ Lemma mselect_msetg {T : IhbType.type} s s' (m : rmem) (x : vars T) (v : T) :
 Proof. by case: s s' x => [] [] []. Qed.
 
 (* Updating a variable with its own current value is the identity.         *)
-(*                                                                        *)
+(*                                                                         *)
 (* NOT derivable from [isMemType], whose only laws about [mset] are        *)
 (* [mget]-observations: a [memType] could carry a timestamp bumped by      *)
 (* every [mset] and satisfy all of them.  For the concrete [coremem] it    *)
 (* holds, but only via functional extensionality (equality of a record of  *)
 (* dependent functions).  Proved here rather than in pwhile.v so the core  *)
 (* files stay untouched.  Only [erhl_nmodL] / [erhl_nmodR] use it.         *)
-(*                                                                        *)
+(*                                                                         *)
 (* This is the ONLY explicit appeal to extensionality left in this file,   *)
 (* and it is irreducible: the conclusion *is* the function equality, so    *)
 (* there is no pointwise ([=1]) congruence to route it through -- every    *)
 (* consumer needs [f] as a whole.  Elsewhere in the file, changing the     *)
 (* function under a [dmargin] goes through [rsum.eq_dmargin], and changing *)
-(* a sequence under [-->] / [limn] goes through an image-filter equality   *)
-(* ([near_eq_cvg_eq], classical/filter.v).                                *)
+(* a sequence under [-->] / [limn] goes through an image-filter equality    *)
+(* ([near_eq_cvg_eq], classical/filter.v).                                 *)
+
+(* Probably derivable in the param alpha branch                            *)
+(* If not, mset_get should be a propety of the mixin IsMemtype, and proven for a concrete memory *)
+(* Would avoid this proof and the use of functional extensionality  *)
 Lemma hupd_id (F : IhbType.type -> Type)
     (f : forall U : IhbType.type, ident -> F U) (T : IhbType.type) (x : ident) :
   @hupd F f T x (f T x) = f.
@@ -466,8 +467,8 @@ Qed.
 Lemma mset_get {T : IhbType.type} (m : cmem) (x : vars T) :
   (m.[x <- m.[x]])%M = m.
 Proof.
-by case: m => m1 m2;
-   rewrite /mset /mget /cmem /mset_ /mget_ /= /coremem_set /= hupd_id.
+ case: m => m1 m2;
+   rewrite /mset /mget /cmem /mset_ /mget_ /= /coremem_set /=.  hupd_id.
 Qed.
 
 (* One-sided updates of a relational memory, in explicit pair form.       *)
@@ -661,31 +662,6 @@ have hAb : (0 <= A (a, b))%E by exact: hA.
 have hBb : (0 <= B (a, b))%E by exact: hB.
 by rewrite (ge0_muleDl _ hAb hBb).
 Qed.
-
-(* ==================================================================== *)
-(*                     THE TRUSTED BASE -- EMPTY                         *)
-(*                                                                      *)
-(* This development assumes nothing of its own.  Three axioms used to    *)
-(* sit here; all three are now proved:                                   *)
-(*                                                                      *)
-(*   . Fatou's lemma for [esum]/[espe], as [misc.espe_fatou], on top of  *)
-(*     [exchange_esum_ereal_sup] (analysis/esum.v) and [limn_einf_supE]  *)
-(*     (misc.v);                                                        *)
-(*                                                                      *)
-(*   . sequential compactness of [Distr T], as [rsum.dcompact], from     *)
-(*     Cantor's diagonal ([misc.diag_cvg]) plus countability of the      *)
-(*     support of a summable family (experimental_reals/realsum.v);      *)
-(*                                                                      *)
-(*   . Strassen's theorem with deficiency, as                            *)
-(*     [strassen.deficiency.strassen_coupling] -- see [strassen_deficiency] *)
-(*     just below.  Discharging it also removed [strassen.v]'s           *)
-(*     [Axiom DCT] (now [rsum.rsum_dct], from [misc.esum_fatou]) and     *)
-(*     [elift.v]'s [Parameter Ω] with its four axioms (Ω is now a        *)
-(*     section variable, instantiated with [expR] in deficiency.v).      *)
-(*                                                                      *)
-(* [Print Assumptions soundness] reports exactly mathcomp-classical's    *)
-(* usual three, plus the development's own [pwhile.R] / [pwhile.ident].  *)
-(* ==================================================================== *)
 
 (* ---------------------------------------------------------------------- *)
 (* Strassen's theorem with deficiency (paper Prop. 3.2), in                *)
@@ -939,9 +915,6 @@ exists omega => //.
 by apply: espe_fatou => p; apply: ge0_rstar.
 Qed.
 
-(* --------------------------------------------------------------------- *)
-(* The infimum over star-couplings is ATTAINED.                            *)
-(*                                                                       *)
 (* The non-negativity hypothesis is NOT cosmetic: [esum] on a signed      *)
 (* family is a Jordan difference [pos_esum g^+ - pos_esum g^-], and for a *)
 (* [g] unbounded below the infimum need not be attained (nor even be      *)
