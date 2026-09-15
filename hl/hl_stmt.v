@@ -4,7 +4,7 @@ From mathcomp Require Import boot order algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals.
 From mathcomp.analysis  Require Import counting_distr.
-From xhl.pwhile Require Import notations inhabited pwhile psemantic passn range.
+From xhl.pwhile Require Import notations inhabited mem pwhile psemantic passn range.
 
 Set   Implicit Arguments.
 Unset Strict Implicit.

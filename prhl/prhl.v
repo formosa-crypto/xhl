@@ -4,7 +4,7 @@ From mathcomp           Require Import boot order algebra.
 From mathcomp.reals     Require Import reals.
 From mathcomp.classical Require Import boolp.
 From mathcomp.analysis Require Import counting_distr.
-From xhl.pwhile Require Import notations inhabited pwhile psemantic passn range.
+From xhl.pwhile Require Import notations inhabited mem pwhile psemantic passn range.
 
 Set   Implicit Arguments.
 Unset Strict Implicit.
@@ -20,9 +20,8 @@ Local Open Scope mem_scope.
 
 (* -------------------------------------------------------------------- *)
 Section Couplings.
-(* [Rl], not [R]: this file uses [R] for intermediate assertions. *)
-Context {Rl : realType}.
-Local Notation Distr T := {distr T%type / Rl}.
+Context {R : realType}.
+Local Notation Distr T := {distr T%type / R}.
 Context {A B : choiceType} (μ1 : Distr A) (μ2 : Distr B).
 
 Definition iscoupling (ν : Distr (A * B)) :=
@@ -31,8 +30,8 @@ End Couplings.
 
 (* -------------------------------------------------------------------- *)
 Section CouplingsTheory.
-Context {Rl : realType}.
-Local Notation Distr T := {distr T%type / Rl}.
+Context {R : realType}.
+Local Notation Distr T := {distr T%type / R}.
 Context {A B C D : choiceType}.
 
 Lemma iscoupling_eq (μ1 μ2 μ1' μ2' : Distr _) (ν : Distr (A * B)) :
@@ -43,11 +42,11 @@ Lemma iscoupling_prod (μ : Distr (A * B)) :
   iscoupling (dfst μ) (dsnd μ) μ.
 Proof. by []. Qed.
 
-Lemma iscoupling_dnull : @iscoupling Rl A B dnull dnull dnull.
+Lemma iscoupling_dnull : @iscoupling R A B dnull dnull dnull.
 Proof. by split; rewrite dmarginE dlet_null. Qed.
 
 Lemma iscoupling_dunit a b :
-  @iscoupling Rl A B (dunit a) (dunit b) (dunit (a, b)).
+  @iscoupling R A B (dunit a) (dunit b) (dunit (a, b)).
 Proof. by split; rewrite dmarginE dlet_unit. Qed.
 
 Lemma iscoupling_swap (μ1 μ2 : Distr A) (ν : Distr (A * A)) :

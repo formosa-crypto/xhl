@@ -5,7 +5,7 @@ From mathcomp.algebra   Require Import algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals.
 From mathcomp.analysis  Require Import counting_distr.
-From xhl.pwhile Require Import notations inhabited pwhile psemantic passn range.
+From xhl.pwhile Require Import notations inhabited mem pwhile psemantic passn range.
 From xhl.hl     Require Import hl_stmt.
 
 Set   Implicit Arguments.
@@ -430,35 +430,33 @@ End Complete.
 End HL.
 
 Section Misc.
-(* [Rl], not [R]: this file uses [R] for intermediate assertions. *)
-Context {Rl : realType} {A : codeType} {ident : countType}.
+Context {Rl : realType} {A : codeType} {X Y : countType} {mem : memType A X}.
 
 Local Notation Distr T := {distr T%type / Rl}.
-Local Notation cmem := (cmem A ident).
-Local Notation dmem := (Distr cmem).
-Local Notation vars := (vars_ ident).
-Local Notation expr := (@expr_ A ident cmem).
+Local Notation cmem := (mem A X).
+Local Notation dmem := (Distr mem).
+Local Notation vars := (vars_ X).
+Local Notation expr := (@expr_ A X mem).
 
-Notation cmd := (@cmd Rl A ident ident cmem).
+Notation cmd := (@cmd Rl A X Y mem).
 
 (* -------------------------------------------------------------------- *)
-Definition eqon (X : pred { t : A & vars t } ) (m : cmem) :=
-  (fun m' : cmem => forall x, x \in X -> m.[tagged x] = m'.[tagged x]).
+Definition eqon (X : pred { t : A & vars t } ) (m : mem) :=
+  (fun m' : mem => forall x, x \in X -> m.[tagged x] = m'.[tagged x]).
 
 Arguments eqon : simpl never.
 
 Definition separated X (P : pred dmem) :=
   forall (mu1 mu2 : dmem),
-      (forall m : cmem, \P_[mu1] [pred m' | `[<eqon (predC X) m m'>] ] =
+      (forall m : mem, \P_[mu1] [pred m' | `[<eqon (predC X) m m'>] ] =
                         \P_[mu2] [pred m' | `[<eqon (predC X) m m'>] ])
     -> mu1 \in P -> mu2 \in P.
 
 (* -------------------------------------------------------------------- *)
-Definition bvar (b : @binding A ident cmem) : { t : A & vars t } :=
+Definition bvar (b : @binding A X mem) : { t : A & vars t } :=
   let: existT t (x, _) := b in Tagged vars x.
 
 (* -------------------------------------------------------------------- *)
-
 Fixpoint mod (c : cmd) : pred { t : A & vars t } :=
   match c with
   | abort    => pred0
@@ -489,13 +487,13 @@ by move=> c1 c2 c3 eq1 eq2 x xX; rewrite eq1 ?eq2.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Definition bstep (m' : cmem) (mm : cmem) (b : @binding A ident cmem) : cmem :=
+Definition bstep (m' : mem) (mm : mem) (b : @binding A X mem) : mem :=
   let: existT _ (r, e) := b in mm.[r <- `[{e}] m'].
 
-Lemma mretE (m m' : cmem) rs : mret m m' rs = foldl (bstep m') (mrestore m m') rs.
+Lemma mretE (m m' : mem) rs : mret m m' rs = foldl (bstep m') (mrestore m m') rs.
 Proof. by []. Qed.
 
-Lemma mget_foldl (m' : cmem) rs y acc :
+Lemma mget_foldl (m' : mem) rs y acc :
   ~~ has (fun b => `[< y = bvar b >]) rs ->
   (foldl (bstep m') acc rs).[tagged y] = acc.[tagged y].
 Proof.
@@ -506,7 +504,7 @@ move/eq_vars => neq; rewrite mget_neq //.
 by case: eqP neq; intuition.
 Qed.
 
-Lemma mget_mret (m m' : cmem) rs y :
+Lemma mget_mret (m m' : mem) rs y :
   ~~ has (fun b => `[< y = bvar b >]) rs ->
   (mret m m' rs).[tagged y] = m.[tagged y].
 Proof. by move=> h; rewrite mretE mget_foldl // mget_restore. Qed.

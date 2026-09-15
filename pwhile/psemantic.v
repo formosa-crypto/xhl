@@ -6,7 +6,7 @@ From mathcomp.algebra   Require Import algebra.
 From mathcomp.classical Require Import boolp classical_sets.
 From mathcomp.reals     Require Import reals constructive_ereal.
 From mathcomp.analysis  Require Import counting_distr esum.
-(* ----------------- *) Require Import inhabited passn pwhile.
+(* ----------------- *) Require Import inhabited passn pwhile mem.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -168,23 +168,23 @@ Notation "m .[+]" := (mnew m) (at level 2, format "m .[+]") : mem_scope.
 
 (* -------------------------------------------------------------------- *)
 Section Semantics.
-  Context {R : realType} {A : codeType} {X Y : eqType} {cmem: memType A X}
-          {ps : Y -> (@cmd_ R A X cmem Y)}.
+  Context {R : realType} {A : codeType} {X Y : eqType} {M: memType A X}
+          {ps : Y -> (@cmd_ R A X M Y)}.
 
 Local Notation Distr T := {distr T%type / R}.
 
 Notation vars    := (vars_ X).
-Notation expr    := (@expr_ A X cmem).
-Notation cmd     := (@cmd_ R A X cmem Y).
-Notation binding := (@binding A X cmem).
+Notation expr    := (@expr_ A X M).
+Notation cmd     := (@cmd_ R A X M Y).
+Notation binding := (@binding A X M).
 Notation bexpr   := (expr bool).
 Notation dexpr T := (expr (Distr T)).
 
-Notation mdistr := (Distr cmem).
-Notation mnull  := (@dnull R cmem).
+Notation mdistr := (Distr M).
+Notation mnull  := (@dnull R M).
 
 (* -------------------------------------------------------------------- *)
-Fixpoint esem {T : Type} (e : expr T) (m : cmem) : T :=
+Fixpoint esem {T : Type} (e : expr T) (m : M) : T :=
   match e in expr_ _ _ _ T return T with
   | var_ T x => m.[x]
   | cst_ T c => c
@@ -194,16 +194,16 @@ Fixpoint esem {T : Type} (e : expr T) (m : cmem) : T :=
   end.
 
 (* -------------------------------------------------------------------- *)
-Definition minit (m : cmem) (bs : seq binding) : cmem :=
+Definition minit (m : M) (bs : seq binding) : M :=
   foldl (fun m' (b : binding) => let: existT _ (x, e) := b in m'.[x <- esem e m])
         m.[+] bs.
 
-Definition mret (m m' : cmem) (rs : seq binding) : cmem :=
+Definition mret (m m' : M) (rs : seq binding) : M :=
   foldl (fun mm (b : binding) => let: existT _ (r, e') := b in mm.[r <- esem e' m'])
         (mrestore m m') rs.
 
 (* -------------------------------------------------------------------- *)
-Fixpoint ssem_aux (l: (Y * cmem) -> mdistr) (s : cmd) (m : cmem) : mdistr :=
+Fixpoint ssem_aux (l: (Y * M) -> mdistr) (s : cmd) (m : M) : mdistr :=
   match s with
   | abort => mnull
   | skip  => dunit m
@@ -236,8 +236,8 @@ Fixpoint ssem_aux (l: (Y * cmem) -> mdistr) (s : cmd) (m : cmem) : mdistr :=
   end.
 
 Fixpoint ubnf (ps: Y -> cmd) n :=
-  fun (a: Y * cmem) =>
-    if n is n.+1 return Distr cmem then
+  fun (a: Y * M) =>
+    if n is n.+1 return Distr M then
       ssem_aux (ubnf ps n) (ps (fst a)) (snd a)
     else dnull.
 
@@ -249,7 +249,7 @@ Definition ssem_ := locked_with ssem_key ssem_r.
 Canonical ssem_unlockable := [unlockable fun ssem_].
 
 (* -------------------------------------------------------------------- *)
-Implicit Types (m : cmem) (c : cmd).
+Implicit Types (m : M) (c : cmd).
 
 Notation ssem := ssem_.
 Notation prp  := prp_.
@@ -293,7 +293,7 @@ Proof. by []. Qed.
 Lemma esem_cstE {T : Type} (c : T) m : esem (cst_ c) m = c.
 Proof. by []. Qed.
 
-Lemma esem_prpE (P : pred cmem) m : esem (prp_ P) m = P m.
+Lemma esem_prpE (P : pred M) m : esem (prp_ P) m = P m.
 Proof. by []. Qed.
 
 Lemma esem_appE {T U : Type} (e1 : expr (T -> U)) (e2 : expr T) m :
@@ -435,7 +435,7 @@ Lemma itercS n c : iterc n.+1 c = iter n (seqc c) c.
 Proof. by rewrite /iterc iteropS. Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma homo_ssem (mu1 mu2 : Distr cmem) c :
+Lemma homo_ssem (mu1 mu2 : Distr M) c :
   mu1 <=1 mu2 -> \dlet_(m <- mu1) ssem c m <=1 \dlet_(m <- mu2) ssem c m.
 Proof. by move=> le_mu m; apply/le_dlet. Qed.
 
@@ -532,7 +532,7 @@ Lemma split_while (e1 e2 : expr bool) c:
    = ssem (While (e1 && e2) Do c ;; While e1 Do c).
 Proof. by apply/funext=> m; apply/unrolls_while_w => {}m /= /andP[]. Qed.
 
-Lemma prpP (P : pred cmem) m : reflect (P m) (esem (prp_ P) m).
+Lemma prpP (P : pred M) m : reflect (P m) (esem (prp_ P) m).
 Proof. by apply/idP. Qed.
 End Semantics.
 
@@ -682,8 +682,8 @@ Arguments ssem_ {_} {_} {_} {_} {_} _.
 
 Notation "c1 '=C' c2 ';' ps" := (eqcmd ps c1 c2) (at level 70, no associativity).
 
-Arguments ssem_ R A X Y cmem ps s%_S m%_M.
-Arguments esem A X cmem T e%_X m%_M.
+Arguments ssem_ R A X Y M ps s%_S m%_M.
+Arguments esem A X M T e%_X m%_M.
 
 Notation "e `_ m" := (@esem _ _ _ _ e%X m%M) : sem_scope.
 
@@ -701,23 +701,21 @@ Notation "m .[ x @ s <- v ]" := m.[x # s <- v].
 Notation "m .[~1 x <- v ]"   := m.[x @ '1 <- v].
 Notation "m .[~2 x <- v ]"   := m.[x @ '2 <- v].
 
-Section Concrete.
-Context {R : realType} {A : codeType} {ident : countType}.
+Section DSemantics.
+Context {R : realType} {A : codeType} {I J : countType} {M : memType A I}.
 
 Local Notation Distr T := {distr T%type / R}.
-Local Notation cmem  := (cmem A ident).
-Local Notation rmem  := (rmem A ident).
-Local Notation vars  := (vars_ ident).
-Local Notation expr  := (@expr_ A ident cmem).
-Local Notation assn  := (pred cmem).
-Local Notation dassn := (pred (Distr cmem)).
+Local Notation vars  := (vars_ I).
+Local Notation expr  := (@expr_ A I M).
+Local Notation assn  := (pred M).
+Local Notation dassn := (pred (Distr M)).
 
-Local Notation ssem   := (@ssem_ _ _ _ ident cmem).
-Local Notation mdistr := (Distr cmem).
-Local Notation mnull  := (@dnull R cmem).
+Local Notation ssem   := (@ssem_ _ _ _ I M).
+Local Notation mdistr := (Distr M).
+Local Notation mnull  := (@dnull R M).
 
 (* -------------------------------------------------------------------- *)
-Lemma unrolln_while {J: eqType} n (e : expr bool) c (ps: (J -> cmd_ R A ident cmem J)) :
+Lemma unrolln_while n (e : expr bool) c (ps: (J -> cmd_ R A I M J)) :
   (While e Do c) =C (iterc n (IfT e then c) ;; While e Do c) ; ps.
 Proof.
 rewrite ssem_iterop_iter; elim: n => [|n ih] /=.
@@ -726,17 +724,17 @@ by rewrite -seqA -ih => m; rewrite unroll_while.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma if_same {J: eqType} (e : expr bool) c (ps: (J -> cmd_ R A ident cmem J)) :
+Lemma if_same (e : expr bool) c (ps: (J -> cmd_ R A I M J)) :
   If e then c else c =C c ; ps.
 Proof. by move=> m; rewrite !semE; case: (esem _ _). Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma if_seq {J: eqType} (e : expr bool) c c1 c2 (ps: (J -> cmd_ R A ident cmem J)) :
+Lemma if_seq (e : expr bool) c c1 c2 (ps: (J -> cmd_ R A I M J)) :
   (If e then c1 else c2 ;; c) =C If e then (c1 ;; c) else (c2 ;; c) ; ps.
 Proof. by move=> m; rewrite !semE; case: ifPn. Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma le_while {J: eqType} (e : expr bool) c1 c2 m (ps: (J -> cmd_ R A ident cmem J)):
+Lemma le_while (e : expr bool) c1 c2 m (ps: (J -> cmd_ R A I M J)):
      (forall m, esem e m -> ssem_ ps c1 m <=1 ssem_ ps c2 m)
   -> ssem_ ps (While e Do c1) m <=1 ssem_ ps (While e Do c2) m.
 Proof.
@@ -746,7 +744,7 @@ by case: ifP => // hem; apply/le_dlet => {} m' //; apply: lec.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma xsplit_while {J: eqType} (e e1 e2 : expr bool) c (ps: (J -> cmd_ R A ident cmem J)):
+Lemma xsplit_while (e e1 e2 : expr bool) c (ps: (J -> cmd_ R A I M J)):
      (forall m, esem e2 m -> esem e m)
   -> (forall m, esem e m -> ~~ esem e1 m -> esem e2 m)
   -> (While e Do c) =C (While e Do (If e1 then c else While e2 Do c)); ps.
@@ -789,9 +787,9 @@ by apply: (le_trans (le_whilen _ _ _ _ _)).
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Definition dssem (ps : ident -> cmd_ R A ident cmem ident)
-    (c : cmd_ R A ident cmem ident) (mu : mdistr) :=
-  (\dlet_(m <- mu) ssem ps c m).
+Definition dssem (ps : J -> cmd_ R A I M J)
+    (c : cmd_ R A I M J) (mu : mdistr) :=
+  (\dlet_(m <- mu) (@ssem_ R A I J M ps c m)).
 
 Global Instance dsem_m ps : Proper (@eqcmd _ _ _ _ _ ps ==> eq ==> eq) (dssem ps).
 Proof. by move=> c1 c2 eqc /= mu _ <-; apply/eq_in_dlet. Qed.
@@ -814,14 +812,27 @@ by apply/distr_eqP=> m; rewrite /dssem bsemE dlet_dlet.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Definition lossless (P : assn) (c : cmd_ R A ident cmem ident) :=
-  forall ps m, m \in P -> dweight (ssem ps c m) = 1.
+Definition lossless (P : assn) (c : cmd_ R A I M J) :=
+  forall ps m, m \in P -> dweight (@ssem_ R A I J M ps c m) = 1.
 
-Definition dlossless (P : dassn) (c : cmd_ R A ident cmem ident) :=
+Definition dlossless (P : dassn) (c : cmd_ R A I M J) :=
   forall ps mu, mu \in P -> dweight (dssem ps c mu) = 1.
 
-(* -------------------------------------------------------------------- *)
+End DSemantics.
+
+Section RSemantics.
+Context {R : realType} {A : codeType} {I J : countType} {M : memType A I}.
+
 Local Notation rsem    := (@ssem_ _ _ _ rmem).
+Local Notation Distr T := {distr T%type / R}.
+
+Local Notation rmem  := (rmem A I).
+Local Notation vars  := (vars_ I).
+Local Notation cmem  := (cmem A I).
+Local Notation expr  := (@expr_ A I cmem).
+Local Notation assn  := (pred cmem).
+Local Notation dassn := (pred (Distr cmem)).
+
 Local Notation rmdistr := (Distr rmem).
 Local Notation rmnull  := (@dnull R rmem).
 
@@ -899,7 +910,7 @@ Proof. by case: m0 m => a1 a2 [b1 b2]. Qed.
 (*   rsem (c#'2) m = \dlet_(m2 <- ssem c m.2) (dunit (m.1, m2)). *)
 (* Proof. by apply ssem_iE. Qed. *)
 
-End Concrete.
+End RSemantics.
 
 (* -------------------------------------------------------------------- *)
 Notation "`[{ e }]" := (@esem _ _ _ _ e%X) (at level 2, format "`[{ e }]").
@@ -941,8 +952,8 @@ End UbnTheory.
 
 (* -------------------------------------------------------------------- *)
 Lemma mono_ssem_aux
-  {R : realType} {A : codeType} {X Y : eqType} {cmem: memType A X}
-  (l l' : (Y * cmem) -> {distr cmem / R}) c  (m : cmem) :
+  {R : realType} {A : codeType} {X Y : eqType} {M: memType A X}
+  (l l' : (Y * M) -> {distr M / R}) c  (m : M) :
   (forall x, l x <=1 l' x) -> ssem_aux l c m <=1 ssem_aux l' c m.
 Proof.
 move=> le_ll'; elim: c m =>
@@ -956,16 +967,16 @@ move=> le_ll'; elim: c m =>
 by apply/le_dlet => [|x _]; [exact: ih1 | exact: ih2].
 Qed.
 
-Lemma mono_ubnf {R : realType} {A : codeType} {X Y : eqType} {cmem: memType A X}
-  {ps : Y -> (@cmd_ R A X cmem Y)} n :
+Lemma mono_ubnf {R : realType} {A : codeType} {X Y : eqType} {M: memType A X}
+  {ps : Y -> (@cmd_ R A X M Y)} n :
   ubnf ps n <=2 ubnf ps n.+1.
 Proof.
 elim: n => [|n ih] [f m'] m /=; first exact: lef_dnull.
 by apply/mono_ssem_aux => x; exact: ih.
 Qed.
 
-Lemma homo_ubnf {R : realType} {A : codeType} {X Y : eqType} {cmem: memType A X}
-  {ps : Y -> (@cmd_ R A X cmem Y)} n p :
+Lemma homo_ubnf {R : realType} {A : codeType} {X Y : eqType} {M: memType A X}
+  {ps : Y -> (@cmd_ R A X M Y)} n p :
   (n <= p)%N -> ubnf ps n <=2 ubnf ps p.
 Proof.
 elim: p n => [|p ihp] n; first by rewrite leqn0 => /eqP->.

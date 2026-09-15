@@ -4,7 +4,7 @@ From mathcomp.algebra   Require Import algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals.
 From mathcomp.analysis  Require Import counting_distr.
-From xhl.pwhile Require Import notations inhabited pwhile psemantic passn range.
+From xhl.pwhile Require Import notations inhabited mem pwhile psemantic passn range.
 From xhl.hl     Require Import hl_stmt.
 
 Set   Implicit Arguments.

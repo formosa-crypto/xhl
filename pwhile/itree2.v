@@ -5,7 +5,7 @@ From mathcomp.algebra   Require Import algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals constructive_ereal.
 From mathcomp.analysis  Require Import counting_distr.
-(* ----------------- *) Require Import inhabited passn pwhile psemantic.
+(* ----------------- *) Require Import inhabited passn mem pwhile psemantic.
 
 From ITree Require Import
   Basics

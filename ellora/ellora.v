@@ -3,7 +3,7 @@ From mathcomp           Require Import boot order algebra.
 From mathcomp.classical Require Import boolp filter.
 From mathcomp.reals     Require Import reals constructive_ereal.
 From mathcomp.analysis  Require Import counting_distr ereal.
-From xhl.pwhile Require Import notations inhabited pwhile psemantic passn range.
+From xhl.pwhile Require Import notations inhabited mem pwhile psemantic passn range.
 From xhl.hl Require Import hl.
 
 Set   Implicit Arguments.
@@ -19,20 +19,19 @@ Local Open Scope sem_scope.
 Local Open Scope mem_scope.
 
 Section Ellora.
-Context {R : realType} {A : codeType} {ident : countType}.
+Context {R : realType} {A : codeType} {X Y : countType} {mem : memType A X}.
 
 Local Notation Distr T := {distr T%type / R}.
-Local Notation cmem    := (cmem A ident).
-Local Notation vars    := (vars_ ident).
-Local Notation expr    := (@expr_ A ident cmem).
+Local Notation vars    := (vars_ X).
+Local Notation expr    := (@expr_ A X mem).
 Local Notation dexpr T := (expr (Distr T)).
-Local Notation cmd     := (@cmd_ R A ident cmem ident).
-Local Notation assn    := (pred cmem).
-Local Notation ssem    := (@ssem_ _ _ _ ident cmem).
-Local Notation mnull   := (@dnull R cmem).
+Local Notation cmd     := (@cmd_ R A X mem Y).
+Local Notation assn    := (pred mem).
+Local Notation ssem    := (@ssem_ R A X Y mem).
+Local Notation mnull   := (@dnull R mem).
 
 (* -------------------------------------------------------------------- *)
-Local Notation dmem  := (Distr cmem).
+Local Notation dmem  := (Distr mem).
 Local Notation dassn := (pred  dmem).
 Local Notation dassn2 := (dmem -> dassn).
 
@@ -212,7 +211,7 @@ Arguments dassn_map : simpl never.
 
 Notation "P .[ F ]" := (dassn_map P F) : assn.
 
-Notation psi := (ident -> cmd_ R A ident cmem ident).
+Notation psi := (Y -> cmd_ R A X mem Y).
 
 (* -------------------------------------------------------------------- *)
 Local Notation iwhilen k b c := (iterc k (IfT b then c)).
@@ -223,7 +222,7 @@ Section Logic.
 Definition post_shift (post : nat -> dassn2) n : dassn2 :=
  if n is n'.+1 then post n' else (fun _ => eqmu dnull).
 
-Inductive sellora : psi -> (ident -> dassn) -> (ident -> dassn2) -> dassn -> dassn -> cmd -> Prop :=
+Inductive sellora : psi -> (Y -> dassn) -> (Y -> dassn2) -> dassn -> dassn -> cmd -> Prop :=
 | EAbort P pre post ps : sellora ps pre post P (□ pred0) abort
 
 | ESkip P pre post  ps : sellora ps pre post P P skip
@@ -263,11 +262,11 @@ Inductive sellora : psi -> (ident -> dassn) -> (ident -> dassn2) -> dassn -> das
 
 | H_khl : forall P Q c pre post ps,
      sellora2 ps pre post P (fun _ => Q) c -> sellora ps pre post P Q c
-with sellora2: psi -> (ident -> dassn) -> (ident -> dassn2) -> dassn -> dassn2 -> cmd -> Prop :=
+with sellora2: psi -> (Y -> dassn) -> (Y -> dassn2) -> dassn -> dassn2 -> cmd -> Prop :=
    | H_hl: forall P (Q:dassn2) c pre post ps,
        (forall s0, sellora ps pre post (eqmu s0) (fun s => P s0 ==> Q s0 s) c) ->
        sellora2 ps pre post P Q c
-   | EBlock : forall (F : cmem -> dmem) bs c rs pre post ps,
+   | EBlock : forall (F : mem -> dmem) bs c rs pre post ps,
        (forall m, sellora ps pre post (eqmu (dunit (minit m bs))) (eqmu (F m)) c) ->
        sellora2 ps pre post xpredT
          (fun mu => eqmu (\dlet_(m <- mu) \dlet_(m' <- F m) dunit (mret m m' rs)))
@@ -387,7 +386,7 @@ Lemma ellora_semmap P c : ellora P.[fun mu => dssem ps c mu] P c.
 Proof. by []. Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma ellora_block (F : cmem -> dmem) bs c rs :
+Lemma ellora_block (F : mem -> dmem) bs c rs :
   (forall m, ellora (eqmu (dunit (minit m bs))) (eqmu (F m)) c) ->
   kellora xpredT
     (fun mu => eqmu (\dlet_(m <- mu) \dlet_(m' <- F m) dunit (mret m m' rs)))
@@ -520,15 +519,15 @@ Proof. by move=> hc spc llc mu; apply/spc=> m; apply/modll. Qed.
 
 (** Hoare triple for a com with procedure context **)
 
-Definition ellora_triple_ctx (pre : ident -> dassn)
-                             (post : ident -> dassn2)
+Definition ellora_triple_ctx (pre : Y -> dassn)
+                             (post : Y -> dassn2)
                              (ps: psi) (P: dassn) (Q: dassn2) (c: cmd) :=
  (forall p, kellora_ ps (pre p) (post p) (call p)) -> kellora_ ps P Q c.
 
 (** Hoare triple for a procedure with procedure context **)
 
-Definition ellora_triple_proc_ctx (pre : ident -> dassn)
-                                  (post : ident -> nat -> dassn2)
+Definition ellora_triple_proc_ctx (pre : Y -> dassn)
+                                  (post : Y -> nat -> dassn2)
                                   (ps_init :psi):=
   forall p ps n, ellora_triple_ctx
               pre
@@ -539,9 +538,9 @@ Definition ellora_triple_proc_ctx (pre : ident -> dassn)
               (ps_init p).
 
 Lemma recursive_proc  (ps': psi)
-                      (pre : ident -> dassn)
-                      (post : ident -> nat -> dassn2)
-                      (postinf : ident -> dassn2)  :
+                      (pre : Y -> dassn)
+                      (post : Y -> nat -> dassn2)
+                      (postinf : Y -> dassn2)  :
   (forall p s, tclosed (fun n => post_shift (post p) n s)  (postinf p s)) ->
     ellora_triple_proc_ctx pre post ps' ->
   (forall p, kellora_ ps' (pre p) (postinf p) (call p)).
@@ -555,7 +554,7 @@ have key : forall n p s, s \in pre p ->
     dssem (k_inliner_ps1 n ps') (call p) s \in post_shift (post p) n s.
   elim => [|n IHn] p s hP.
   - have -> : dssem (k_inliner_ps1 0 ps') (call p) s = dnull.
-      rewrite /dssem; transitivity (\dlet_(m0 <- s) (dnull : Distr cmem)).
+      rewrite /dssem; transitivity (\dlet_(m0 <- s) (dnull : Distr mem)).
         by apply/eq_in_dlet => // m0 _; rewrite KU /=.
       by apply/distr_eqP => x; rewrite dletC dnullE mulr0.
     by rewrite /post_shift; apply/asboolP.
@@ -589,9 +588,9 @@ Qed.
 
 Theorem recursion_hoare_triple :
   forall P (Q:dassn2) c
-    (pre : ident -> dassn)
-    (post : ident -> nat -> dassn2)
-    (postinf : ident -> dassn2)  ,
+    (pre : Y -> dassn)
+    (post : Y -> nat -> dassn2)
+    (postinf : Y -> dassn2)  ,
     (forall p s, tclosed (fun n => post_shift (post p) n s)  (postinf p s)) ->
     ellora_triple_proc_ctx pre post ps  ->
     ellora_triple_ctx pre postinf ps P Q c ->
@@ -745,10 +744,10 @@ apply/(EConseq _ _ (@ECond P1 R1 P2 R2 _ _ _ _ _ _ _ _)) => //.
   by move/asboolP=> ->; apply/asboolP.
 Qed.
 
-Definition pre_mgt : ident -> dassn :=   fun (f:ident) => xpredT.
+Definition pre_mgt : Y -> dassn :=   fun (f:Y) => xpredT.
 
-Definition cl_mgt ps : ident -> dassn2 :=
-  fun (f:ident) => (fun mu => eqmu (dssem ps (ps f) mu)).
+Definition cl_mgt ps : Y -> dassn2 :=
+  fun (f:Y) => (fun mu => eqmu (dssem ps (ps f) mu)).
 
 Lemma rel_complete_d (c : cmd) P Q ps' :
   ellora_ ps' P Q c ->
@@ -970,8 +969,8 @@ apply: derivable_mut.
      apply: (H_adapt hP hQ (IH _ heq)).
 Qed.
 
-Definition cl_mgt_n ps : ident -> nat -> dassn2 :=
-  fun (f:ident) (n:nat) =>
+Definition cl_mgt_n ps : Y -> nat -> dassn2 :=
+  fun (f:Y) (n:nat) =>
     (fun mu => eqmu ((\dlet_(m <- mu) ssem_aux (ubnf ps n) (ps f) m))).
 
 Theorem kellora_complete: forall P c (Q: dassn2) ps pre post,
@@ -1001,7 +1000,7 @@ have Ha : forall n f mu, post_shift (cl_mgt_n ps f) n mu = cl_mgt (k_inliner_ps1
   move=> n f mu; rewrite /cl_mgt Hcall_eq; case: n => [|k].
   - rewrite p0.
     suff -> : dssem (k_inliner_ps1 0 ps) (call f) mu = dnull by [].
-    rewrite /dssem; transitivity (\dlet_(m0 <- mu) (dnull : Distr cmem)).
+    rewrite /dssem; transitivity (\dlet_(m0 <- mu) (dnull : Distr mem)).
       by apply/eq_in_dlet => // m0 _; rewrite KU /=.
     by apply/distr_eqP => x; rewrite dletC dnullE mulr0.
   - rewrite pS.

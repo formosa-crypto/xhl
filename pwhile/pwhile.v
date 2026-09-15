@@ -6,7 +6,7 @@ From mathcomp.algebra   Require Import algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals.
 From mathcomp.analysis  Require Import counting_distr.
-(* ----------------- *) Require Import inhabited notations.
+(* ----------------- *) Require Import inhabited notations mem.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -26,162 +26,6 @@ Delimit Scope syn_scope with S.
 Delimit Scope xsyn_scope with X.
 Delimit Scope vsyn_scope with V.
 Delimit Scope mem_scope with M.
-
-(* -------------------------------------------------------------------- *)
-(* Program types are elements of an alphabet [A : codeType].
-
-  A memory is split in two independent stores: a *local* one, read and
-  written by [mget_]/[mset_], and a *main* (global) one, read and written by
-  [mgetg_]/[msetg_].  [mnew_ m] replaces the local store by a fresh one, and
-  [mrestore_ m0 m] puts [m0]'s local store back while keeping [m]'s main
-  store.
-*)
-HB.mixin Record isMemType (A : codeType) (mident : eqType) M of Choice M := {
-  mget_     : M -> forall T : A, mident -> interp T;
-  mset_     : M -> forall T : A, mident -> interp T -> M;
-  mgetg_    : M -> forall T : A, mident -> interp T;
-  msetg_    : M -> forall T : A, mident -> interp T -> M;
-  mnew_     : M -> M;
-  mrestore_ : M -> M -> M;
-
-  mget_eq_  : forall T m x v, mget_ (mset_ m T x v) T x = v;
-  mget_neq_ : forall T U m x y v, (T <> U \/ x != y) ->
-                mget_ (mset_ m T x v) U y = mget_ m U y;
-
-  mgetg_eq_  : forall T m x v, mgetg_ (msetg_ m T x v) T x = v;
-  mgetg_neq_ : forall T U m x y v, (T <> U \/ x != y) ->
-                 mgetg_ (msetg_ m T x v) U y = mgetg_ m U y;
-
-  mget_setg_ : forall T U m x y v, mget_  (msetg_ m T x v) U y = mget_  m U y;
-  mgetg_set_ : forall T U m x y v, mgetg_ (mset_  m T x v) U y = mgetg_ m U y;
-
-  mgetg_new_ : forall U m y, mgetg_ (mnew_ m) U y = mgetg_ m U y;
-
-  mrestore_id_   : forall m, mrestore_ m m = m;
-  mrestoreA_     : forall m0 m1 m, mrestore_ m0 (mrestore_ m1 m) = mrestore_ m0 m;
-  mrestore_new_  : forall m0 m, mrestore_ m0 (mnew_ m) = mrestore_ m0 m;
-  mrestore_set_  : forall T m0 m x v, mrestore_ m0 (mset_  m T x v) = mrestore_ m0 m;
-  mrestore_setg_ : forall T m0 m x v,
-                     mrestore_ m0 (msetg_ m T x v) = msetg_ (mrestore_ m0 m) T x v;
-  mget_restore_  : forall U m0 m y, mget_  (mrestore_ m0 m) U y = mget_  m0 U y;
-  mgetg_restore_ : forall U m0 m y, mgetg_ (mrestore_ m0 m) U y = mgetg_ m U y;
-}.
-
-#[short(type="memType")]
-HB.structure Definition MemType (A : codeType) (mident : eqType) :=
-  { M of Choice M & isMemType A mident M }.
-
-Section MemTheory.
-Variable (A : codeType) (mident : eqType).
-
-Section GetSet.
-Variable (M : memType A mident) (T : A).
-
-Definition mget (m : M) (x : mident) := mget_ m T x.
-
-Arguments mget : simpl never.
-
-Definition mset (m : M) (x : mident) (v : interp T) := mset_ m T x v.
-
-Arguments mset : simpl never.
-
-Definition mgetg (m : M) (x : mident) := mgetg_ m T x.
-
-Arguments mgetg : simpl never.
-
-Definition msetg (m : M) (x : mident) (v : interp T) := msetg_ m T x v.
-
-Arguments msetg : simpl never.
-
-End GetSet.
-
-Definition mnew (M : memType A mident) (m : M) := mnew_ m.
-
-Arguments mnew : simpl never.
-
-Definition mrestore (M : memType A mident) (m0 m : M) := mrestore_ m0 m.
-
-Arguments mrestore : simpl never.
-
-(* one-variable block entry, kept as a derived form *)
-Definition mpush (M : memType A mident) (T : A)
-    (m : M) (x : mident) (v : interp T) := mset (mnew m) x v.
-
-Arguments mpush : simpl never.
-
-Variable (M : memType A mident) (T U : A).
-
-Lemma mget_eq (m : M) (x : mident) (v : interp T) : mget T (mset m x v) x = v.
-Proof. by unlock mget mset; apply/mget_eq_. Qed.
-
-Lemma mget_neq (m : M) (x y : mident) (v : interp T) : (T <> U \/ x != y) ->
-  mget U (mset m x v) y = mget U m y.
-Proof. by unlock mget mset; apply/mget_neq_. Qed.
-
-Lemma mgetg_eq (m : M) (x : mident) (v : interp T) : mgetg T (msetg m x v) x = v.
-Proof. by unlock mgetg msetg; apply/mgetg_eq_. Qed.
-
-Lemma mgetg_neq (m : M) (x y : mident) (v : interp T) : (T <> U \/ x != y) ->
-  mgetg U (msetg m x v) y = mgetg U m y.
-Proof. by unlock mgetg msetg; apply/mgetg_neq_. Qed.
-
-Lemma mget_setg (m : M) (x y : mident) (v : interp T) :
-  mget U (msetg m x v) y = mget U m y.
-Proof. by unlock mget msetg; apply/mget_setg_. Qed.
-
-Lemma mgetg_set (m : M) (x y : mident) (v : interp T) :
-  mgetg U (mset m x v) y = mgetg U m y.
-Proof. by unlock mgetg mset; apply/mgetg_set_. Qed.
-
-Lemma mgetg_new (m : M) (y : mident) : mgetg U (mnew m) y = mgetg U m y.
-Proof. by unlock mgetg mnew; apply/mgetg_new_. Qed.
-
-Lemma mrestore_id (m : M) : mrestore m m = m.
-Proof. by unlock mrestore; apply/mrestore_id_. Qed.
-
-Lemma mrestoreA (m0 m1 m : M) : mrestore m0 (mrestore m1 m) = mrestore m0 m.
-Proof. by unlock mrestore; apply/mrestoreA_. Qed.
-
-Lemma mrestore_new (m0 m : M) : mrestore m0 (mnew m) = mrestore m0 m.
-Proof. by unlock mrestore mnew; apply/mrestore_new_. Qed.
-
-Lemma mrestore_set (m0 m : M) (x : mident) (v : interp T) :
-  mrestore m0 (mset m x v) = mrestore m0 m.
-Proof. by unlock mrestore mset; apply/mrestore_set_. Qed.
-
-Lemma mrestore_setg (m0 m : M) (x : mident) (v : interp T) :
-  mrestore m0 (msetg m x v) = msetg (mrestore m0 m) x v.
-Proof. by unlock mrestore msetg; apply/mrestore_setg_. Qed.
-
-Lemma mget_restore (m0 m : M) (y : mident) :
-  mget U (mrestore m0 m) y = mget U m0 y.
-Proof. by unlock mget mrestore; apply/mget_restore_. Qed.
-
-Lemma mgetg_restore (m0 m : M) (y : mident) :
-  mgetg U (mrestore m0 m) y = mgetg U m y.
-Proof. by unlock mgetg mrestore; apply/mgetg_restore_. Qed.
-
-(* the one-variable block entry, derived *)
-Lemma mget_push (m : M) (x : mident) (v : interp T) : mget T (mpush m x v) x = v.
-Proof. by unlock mpush; apply/mget_eq. Qed.
-
-Lemma mgetg_push (m : M) (x y : mident) (v : interp T) :
-  mgetg U (mpush m x v) y = mgetg U m y.
-Proof. by unlock mpush; rewrite mgetg_set mgetg_new. Qed.
-
-Lemma mrestore_push (m0 m : M) (x : mident) (v : interp T) :
-  mrestore m0 (mpush m x v) = mrestore m0 m.
-Proof. by unlock mpush; rewrite mrestore_set mrestore_new. Qed.
-
-End MemTheory.
-
-Arguments mget     : simpl never.
-Arguments mset     : simpl never.
-Arguments mgetg    : simpl never.
-Arguments msetg    : simpl never.
-Arguments mnew     : simpl never.
-Arguments mpush    : simpl never.
-Arguments mrestore : simpl never.
 
 (* -------------------------------------------------------------------- *)
 (* Expressions and probabilistic expressions *)
@@ -343,67 +187,6 @@ Notation "` x"      := (@var_ _ _ _ _ x%V)        : xsyn_scope.
 Notation "x %:G"    := (@gvar_ _ _ _ _ x%V) (at level 2, format "x %:G") : xsyn_scope.
 
 (* -------------------------------------------------------------------- *)
-Section SynInject.
-Context {R : realType} {A : codeType} {I1 I2 fname: eqType}
-        {mem1 : memType A I1} {mem2 : memType A I2}
-        (h : I1 -> I2) (mh : mem2 -> mem1).
-
-Local Notation vars1 := (vars_ I1).
-Local Notation vars2 := (vars_ I2).
-Local Notation expr1 := (@expr_ A I1 mem1).
-Local Notation expr2 := (@expr_ A I2 mem2).
-Local Notation cmd1  := (cmd_  R A I1 mem1 fname).
-Local Notation cmd2  := (cmd_  R A I2 mem2 fname).
-
-Definition ivar {T : A} (x : vars1 T) : vars2 T :=
-  let: Var x := x in Var T (h x).
-
-Definition iprop (p : pred mem1) : pred mem2 :=
-  fun m => p (mh m).
-
-Fixpoint iexpr {T : Type} (e : expr1 T) : expr2 T :=
-  match e with
-  | var_ _   x     => var_ (ivar x)
-  | cst_ _   T     => cst_ T
-  | prp_     p     => prp_ (iprop p)
-  | app_ _ _ e1 e2 => app_ (iexpr e1) (iexpr e2)
-  | gvar_ _  x     => gvar_ (ivar x)
-  end.
-
-Definition ibind (b : @binding A I1 mem1) : @binding A I2 mem2 :=
-  let: existT t (x, e) := b in bind_of (ivar x) (iexpr e).
-
-Fixpoint icmd (c : cmd1) : cmd2 :=
-  match c with
-  | abort => abort
-  | skip  => skip
-
-  | x <<- e =>
-      ivar x <<- iexpr e
-
-  | gassign _ x e =>
-      gassign (ivar x) (iexpr e)
-
-  | x <$- e =>
-      ivar x <$- iexpr e
-
-  | block bs c rs =>
-      block (map ibind bs) (icmd c) (map ibind rs)
-
-  | If e then c1 else c2 =>
-      If iexpr e then icmd c1 else icmd c2
-
-  | While e Do c =>
-      While iexpr e Do icmd c
-
-  | seqc c1 c2 =>
-      seqc (icmd c1) (icmd c2)
-
-  | call n => call n
-  end.
-End SynInject.
-
-(* -------------------------------------------------------------------- *)
 #[only(eqbOK)] derive
   Inductive side := SLeft | SRight.
 
@@ -430,151 +213,14 @@ Lemma side_app {A B : Type} (f : A -> B) s (x y : A) :
   (f (x, y)#s = (f x, f y)#s)%M.
 Proof. by case: s. Qed.
 
-Section Concrete.
+(* -------------------------------------------------------------------- *)
+(* Concrete relational memory                                          *)
+(* -------------------------------------------------------------------- *)
+Section RConcrete.
 Variable (R : realType) (A : codeType) (ident : countType).
 
-Definition hupd {F : A -> Type}
-    (f : forall T : A, ident -> F T)
-    (T : A) (x : ident) (v : F T) : forall U : A, ident -> F U :=
-  fun U y =>
-    if type_eq_dec A T U is left eq then
-      (if x == y then ecast U (F U) eq v else f U y)
-    else f U y.
+Local Notation cmem := (cmem A ident).
 
-Arguments hupd {F} f T x v : simpl never.
-
-Lemma hupd_eq {F : A -> Type} f (T : A) (x : ident) (v : F T) :
-  hupd f T x v T x = v.
-Proof.
-rewrite /hupd; case: (type_eq_dec _ _ _) => // eq; rewrite eqxx.
-by rewrite (type_eq_irrelevance eq (erefl T)).
-Qed.
-
-Lemma hupd_nex {F : A -> Type} f (T U : A) (x y : ident) (v : F T) :
-  x != y -> hupd f T x v U y = f U y.
-Proof.
-by move=> ne_xy; rewrite /hupd; case: type_eq_dec => //; rewrite (negbTE ne_xy).
-Qed.
-
-Lemma hupd_net {F : A -> Type} f (T U : A) (x y : ident) (v : F T) :
-  T <> U -> hupd f T x v U y = f U y.
-Proof. by rewrite /hupd; case: type_eq_dec. Qed.
-
-Lemma hupd_ne {F : A -> Type} f (T U : A) (x y : ident) (v : F T) :
-  (T <> U \/ x != y) -> hupd f T x v U y = f U y.
-Proof. by case=> h; [exact: hupd_net | exact: hupd_nex]. Qed.
-
-(* -------------------------------------------------------------------- *)
-Record coremem := CoreMem {
-  mmain : forall T : A, ident -> interp T;
-  mloc  : forall T : A, ident -> interp T;
-}.
-
-Definition coremem_get (m : coremem) (T : A) (x : ident) : interp T :=
-  mloc m T x.
-
-Coercion coremem_get : coremem >-> Funclass.
-
-Definition coremem_set (m : coremem) (T : A) (x : ident) (v : interp T) :=
-  CoreMem (mmain m) (hupd (mloc m) T x v).
-
-Definition coremem_getg (m : coremem) (T : A) (x : ident) : interp T :=
-  mmain m T x.
-
-Definition coremem_setg (m : coremem) (T : A) (x : ident) (v : interp T) :=
-  CoreMem (hupd (mmain m) T x v) (mloc m).
-
-Definition coremem_new (m : coremem) :=
-  CoreMem (mmain m) (fun (U : A) (_ : ident) => witness).
-
-Definition coremem_restore (m0 m : coremem) := CoreMem (mmain m) (mloc m0).
-
-Arguments coremem_set     : simpl never.
-Arguments coremem_setg    : simpl never.
-Arguments coremem_new     : simpl never.
-Arguments coremem_restore : simpl never.
-
-(* -------------------------------------------------------------------- *)
-Lemma get_set_eq {T : A} (m : coremem) (x : ident) (v : interp T) :
-  (coremem_set m x v) T x = v.
-Proof. exact: hupd_eq. Qed.
-
-Lemma get_set_ne {T U : A} (m : coremem) (x y : ident) (v : interp T) :
-  (T <> U \/ x != y) -> (coremem_set m x v) U y = m U y.
-Proof. exact: hupd_ne. Qed.
-
-Lemma getg_setg_eq {T : A} (m : coremem) (x : ident) (v : interp T) :
-  coremem_getg (coremem_setg m x v) T x = v.
-Proof. exact: hupd_eq. Qed.
-
-Lemma getg_setg_ne {T U : A} (m : coremem) (x y : ident) (v : interp T) :
-  (T <> U \/ x != y) ->
-  coremem_getg (coremem_setg m x v) U y = coremem_getg m U y.
-Proof. exact: hupd_ne. Qed.
-
-Lemma get_setg {T U : A} (m : coremem) (x y : ident) (v : interp T) :
-  (coremem_setg m x v) U y = m U y.
-Proof. by []. Qed.
-
-Lemma getg_set {T U : A} (m : coremem) (x y : ident) (v : interp T) :
-  coremem_getg (coremem_set m x v) U y = coremem_getg m U y.
-Proof. by []. Qed.
-
-Lemma get_new {U : A} (m : coremem) (y : ident) :
-  (coremem_new m) U y = witness.
-Proof. by []. Qed.
-
-Lemma getg_new {U : A} (m : coremem) (y : ident) :
-  coremem_getg (coremem_new m) U y = coremem_getg m U y.
-Proof. by []. Qed.
-
-Lemma restore_id (m : coremem) : coremem_restore m m = m.
-Proof. by case: m. Qed.
-
-Lemma restoreA (m0 m1 m : coremem) :
-  coremem_restore m0 (coremem_restore m1 m) = coremem_restore m0 m.
-Proof. by []. Qed.
-
-Lemma restore_new (m0 m : coremem) :
-  coremem_restore m0 (coremem_new m) = coremem_restore m0 m.
-Proof. by []. Qed.
-
-Lemma restore_set {T : A} (m0 m : coremem) (x : ident) (v : interp T) :
-  coremem_restore m0 (coremem_set m x v) = coremem_restore m0 m.
-Proof. by []. Qed.
-
-Lemma restore_setg {T : A} (m0 m : coremem) (x : ident) (v : interp T) :
-  coremem_restore m0 (coremem_setg m x v) = coremem_setg (coremem_restore m0 m) x v.
-Proof. by []. Qed.
-
-Lemma get_restore {d : A} (m0 m : coremem) (y : ident) :
-  (coremem_restore m0 m) d y = m0 d y.
-Proof. by []. Qed.
-
-Lemma getg_restore {d : A} (m0 m : coremem) (y : ident) :
-  coremem_getg (coremem_restore m0 m) d y = coremem_getg m d y.
-Proof. by []. Qed.
-
-Lemma coremem_comparable : comparable coremem.
-Proof. by move=> m1 m2; apply/pselect. Qed.
-
-HB.instance Definition coremem_eqType :=
-  hasDecEq.Build coremem (compareP coremem_comparable).
-
-HB.instance Definition coremem_choiceType :=
-  gen_choiceMixin coremem.
-
-(* -------------------------------------------------------------------- *)
-HB.instance Definition coremem_memType :=
-  isMemType.Build A ident coremem
-    (@get_set_eq) (@get_set_ne) (@getg_setg_eq) (@getg_setg_ne)
-    (@get_setg) (@getg_set) (@getg_new)
-    restore_id restoreA restore_new (@restore_set) (@restore_setg)
-    (@get_restore) (@getg_restore).
-
-Definition cmem : memType A ident := coremem.
-
-(* -------------------------------------------------------------------- *)
 Notation rident := (ident * side)%type.
 
 Definition coremem2 := (cmem * cmem)%type.
@@ -685,18 +331,88 @@ Definition rmem : memType A rident := coremem2.
 
 Arguments rmem : simpl never.
 
-(* -------------------------------------------------------------------- *)
-Definition irexpr s :=
-  (@iexpr A _ _ cmem rmem (fun x : ident => (x, s)) (fun m => (m#s)%M)).
-
-Definition ircmd s :=
-  (@icmd R A _ _ ident cmem rmem (fun x : ident => (x, s)) (fun m => (m#s)%M)).
-
-End Concrete.
+End RConcrete.
 
 Arguments cmem : clear implicits.
 Arguments rmem : clear implicits.
 Arguments rmem : simpl never.
+
+(* -------------------------------------------------------------------- *)
+Section SynInject.
+Context {R : realType} {A : codeType} {I1 I2 fname: eqType}
+        {mem1 : memType A I1} {mem2 : memType A I2}
+        (h : I1 -> I2) (mh : mem2 -> mem1) (ident : countType).
+
+Local Notation vars1 := (vars_ I1).
+Local Notation vars2 := (vars_ I2).
+Local Notation expr1 := (@expr_ A I1 mem1).
+Local Notation expr2 := (@expr_ A I2 mem2).
+Local Notation cmd1  := (cmd_  R A I1 mem1 fname).
+Local Notation cmd2  := (cmd_  R A I2 mem2 fname).
+
+Definition ivar {T : A} (x : vars1 T) : vars2 T :=
+  let: Var x := x in Var T (h x).
+
+Definition iprop (p : pred mem1) : pred mem2 :=
+  fun m => p (mh m).
+
+Fixpoint iexpr {T : Type} (e : expr1 T) : expr2 T :=
+  match e with
+  | var_ _   x     => var_ (ivar x)
+  | cst_ _   T     => cst_ T
+  | prp_     p     => prp_ (iprop p)
+  | app_ _ _ e1 e2 => app_ (iexpr e1) (iexpr e2)
+  | gvar_ _  x     => gvar_ (ivar x)
+  end.
+
+Definition ibind (b : @binding A I1 mem1) : @binding A I2 mem2 :=
+  let: existT t (x, e) := b in bind_of (ivar x) (iexpr e).
+
+Fixpoint icmd (c : cmd1) : cmd2 :=
+  match c with
+  | abort => abort
+  | skip  => skip
+
+  | x <<- e =>
+      ivar x <<- iexpr e
+
+  | gassign _ x e =>
+      gassign (ivar x) (iexpr e)
+
+  | x <$- e =>
+      ivar x <$- iexpr e
+
+  | block bs c rs =>
+      block (map ibind bs) (icmd c) (map ibind rs)
+
+  | If e then c1 else c2 =>
+      If iexpr e then icmd c1 else icmd c2
+
+  | While e Do c =>
+      While iexpr e Do icmd c
+
+  | seqc c1 c2 =>
+      seqc (icmd c1) (icmd c2)
+
+  | call n => call n
+end.
+
+(* -------------------------------------------------------------------- *)
+End SynInject.
+
+Section Lift.
+Variable (R : realType) (A : codeType) (ident : countType).
+
+Local Notation cmem := (cmem A ident).
+
+Notation rident := (ident * side)%type.
+
+Definition irexpr s :=
+  (@iexpr A _ _ cmem (rmem A ident) (fun x : ident => (x, s)) (fun m => (m#s)%M)).
+
+Definition ircmd s :=
+  (@icmd R A _ _ ident cmem (rmem A ident) (fun x : ident => (x, s)) (fun m => (m#s)%M)).
+End Lift.
 
 (* -------------------------------------------------------------------- *)
 Notation rident ident := (ident * side)%type.

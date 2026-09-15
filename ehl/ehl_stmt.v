@@ -4,7 +4,7 @@ From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals constructive_ereal.
 From mathcomp.analysis Require Import esum ereal counting_distr.
 From mathcomp    Require  finmap.
-From xhl.pwhile Require Import notations inhabited pwhile psemantic range.
+From xhl.pwhile Require Import notations inhabited mem pwhile psemantic range.
 
 Import GRing.Theory Order.Theory Num.Theory.
 
