@@ -23,21 +23,21 @@ Local Open Scope ereal_dual_scope.
 (* -------------------------------------------------------------------- *)
 
 Section ehl.
-Context {R : realType} {A : codeType} {X Y : eqType} {mem : memType A X}.
+Context {R : realType} {A : codeType} {X Y : countType} {M : memType A X}.
 
 Local Notation Distr T := {distr T%type / R}.
 
-Notation cond := (@cond R A X mem).
-Notation cond2 := (@cond2 R A X mem).
+Notation cond := (@cond R A X M).
+Notation cond2 := (@cond2 R A X M).
 
-Notation phi := (@Phi.type R A X Y mem).
-Notation psi := (@psi R A X Y mem).
+Notation phi := (@Phi.type R A X Y M).
+Notation psi := (@psi R A X Y M).
 
 Implicit Types  (f g h : cond).
 
 Section Logic.
 
-Definition cond2_independent (P:  mem -> \bar R -> mem -> \bar R) :=
+Definition cond2_independent (P:  M -> \bar R -> M -> \bar R) :=
 (forall r r' x x', P x r x' = P x r' x')%E.
 
 Definition cl_cond2_independent (cl:phi) :=
@@ -49,11 +49,11 @@ Inductive derivable : psi -> phi -> cond -> cmd -> cond -> Prop :=
     derivable ps cl f abort g
 | H_Skip : forall f cl ps,
     derivable ps cl f skip f
-| H_Asgn : forall {T : A} x (e : expr_ A X mem T) f cl ps,
+| H_Asgn : forall {T : A} x (e : expr_ A X M T) f cl ps,
     derivable ps cl (fun m => f m.[x <- `[{e}] m]) (x <<- e) f
-| H_GAsgn : forall {T : A} x (e : expr_ A X mem T) f cl ps,
+| H_GAsgn : forall {T : A} x (e : expr_ A X M T) f cl ps,
     derivable ps cl (fun m => f (m.{x <- `[{e}] m})) (G x <<- e) f
-| H_Random : forall {T : A} x (d:expr_ A X mem (Distr T))  f cl ps,
+| H_Random : forall {T : A} x (d:expr_ A X M (Distr T))  f cl ps,
     let g m :=
       espe (\dlet_(v <- `[{d}] m) (dunit m.[x <- v])) f
     in
@@ -63,11 +63,11 @@ Inductive derivable : psi -> phi -> cond -> cmd -> cond -> Prop :=
     (forall m, derivable ps cl (bound (fun _ => f m) (minit m bs)) c
                                (fun m'' => g (mret m m'' rs))) ->
     derivable ps cl f (block bs c rs) g
-| H_If : forall f g (e:expr_ A X mem bool) c1 c2 cl ps,
+| H_If : forall f g (e:expr_ A X M bool) c1 c2 cl ps,
     derivable ps cl (lift (esem e) f) c1 g ->
     derivable ps cl (lift (fun m => negb (esem e m)) f) c2 g ->
     derivable ps cl f (If e then c1 else c2) g
-| H_While : forall f (e:expr_ A X mem bool) c cl ps ,
+| H_While : forall f (e:expr_ A X M bool) c cl ps ,
     (forall m, 0 <= f m)%E ->
     derivable ps cl (lift (esem e) f) c f ->
     derivable ps cl f (While e Do c) (lift (fun m => negb (esem e m)) f)
@@ -135,10 +135,10 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 
-Lemma ehl_seq_m (m:mem) f g h c1 c2:
-  (forall m : mem, 0 <= g m)%E ->
+Lemma ehl_seq_m (m:M) f g h c1 c2:
+  (forall m : M, 0 <= g m)%E ->
   (espe (ssem_ ps c1 m) h <= f m)%E ->
-  (forall m : mem, espe (ssem_ ps c2 m) g <= h m)%E ->
+  (forall m : M, espe (ssem_ ps c2 m) g <= h m)%E ->
   (espe(\dlet_(m' <- ssem_ ps c1 m) ssem_ ps c2 m') g <= f m)%E.
 Proof.
 move => Hg h1 h2.
@@ -160,13 +160,13 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 
-Lemma ehl_assign {T : A} f x (e : expr_ A X mem T) :
+Lemma ehl_assign {T : A} f x (e : expr_ A X M T) :
   ehl (fun m => f m.[x <- `[{e}] m]) (x <<- e) f.
 Proof. by  move => m; rewrite ssemE eexp_dunit. Qed.
 
 (* -------------------------------------------------------------------- *)
 
-Lemma ehl_gassign {T : A} f x (e : expr_ A X mem T) :
+Lemma ehl_gassign {T : A} f x (e : expr_ A X M T) :
   ehl (fun m => f (m.{x <- `[{e}] m})) (G x <<- e) f.
 Proof. by move => m; rewrite ssem_gassnE eexp_dunit. Qed.
 
@@ -184,7 +184,7 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 
-Lemma ehl_random {T : A} f x (d:expr_ A X mem (Distr T)) :
+Lemma ehl_random {T : A} f x (d:expr_ A X M (Distr T)) :
   let g m :=
     espe (\dlet_(v <- `[{d}] m) (dunit m.[x <- v])) f
   in
@@ -193,7 +193,7 @@ Proof. by move => g m; rewrite ssemE. Qed.
 
 (* -------------------------------------------------------------------- *)
 
-Lemma ehl_if f (e:expr_ A X mem bool) c1 c2 g :
+Lemma ehl_if f (e:expr_ A X M bool) c1 c2 g :
   ehl (lift (esem e) f) c1 g ->
   ehl (lift (fun m => negb (esem e m)) f) c2 g ->
   ehl f (If e then c1 else c2) g.
@@ -209,13 +209,13 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 
-Lemma ehl_while (e:expr_ A X mem bool) c f :
+Lemma ehl_while (e:expr_ A X M bool) c f :
   (forall m, 0 <= f m)%E ->
   ehl (lift (esem e) f) c f ->
   ehl f (While e Do c) (lift (fun m => negb (esem e m)) f).
 Proof.
 move => Hf.
-have Hpos : forall m : mem, (0%R <= (if ~~ `[{e}] m then f m else +oo))%E.
+have Hpos : forall m : M, (0%R <= (if ~~ `[{e}] m then f m else +oo))%E.
 + move => m;  case (`[{e}] m) => //=. exact: le0y.
 rewrite /lift => Hi m.
 rewrite ssemE /espe.
@@ -379,9 +379,9 @@ End Sound.
 Section Complete.
 
 
-Definition cl_mgt (ps : psi) : Y -> @clause R A X mem :=
+Definition cl_mgt (ps : psi) : Y -> @clause R A X M :=
 fun (f:Y) => ((fun _ => 0)%E,
-                (fun (s0: mem) r s =>
+                (fun (s0: M) r s =>
                    if (r <= ((ssem_ ps (ps f) s0) s)%:E)%E then 0%E else +oo%E)
           ).
 
@@ -402,12 +402,8 @@ fun (f:Y) => ((fun _ => 0)%E,
 End Complete.
 
 Section prhl.
-Context {ident : countType}.
 
-Local Notation cmem := (cmem A ident).
-Notation cmd := (@cmd R A ident ident cmem).
-
-Lemma espe_coupling (ν : Distr (cmem * cmem)) (g g':(@ehl_stmt.cond R A ident cmem)) :
+Lemma espe_coupling (ν : Distr (M * M)) (g g':(@ehl_stmt.cond R A X M)) :
   (forall m, 0 <= g m)%E ->
   (forall m, 0 <= g' m)%E ->
   (forall p, p \in dinsupp ν -> (g p.2 <= g' p.1)%E) ->
@@ -421,7 +417,7 @@ rewrite (eq_esum _ _ (fun p => g p.2 * EFin (ν p))%E).
 rewrite [espe (dfst ν) g'] eexp_dlet //.
 rewrite {1}/espe.
 rewrite (eq_esum _
-           (fun x => espe (dunit (T:=cmem) x.1) g' * EFin (ν x))%E
+           (fun x => espe (dunit (T:=M) x.1) g' * EFin (ν x))%E
            (fun p => g' p.1 * EFin (ν p))%E).
 + by move => ??; rewrite eexp_dunit.
 rewrite /espe; apply: le_esum => p _.
@@ -431,11 +427,11 @@ case/boolP: (p \in dinsupp ν) => [hp | /dinsuppPn hp].
 + by rewrite hp !mule0.
 Qed.
 
-Lemma ehl_prhl (c d:cmd) (f g f' g':(@ehl_stmt.cond R A ident cmem))  P Q (ps: ident -> cmd):
-  (forall m : cmem, 0 <= g m)%E ->
-  (forall m : cmem, 0 <= g' m)%E ->
+Lemma ehl_prhl (c d: cmd) (f g f' g':(@ehl_stmt.cond R A X M))  P Q (ps: Y -> cmd):
+  (forall m : M, 0 <= g m)%E ->
+  (forall m : M, 0 <= g' m)%E ->
   ehl_ ps f' d g' ->
-  @prhl_ R A ident ps P d c Q ->
+  @prhl_ R A X Y M ps P d c Q ->
   (forall m, exists m', f' m' <= f m /\ P (m',m))%E ->
   (forall m' m, Q (m',m) -> g m <= g' m')%E ->
   ehl_ ps f c g.

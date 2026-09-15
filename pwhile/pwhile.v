@@ -187,157 +187,6 @@ Notation "` x"      := (@var_ _ _ _ _ x%V)        : xsyn_scope.
 Notation "x %:G"    := (@gvar_ _ _ _ _ x%V) (at level 2, format "x %:G") : xsyn_scope.
 
 (* -------------------------------------------------------------------- *)
-#[only(eqbOK)] derive
-  Inductive side := SLeft | SRight.
-
-Definition _side_list := [:: SLeft; SRight].
-
-HB.instance Definition _ := hasDecEq.Build side side_eqb_OK.
-
-Notation "''1'" := SLeft.
-Notation "''2'" := SRight.
-
-Definition mselect {T : Type} (s : side) (m : T * T) :=
-  match s with
-  | '1 => m.1
-  | '2 => m.2
-  end.
-
-Notation "m # s" := (mselect s m) (at level 2, format "m # s") : mem_scope.
-
-(* -------------------------------------------------------------------- *)
-Lemma side2 {A : Type} s (x : A * A) : ((fst, snd)#s x = x#s)%M.
-Proof. by case: s. Qed.
-
-Lemma side_app {A B : Type} (f : A -> B) s (x y : A) :
-  (f (x, y)#s = (f x, f y)#s)%M.
-Proof. by case: s. Qed.
-
-(* -------------------------------------------------------------------- *)
-(* Concrete relational memory                                          *)
-(* -------------------------------------------------------------------- *)
-Section RConcrete.
-Variable (R : realType) (A : codeType) (ident : countType).
-
-Local Notation cmem := (cmem A ident).
-
-Notation rident := (ident * side)%type.
-
-Definition coremem2 := (cmem * cmem)%type.
-
-Definition coremem2_get (m : coremem2) T xs :=
-  mget T (m#(xs.2))%M xs.1.
-
-Definition coremem2_set (m : coremem2) (T : A) xs (v : interp T) :=
-  match xs.2 return coremem2 with
-  | '1 => (mset m.1 xs.1 v, m.2)
-  | '2 => (m.1, mset m.2 xs.1 v)
-  end.
-
-Definition coremem2_getg (m : coremem2) T xs :=
-  mgetg T (m#(xs.2))%M xs.1.
-
-Definition coremem2_setg (m : coremem2) (T : A) xs (v : interp T) :=
-  match xs.2 return coremem2 with
-  | '1 => (msetg m.1 xs.1 v, m.2)
-  | '2 => (m.1, msetg m.2 xs.1 v)
-  end.
-
-Definition coremem2_new (m : coremem2) : coremem2 := (mnew m.1, mnew m.2).
-
-Definition coremem2_restore (m0 m : coremem2) : coremem2 :=
-  (mrestore m0.1 m.1, mrestore m0.2 m.2).
-
-Coercion coremem2_get : coremem2 >-> Funclass.
-
-Lemma get_set2_eq {T} m x v : (@coremem2_set m T x v) T x = v.
-Proof. by case: m x => m1 m2 [x []] /=; apply mget_eq. Qed.
-
-Lemma get_set2_ne {T U} m x y v :
-  (T <> U \/ x != y) -> (@coremem2_set m T x v) U y = m U y.
-Proof.
-case: m x y => m1 m2 [x []] [y []] //= h; apply mget_neq => /=;
-  by (elim: h => h; [left | right; apply: contra h => /eqP->]).
-Qed.
-
-Lemma getg_setg2_eq {T} m x v :
-  coremem2_getg (@coremem2_setg m T x v) T x = v.
-Proof. by case: m x => m1 m2 [x []] /=; apply mgetg_eq. Qed.
-
-Lemma getg_setg2_ne {T U} m x y v :
-  (T <> U \/ x != y) ->
-  coremem2_getg (@coremem2_setg m T x v) U y = coremem2_getg m U y.
-Proof.
-case: m x y => m1 m2 [x []] [y []] //= h; apply mgetg_neq => /=;
-  by (elim: h => h; [left | right; apply: contra h => /eqP->]).
-Qed.
-
-Lemma get_setg2 {T U} m x y v : (@coremem2_setg m T x v) U y = m U y.
-Proof. by case: m x y => m1 m2 [x []] [y []] //=; apply mget_setg. Qed.
-
-Lemma getg_set2 {T d} m x y v :
-  coremem2_getg (@coremem2_set m T x v) d y = coremem2_getg m d y.
-Proof. by case: m x y => m1 m2 [x []] [y []] //=; apply mgetg_set. Qed.
-
-Lemma getg_new2 {U} m y :
-  coremem2_getg (coremem2_new m) U y = coremem2_getg m U y.
-Proof. by case: m y => m1 m2 [y []] /=; apply mgetg_new. Qed.
-
-Lemma restore2_id m : coremem2_restore m m = m.
-Proof. by case: m => m1 m2; rewrite /coremem2_restore /= !mrestore_id. Qed.
-
-Lemma restore2A m0 m1 m :
-  coremem2_restore m0 (coremem2_restore m1 m) = coremem2_restore m0 m.
-Proof. by rewrite /coremem2_restore /= !mrestoreA. Qed.
-
-Lemma restore2_new m0 m :
-  coremem2_restore m0 (coremem2_new m) = coremem2_restore m0 m.
-Proof.
-by case: m => m1 m2; rewrite /coremem2_restore /coremem2_new /= !mrestore_new.
-Qed.
-
-Lemma restore2_set {T} m0 m x v :
-  coremem2_restore m0 (@coremem2_set m T x v) = coremem2_restore m0 m.
-Proof.
-by case: m x => m1 m2 [x []] /=; rewrite /coremem2_restore /= mrestore_set.
-Qed.
-
-Lemma restore2_setg {T} m0 m x v :
-  coremem2_restore m0 (@coremem2_setg m T x v)
-    = coremem2_setg (coremem2_restore m0 m) x v.
-Proof.
-by case: m x => m1 m2 [x []] /=; rewrite /coremem2_restore /= mrestore_setg.
-Qed.
-
-Lemma get_restore2 {U} m0 m y : (coremem2_restore m0 m) U y = m0 U y.
-Proof. by case: m0 m y => a1 a2 [b1 b2] [y []] /=; apply mget_restore. Qed.
-
-Lemma getg_restore2 {U} m0 m y :
-  coremem2_getg (coremem2_restore m0 m) U y = coremem2_getg m U y.
-Proof. by case: m0 m y => a1 a2 [b1 b2] [y []] /=; apply mgetg_restore. Qed.
-
-HB.instance Definition coremem2_choiceType :=
-  Choice.copy coremem2 (cmem * cmem)%type.
-
-(* -------------------------------------------------------------------- *)
-HB.instance Definition coremem2_memType :=
-  isMemType.Build A rident coremem2
-    (@get_set2_eq) (@get_set2_ne) (@getg_setg2_eq) (@getg_setg2_ne)
-    (@get_setg2) (@getg_set2) (@getg_new2)
-    restore2_id restore2A restore2_new (@restore2_set) (@restore2_setg)
-    (@get_restore2) (@getg_restore2).
-
-Definition rmem : memType A rident := coremem2.
-
-Arguments rmem : simpl never.
-
-End RConcrete.
-
-Arguments cmem : clear implicits.
-Arguments rmem : clear implicits.
-Arguments rmem : simpl never.
-
-(* -------------------------------------------------------------------- *)
 Section SynInject.
 Context {R : realType} {A : codeType} {I1 I2 fname: eqType}
         {mem1 : memType A I1} {mem2 : memType A I2}
@@ -401,17 +250,15 @@ end.
 End SynInject.
 
 Section Lift.
-Variable (R : realType) (A : codeType) (ident : countType).
+Variable (R : realType) (A : codeType) (X : countType) (M: memType A X).
 
-Local Notation cmem := (cmem A ident).
-
-Notation rident := (ident * side)%type.
+Notation rident := (X * side)%type.
 
 Definition irexpr s :=
-  (@iexpr A _ _ cmem (rmem A ident) (fun x : ident => (x, s)) (fun m => (m#s)%M)).
+  (@iexpr A _ _ M (rmem A X M) (fun x : X => (x, s)) (fun m => (m#s)%M)).
 
 Definition ircmd s :=
-  (@icmd R A _ _ ident cmem (rmem A ident) (fun x : ident => (x, s)) (fun m => (m#s)%M)).
+  (@icmd R A _ _ X M (rmem A X M) (fun x : X => (x, s)) (fun m => (m#s)%M)).
 End Lift.
 
 (* -------------------------------------------------------------------- *)

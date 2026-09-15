@@ -826,12 +826,11 @@ Context {R : realType} {A : codeType} {I J : countType} {M : memType A I}.
 Local Notation rsem    := (@ssem_ _ _ _ rmem).
 Local Notation Distr T := {distr T%type / R}.
 
-Local Notation rmem  := (rmem A I).
+Local Notation rmem  := (rmem A I M).
 Local Notation vars  := (vars_ I).
-Local Notation cmem  := (cmem A I).
-Local Notation expr  := (@expr_ A I cmem).
-Local Notation assn  := (pred cmem).
-Local Notation dassn := (pred (Distr cmem)).
+Local Notation expr  := (@expr_ A I M).
+Local Notation assn  := (pred M).
+Local Notation dassn := (pred (Distr M)).
 
 Local Notation rmdistr := (Distr rmem).
 Local Notation rmnull  := (@dnull R rmem).
@@ -1479,13 +1478,11 @@ elim: m => [|m IH] c s.
     by rewrite inliner_inliner_ps_ssem.
 Qed.
 
-
 Lemma ssem_aux_ssem_ ps n c s : ssem_aux (ubnf ps n) c s = ssem_ (k_inliner_ps1 n ps) c s.
 Proof.
 by rewrite ssem_ubnf_dnull ubnf_ssem
        (inliner_false_ps_ssem _ _ _ _ ps) inliner_inliner_ps_ssem.
 Qed.
-
 
 Lemma dlim_inliner_ssem (ps' : psi) c s:
   \dlim_(n) ssem_ (k_inliner_ps1 n ps') c s =  ssem_ ps' c s.

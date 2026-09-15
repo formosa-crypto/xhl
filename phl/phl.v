@@ -41,16 +41,16 @@ Notation "'>=" := Ge (at level 0) : bd_scope.
 Bind Scope bd_scope with bd.
 
 Section phl.
-Context {R : realType} {A : codeType} {X Y : countType} {mem : memType A X}.
+Context {R : realType} {A : codeType} {X Y : countType} {M : memType A X}.
 
 Local Notation Distr T := {distr T%type / R}.
 Local Notation vars  := (vars_ X).
-Local Notation expr  := (@expr_ A X mem).
+Local Notation expr  := (@expr_ A X M).
 Local Notation bexpr := (expr bool).
 Local Notation dexpr T := (expr (Distr T)).
-Local Notation cmd   := (@cmd_ R A X mem Y).
-Local Notation assn  := (pred mem).
-Local Notation psi   := (Y -> (@cmd_ R A X mem Y)).
+Local Notation cmd   := (@cmd_ R A X M Y).
+Local Notation assn  := (pred M).
+Local Notation psi   := (Y -> (@cmd_ R A X M Y)).
 
 Implicit Types P Q S I : assn.
 Implicit Types c       : cmd.
@@ -62,7 +62,7 @@ Implicit Types ps      : psi.
 (* -------------------------------------------------------------------- *)
 
 Definition phl_ ps P c Q r d :=
-  forall m : mem, P m -> rel_of_bd r (\P_[ssem_ ps c m] Q) d.
+  forall m : M, P m -> rel_of_bd r (\P_[ssem_ ps c m] Q) d.
 
 (* ehl_ ps (lift P (fun _ => EFin d) c (fun m => (Q m)%/R) *)
 
@@ -71,10 +71,10 @@ Arguments phl_ ps _%_assn _%_syn_scope _%_assn _%_bd_scope _%_ring_scope.
 (* -------------------------------------------------------------------- *)
 (* Generic pHoare triple                                                *)
 (* -------------------------------------------------------------------- *)
-Definition assn2 := (mem -> pred mem).
+Definition assn2 := (M -> pred M).
 
 Definition kphl_ ps (P : assn) (c : cmd) (Q : assn2) r d:=
-  forall m: mem, P m -> rel_of_bd r (\P_[ssem_ ps c m] (Q m)) d.
+  forall m: M, P m -> rel_of_bd r (\P_[ssem_ ps c m] (Q m)) d.
 
 Arguments kphl_ ps _%_assn _%_syn_scope _%_assn _%_bd_scope _%_ring_scope.
 
@@ -291,7 +291,7 @@ Lemma phl_le1 P c Q : phl P c Q '<= 1.
 Proof. by move=> m _ /=; apply/le1_pr. Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma has_esp_pr P Q c1 c2 m: \E?_[ssem_ ps c1 m] (fun x : mem => \P_[ssem_ ps c2 x] Q).
+Lemma has_esp_pr P Q c1 c2 m: \E?_[ssem_ ps c1 m] (fun x : M => \P_[ssem_ ps c2 x] Q).
 Proof.
   apply bounded_has_exp.
   exists 1. move => ?; rewrite ger0_norm.
@@ -376,8 +376,8 @@ rewrite /pr (eq_esum _ _ (fun _ => 0%E)).
 - by rewrite esum0.
 Qed.
 
-Lemma sum_dlim_r_r (f : nat -> {distr mem / R}) (E : pred mem) (r : R) :
-  (forall n m : nat, (n <= m)%N -> forall x : mem, f n x <= f m x) ->
+Lemma sum_dlim_r_r (f : nat -> {distr M / R}) (E : pred M) (r : R) :
+  (forall n m : nat, (n <= m)%N -> forall x : M, f n x <= f m x) ->
   (forall n : nat, \P_[f n] E <= r) ->
   \P_[\dlim_(n) f n] E <= r.
 Proof.
