@@ -46,12 +46,13 @@ Section Syntax.
   Context
     {R : realType}
     {A : codeType}
-    {ident : eqType}
-    {mem : memType A ident}
+    {X Xg : eqType}
+    {mem : memType A X Xg}
     {fname : eqType}.
 
 Local Notation Distr T := {distr T%type / R}.
-Local Notation vars := (vars_ ident).
+Local Notation vars := (vars_ X).
+Local Notation gvars := (vars_ Xg).
 
 Definition vname {T : A} (v : vars T) :=
   let: Var name := v in name.
@@ -63,7 +64,7 @@ Inductive expr_ : Type -> Type :=
 | cst_  {T}     of T : expr_ T
 | prp_          of pred mem : expr_ bool
 | app_  {T U}   of expr_ (T -> U) & expr_ T : expr_ U
-| gvar_ {T : A} of vars T : expr_ (interp T).
+| gvar_ {T : A} of gvars T : expr_ (interp T).
 
 Notation bexpr   := (expr_ bool).
 Notation dexpr T := (expr_ (Distr T)).
@@ -114,7 +115,7 @@ Inductive cmd_ : Type :=
 | abort
 | skip
 | assign {T : A}  of vars T & expr_ (interp T)
-| gassign {T : A} of vars T & expr_ (interp T)
+| gassign {T : A} of gvars T & expr_ (interp T)
 | random {T : A}  of vars T & dexpr (interp T)
 | block           of seq binding & cmd_ & seq binding
 | cond            of bexpr & cmd_ & cmd_
@@ -174,7 +175,7 @@ Reserved Notation "x =i y" (at level 70, no associativity).
 Definition beq (x y : bool) : bool := x == y.
 Definition ieq (x y : int ) : bool := x == y.
 
-Notation "c %:S"    := (@cst_ _ _ _ _ c) (at level 2, format "c %:S").
+Notation "c %:S"    := (@cst_ _ _ _ _ _ c) (at level 2, format "c %:S").
 Notation "e1 =b e2" := (app2_ (cst_ beq) e1 e2)   : xsyn_scope.
 Notation "e1 =i e2" := (app2_ (cst_ ieq) e1 e2)   : xsyn_scope.
 Notation "e1 || e2" := (app2_ (cst_ orb  ) e1 e2) : xsyn_scope.
@@ -183,24 +184,29 @@ Notation "~~ e"     := (app_ (cst_ negb) e)       : xsyn_scope.
 Notation "e1 + e2"  := (app2_ (cst_ +%R) e1 e2)   : xsyn_scope.
 Notation "e1 * e2"  := (app2_ (cst_ *%R) e1 e2)   : xsyn_scope.
 Notation "e1 :: e2" := (app2_ (cst_ cons) e1 e2)  : xsyn_scope.
-Notation "` x"      := (@var_ _ _ _ _ x%V)        : xsyn_scope.
-Notation "x %:G"    := (@gvar_ _ _ _ _ x%V) (at level 2, format "x %:G") : xsyn_scope.
+Notation "` x"      := (@var_ _ _ _ _ _ x%V)        : xsyn_scope.
+Notation "x %:G"    := (@gvar_ _ _ _ _ _ x%V) (at level 2, format "x %:G") : xsyn_scope.
 
 (* -------------------------------------------------------------------- *)
 Section SynInject.
-Context {R : realType} {A : codeType} {I1 I2 fname: eqType}
-        {mem1 : memType A I1} {mem2 : memType A I2}
-        (h : I1 -> I2) (mh : mem2 -> mem1) (ident : countType).
+Context {R : realType} {A : codeType} {I1 I1g I2 I2g fname: eqType}
+        {mem1 : memType A I1 I1g} {mem2 : memType A I2 I2g}
+        (h : I1 -> I2) (hg : I1g -> I2g) (mh : mem2 -> mem1).
 
 Local Notation vars1 := (vars_ I1).
 Local Notation vars2 := (vars_ I2).
-Local Notation expr1 := (@expr_ A I1 mem1).
-Local Notation expr2 := (@expr_ A I2 mem2).
-Local Notation cmd1  := (cmd_  R A I1 mem1 fname).
-Local Notation cmd2  := (cmd_  R A I2 mem2 fname).
+Local Notation gvars1 := (vars_ I1g).
+Local Notation gvars2 := (vars_ I2g).
+Local Notation expr1 := (@expr_ A I1 I1g mem1).
+Local Notation expr2 := (@expr_ A I2 I2g mem2).
+Local Notation cmd1  := (cmd_  R A I1 I1g mem1 fname).
+Local Notation cmd2  := (cmd_  R A I2 I2g mem2 fname).
 
 Definition ivar {T : A} (x : vars1 T) : vars2 T :=
   let: Var x := x in Var T (h x).
+
+Definition givar {T : A} (x : gvars1 T) : gvars2 T :=
+  let: Var x := x in Var T (hg x).
 
 Definition iprop (p : pred mem1) : pred mem2 :=
   fun m => p (mh m).
@@ -211,10 +217,10 @@ Fixpoint iexpr {T : Type} (e : expr1 T) : expr2 T :=
   | cst_ _   T     => cst_ T
   | prp_     p     => prp_ (iprop p)
   | app_ _ _ e1 e2 => app_ (iexpr e1) (iexpr e2)
-  | gvar_ _  x     => gvar_ (ivar x)
+  | gvar_ _  x     => gvar_ (givar x)
   end.
 
-Definition ibind (b : @binding A I1 mem1) : @binding A I2 mem2 :=
+Definition ibind (b : @binding A I1 I1g mem1) : @binding A I2 I2g mem2 :=
   let: existT t (x, e) := b in bind_of (ivar x) (iexpr e).
 
 Fixpoint icmd (c : cmd1) : cmd2 :=
@@ -226,7 +232,7 @@ Fixpoint icmd (c : cmd1) : cmd2 :=
       ivar x <<- iexpr e
 
   | gassign _ x e =>
-      gassign (ivar x) (iexpr e)
+      gassign (givar x) (iexpr e)
 
   | x <$- e =>
       ivar x <$- iexpr e
@@ -250,24 +256,32 @@ end.
 End SynInject.
 
 Section Lift.
-Variable (R : realType) (A : codeType) (X : countType) (M: memType A X).
+Variable (R : realType) (A : codeType) (X Xg : countType) (M: memType A X Xg).
 
 Notation rident := (X * side)%type.
 
 Definition irexpr s :=
-  (@iexpr A _ _ M (rmem A X M) (fun x : X => (x, s)) (fun m => (m#s)%M)).
+  (@iexpr A _ _ _ _ M (rmem A X Xg M)
+     (fun x : X => (x, s)) (fun x : Xg => (x, s))
+     (fun m => (m#s)%M)).
 
 Definition ircmd s :=
-  (@icmd R A _ _ X M (rmem A X M) (fun x : X => (x, s)) (fun m => (m#s)%M)).
+  (@icmd R A _ _ _ _ X M (rmem A X Xg M)
+     (fun x : X => (x, s)) (fun x : Xg => (x, s))
+     (fun m => (m#s)%M)).
+
 End Lift.
 
 (* -------------------------------------------------------------------- *)
 Notation rident ident := (ident * side)%type.
 
 Notation irvar s := (@ivar _ _ _ (fun x => (x, s))) (only parsing).
+Notation girvar s := (@givar _ _ _ (fun x => (x, s))) (only parsing).
 
 Reserved Notation "x # s" (at level 2, format "x # s").
+Reserved Notation "x #g s" (at level 2, format "x #g s").
 
 Notation "x # s" := (ivar (pair^~ s) x) : vsyn_scope.
+Notation "x #g s" := (givar (pair^~ s) x) : vsyn_scope.
 Notation "e # s" := (irexpr s e) : xsyn_scope.
 Notation "c # s" := (ircmd s c) : syn_scope.

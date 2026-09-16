@@ -22,22 +22,23 @@ Local Open Scope mem_scope.
 
 Section HL.
 (* [Rl], not [R]: this file uses [R] for intermediate assertions. *)
-Context {Rl : realType} {A : codeType} {X Y : eqType} {mem : memType A X}.
+Context {Rl : realType} {A : codeType} {X Xg Y : eqType} {mem : memType A X Xg}.
 
 Local Notation Distr T := {distr T%type / Rl}.
 
 Notation "`[ 'forall' x 'in' mu => Q ]" :=
-  (@forall_in _ _ _ mem _ mu%A (fun x => Q)).
+  (@forall_in _ _ _ _ mem _ mu%A (fun x => Q)).
 
 Notation "`[ 'forall' x 'in' mu | m => Q ]" :=
-  (@forall_in _ _ _ mem _ mu%A (fun x m => Q)).
+  (@forall_in _ _ _ _ mem _ mu%A (fun x m => Q)).
 
-Notation assn := (@assn _ _ mem).
-Notation assn2 := (@assn2 _ _ mem).
+Local Notation assn := (@assn _ _ _ mem).
+Local Notation assn2 := (@assn2 _ _ _ mem).
 
-Notation phi := (@phi _ X Y mem).
-Notation cmd := (@cmd Rl A X Y mem).
-Notation psi := (@psi Rl A X Y mem).
+Local Notation phi := (@phi _ X Xg Y mem).
+Local Notation cmd := (@cmd Rl A X Xg Y mem).
+Local Notation psi := (@psi Rl A X Xg Y mem).
+Local Notation expr := (@expr_ A X Xg mem).
 
 Section Logic.
 
@@ -46,11 +47,11 @@ Inductive derivable : psi -> phi -> assn -> cmd -> assn -> Prop :=
       derivable ps cl P abort Q
   | H_Skip : forall P cl ps,
       derivable ps cl P skip P
-  | H_Asgn : forall {T : A} x (e:expr_ A X mem T) (Q : assn) cl ps,
+  | H_Asgn : forall {T : A} x (e:expr T) (Q : assn) cl ps,
       derivable ps cl [pred m | Q m.[x <- `[{e}]%A m]] (x <<- e) Q
-  | H_GAsgn : forall {T : A} x (e:expr_ A X mem T) (Q : assn) cl ps,
+  | H_GAsgn : forall {T : A} x (e:expr T) (Q : assn) cl ps,
       derivable ps cl [pred m | Q (m.{x <- `[{e}]%A m})] (G x <<- e) Q
-  | H_Random : forall {T : A} x (d:expr_ A X mem (Distr T)) (Q : assn) cl ps,
+  | H_Random : forall {T : A} x (d:expr (Distr T)) (Q : assn) cl ps,
       derivable ps cl `[forall v in `[{d}] | m => Q m.[x <- v]]%A (x <$- d) Q
   | H_Block : forall (P Q : assn) bs c rs cl ps,
       (forall m, derivable ps cl
@@ -58,11 +59,11 @@ Inductive derivable : psi -> phi -> assn -> cmd -> assn -> Prop :=
                    c
                    [pred m'' | Q (mret m m'' rs)]) ->
       derivable ps cl P (block bs c rs) Q
-  | H_If : forall (Pr Po : assn) (e:expr_ A X mem bool) (c1 c2:cmd) cl ps,
+  | H_If : forall (Pr Po : assn) (e:expr bool) (c1 c2:cmd) cl ps,
       derivable ps cl (Pr /\ `[{e}])%A   c1 Po ->
       derivable ps cl (Pr /\ `[{~~e}])%A c2 Po ->
       derivable ps cl Pr (If e then c1 else c2)%S Po
-  | H_While : forall (I : assn) (e:expr_ A X mem bool) (c:cmd) cl ps,
+  | H_While : forall (I : assn) (e:expr bool) (c:cmd) cl ps,
       derivable ps cl (I /\ `[{e}])%A c I ->
       derivable ps cl I (While e Do c) (I /\ `[{~~e}])%A
   | H_Seq : forall P c Q d R cl ps,
@@ -113,7 +114,7 @@ Proof. by move=> Hc Hw m Pm;rewrite -Hc //;apply Hw. Qed.
 
 (* -------------------------------------------------------------------- *)
 
-Instance hl_m : Proper (eq ==> @eqcmd _ _ _ _ mem ps ==> eq ==> iff) hl.
+Instance hl_m : Proper (eq ==> @eqcmd _ _ _ _ _ mem ps ==> eq ==> iff) hl.
 Proof. by move=> ??-> ??? ??->;split;apply hl_eq. Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -139,17 +140,17 @@ Lemma hl_abort (P Q : assn) : hl P abort Q.
 Proof. by move=> ??;rewrite ssemE;apply range_dnull. Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma hl_assign {T : A} x (e:expr_ A X mem T) (Q : assn):
+Lemma hl_assign {T : A} x (e:expr T) (Q : assn):
    hl [pred m | Q m.[x <- `[{e}]%A m]] (x <<- e) Q.
 Proof. by move=> m /=;rewrite !semE;apply range_dunit. Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma hl_gassign {T : A} x (e:expr_ A X mem T) (Q : assn):
+Lemma hl_gassign {T : A} x (e:expr T) (Q : assn):
    hl [pred m | Q (m.{x <- `[{e}]%A m})] (G x <<- e) Q.
 Proof. by move=> m /=;rewrite !semE;apply range_dunit. Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma hl_random {T : A} x (d:expr_ A X mem (Distr T)) (Q : assn):
+Lemma hl_random {T : A} x (d:expr (Distr T)) (Q : assn):
    hl `[forall v in `[{d}] | m => Q m.[x <- v]] (x <$- d) Q.
 Proof.
 move=> m /asboolP /= h; rewrite !semE.
@@ -165,7 +166,7 @@ by move=> H1 H2 m /H1 Hm; rewrite ssemE; apply/(range_dlet Hm H2).
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma hl_if (Pr Po : assn) (e:expr_ A X mem bool) (c1 c2:cmd):
+Lemma hl_if (Pr Po : assn) (e:expr bool) (c1 c2:cmd):
   hl (Pr /\ `[{e}])%A   c1 Po ->
   hl (Pr /\ `[{~~e}])%A c2 Po ->
   hl Pr (If e then c1 else c2)%S Po.
@@ -187,7 +188,7 @@ by rewrite /= Pm eqxx.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma hl_while (I : assn) (e:expr_ A X mem bool) (c:cmd):
+Lemma hl_while (I : assn) (e:expr bool) (c:cmd):
   hl (I /\ `[{e}])%A c I ->
   hl I (While e Do c) (I /\ `[{~~e}])%A.
 Proof.
@@ -430,15 +431,14 @@ End Complete.
 End HL.
 
 Section Misc.
-Context {Rl : realType} {A : codeType} {X Y : countType} {mem : memType A X}.
+Context {Rl : realType} {A : codeType} {X Xg Y : countType} {mem : memType A X Xg}.
 
 Local Notation Distr T := {distr T%type / Rl}.
-Local Notation cmem := (mem A X).
 Local Notation dmem := (Distr mem).
 Local Notation vars := (vars_ X).
-Local Notation expr := (@expr_ A X mem).
+Local Notation expr := (@expr_ A X Xg mem).
 
-Notation cmd := (@cmd Rl A X Y mem).
+Notation cmd := (@cmd Rl A X Xg Y mem).
 
 (* -------------------------------------------------------------------- *)
 Definition eqon (X : pred { t : A & vars t } ) (m : mem) :=
@@ -453,7 +453,7 @@ Definition separated X (P : pred dmem) :=
     -> mu1 \in P -> mu2 \in P.
 
 (* -------------------------------------------------------------------- *)
-Definition bvar (b : @binding A X mem) : { t : A & vars t } :=
+Definition bvar (b : @binding A X Xg mem) : { t : A & vars t } :=
   let: existT t (x, _) := b in Tagged vars x.
 
 (* -------------------------------------------------------------------- *)
@@ -487,7 +487,7 @@ by move=> c1 c2 c3 eq1 eq2 x xX; rewrite eq1 ?eq2.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Definition bstep (m' : mem) (mm : mem) (b : @binding A X mem) : mem :=
+Definition bstep (m' : mem) (mm : mem) (b : @binding A X Xg mem) : mem :=
   let: existT _ (r, e) := b in mm.[r <- `[{e}] m'].
 
 Lemma mretE (m m' : mem) rs : mret m m' rs = foldl (bstep m') (mrestore m m') rs.

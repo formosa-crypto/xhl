@@ -37,13 +37,13 @@ Local Open Scope mem_scope.
 (* that actually mention them are parameterized on section close.        *)
 (* ==================================================================== *)
 Section ITreeSem.
-Context {R : realType} {A : codeType} {ident : countType}.
+Context {R : realType} {A : codeType} {X Xg Y : countType} {M : memType A X Xg}.
 
 Local Notation Distr T := {distr T%type / R}.
-Local Notation cmem    := (cmem A ident).
-Local Notation vars    := (vars_ ident).
-Local Notation expr    := (@expr_ A ident cmem).
-Local Notation cmd     := (@cmd_ R A ident cmem ident).
+Local Notation vars    := (vars_ X).
+Local Notation gvar    := (vars_ Xg).
+Local Notation expr    := (@expr_ A X Xg M).
+Local Notation cmd     := (@cmd_ R A X Xg M Y).
 Local Notation bexpr   := (expr bool).
 Local Notation dexpr T := (expr (Distr T)).
 
@@ -51,7 +51,7 @@ Variant Rnd : Type -> Type :=
   | GetRnd : forall t : A, {distr t / R} -> Rnd t.
 
 Variant Call : Type -> Type :=
-  | CallE (f:ident) : Call unit.
+  | CallE (f:Y) : Call unit.
 
 (* [EnterBlock bs] installs the block's initial local store and *returns the
  * outer memory*, so that the continuation can hand it back to [LeaveBlock],
@@ -61,20 +61,20 @@ Variant Call : Type -> Type :=
  * [InstrE] keeps its own identifiers and memory, as before; what used to
  * pin them to the concrete ones was the global [vars]/[bexpr] notations of
  * pwhile.v, spelled out here at [I]/[mem]. *)
-Variant InstrE {I : eqType} {mem : memType A I} : Type -> Type :=
-  | Assig : forall t : A,  vars_ I t -> expr_ A I mem t  -> InstrE unit
-  | GAssig : forall t : A,  vars_ I t -> expr_ A I mem t  -> InstrE unit
-  | RAssig :  forall t : A,  vars_ I t -> expr_ A I mem {distr t / R}  -> InstrE unit
-  | EvalCond : expr_ A I mem bool -> InstrE bool
-  | EnterBlock : seq (@binding A I mem) -> InstrE mem
-  | LeaveBlock : mem -> seq (@binding A I mem) -> InstrE unit.
+Variant InstrE {I Ig : eqType} {mem : memType A I Ig} : Type -> Type :=
+  | Assig : forall t : A,  vars_ I t -> expr_ A I Ig mem t  -> InstrE unit
+  | GAssig : forall t : A,  vars_ Ig t -> expr_ A I Ig mem t  -> InstrE unit
+  | RAssig :  forall t : A,  vars_ I t -> expr_ A I Ig mem {distr t / R}  -> InstrE unit
+  | EvalCond : expr_ A I Ig mem bool -> InstrE bool
+  | EnterBlock : seq (@binding A I Ig mem) -> InstrE mem
+  | LeaveBlock : mem -> seq (@binding A I Ig mem) -> InstrE unit.
 
 Section ParSem.
 
   Context
     {E: Type -> Type}
     {XI : Rnd -< E}
-    {XII : @InstrE _ cmem -< E}.
+    {XII : @InstrE _ _ M -< E}.
 
   Local Notation continue_loop := (ret (inl tt)).
   Local Notation exit_loop  := (ret (inr tt)).
@@ -116,14 +116,14 @@ Section ParSem.
     | pwhile.call f => trigger (CallE f)
     end.
 
-  Definition handle_Call (ps: ident -> cmd) :
+  Definition handle_Call (ps: Y -> cmd) :
     Call ~> itree (Call +' E) :=
     fun T (rc : Call T) =>
       match rc with
       | CallE f => com_sem (ps f)
       end.
 
-  Definition interp_call (ps: ident -> cmd)
+  Definition interp_call (ps: Y -> cmd)
     T (t: itree (Call +' E) T) : itree E T :=
     interp_mrec (handle_Call ps) t.
 
@@ -134,39 +134,39 @@ Section InstrSem.
   Context
     {E: Type -> Type}
     {XI : Rnd -< E}
-    {XS: @stateE cmem -< E}.
+    {XS: @stateE M -< E}.
 
   (* InstrE handler *)
   Definition handle_InstrE : InstrE ~> itree E :=
     fun _ e =>
       match e with
       | Assig _ x e =>
-            bind (trigger (@Get cmem))
+            bind (trigger (@Get M))
               (fun m =>
                  let m := m.[x <- (esem e m)] in
-                 trigger (@Put cmem m))
+                 trigger (@Put M m))
       | GAssig _ x e =>
-            bind (trigger (@Get cmem))
+            bind (trigger (@Get M))
               (fun m =>
                  let m := m.{x <- (esem e m)} in
-                 trigger (@Put cmem m))
+                 trigger (@Put M m))
       | EnterBlock bs =>
-            bind (trigger (@Get cmem))
+            bind (trigger (@Get M))
               (fun m =>
-                 bind (trigger (@Put cmem (minit m bs)))
+                 bind (trigger (@Put M (minit m bs)))
                    (fun _ => Ret m))
       | LeaveBlock m0 rs =>
-            bind (trigger (@Get cmem))
-              (fun m' => trigger (@Put cmem (mret m0 m' rs)))
+            bind (trigger (@Get M))
+              (fun m' => trigger (@Put M (mret m0 m' rs)))
       | RAssig _ x e =>
-            bind (trigger (@Get cmem))
+            bind (trigger (@Get M))
             (fun m =>
                bind (trigger (GetRnd (esem e m)))
                  (fun t =>
                     let m := m.[x <- t] in
-                    trigger (@Put cmem m)))
+                    trigger (@Put M m)))
       | EvalCond e =>
-          bind (@trigger (@Get cmem))(fun m => Ret (esem e m))
+          bind (@trigger (@Get M))(fun m => Ret (esem e m))
       end.
 
   Definition ext_handle_InstrE : InstrE +' E ~> itree E :=
@@ -177,7 +177,7 @@ Section InstrSem.
 
 End InstrSem.
 
-Definition interp_intr (t: itree (InstrE +' stateE cmem  +' Rnd) unit) s :=
+Definition interp_intr (t: itree (InstrE +' stateE M  +' Rnd) unit) s :=
   bind (run_state (interp_InstrE t) s) (fun t => Ret (fst t)) .
 
 Section PropSem.
@@ -202,7 +202,7 @@ Section PropSem.
 
 End PropSem.
 
-Definition interp_full (c:cmd) (ps: ident -> cmd) : cmem -> {distr cmem / R} :=
+Definition interp_full (c:cmd) (ps: Y -> cmd) : M -> {distr M / R} :=
   fun s => dinterp (interp_intr (interp_call ps (com_sem c)) s).
 
 (* Section Truc2. *)

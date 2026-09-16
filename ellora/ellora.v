@@ -19,15 +19,17 @@ Local Open Scope sem_scope.
 Local Open Scope mem_scope.
 
 Section Ellora.
-Context {R : realType} {A : codeType} {X Y : countType} {mem : memType A X}.
+Context {R : realType} {A : codeType} {X Xg Y : countType} {mem : memType A X Xg}.
 
 Local Notation Distr T := {distr T%type / R}.
 Local Notation vars    := (vars_ X).
-Local Notation expr    := (@expr_ A X mem).
+Local Notation gvars   := (vars_ Xg).
+Local Notation expr    := (@expr_ A X Xg mem).
 Local Notation dexpr T := (expr (Distr T)).
-Local Notation cmd     := (@cmd_ R A X mem Y).
+Local Notation cmd     := (@cmd_ R A X Xg mem Y).
+Local Notation psi     := (Y -> (@cmd_ R A X Xg mem Y)).
 Local Notation assn    := (pred mem).
-Local Notation ssem    := (@ssem_ R A X Y mem).
+Local Notation ssem    := (@ssem_ R A X Xg Y mem).
 Local Notation mnull   := (@dnull R mem).
 
 (* -------------------------------------------------------------------- *)
@@ -211,8 +213,6 @@ Arguments dassn_map : simpl never.
 
 Notation "P .[ F ]" := (dassn_map P F) : assn.
 
-Notation psi := (Y -> cmd_ R A X mem Y).
-
 (* -------------------------------------------------------------------- *)
 Local Notation iwhilen k b c := (iterc k (IfT b then c)).
 
@@ -230,7 +230,7 @@ Inductive sellora : psi -> (Y -> dassn) -> (Y -> dassn2) -> dassn -> dassn -> cm
 | EAssign {t : A} P (x : vars t) (e : expr t) pre post ps:
     sellora ps pre post (P.[fun mu => dssem ps (x <<- e) mu])%A P (x <<- e)
 
-| EGAssign {t : A} P (x : vars t) (e : expr t) pre post ps:
+| EGAssign {t : A} P (x : gvars t) (e : expr t) pre post ps:
     sellora ps pre post (P.[fun mu => dssem ps (G x <<- e) mu])%A P (G x <<- e)
 
 | ESample {t : A} P (x : vars t) (d : dexpr t) pre post ps:

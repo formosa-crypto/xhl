@@ -41,16 +41,16 @@ Notation "'>=" := Ge (at level 0) : bd_scope.
 Bind Scope bd_scope with bd.
 
 Section phl.
-Context {R : realType} {A : codeType} {X Y : countType} {M : memType A X}.
+Context {R : realType} {A : codeType} {X Xg Y : countType} {M : memType A X Xg}.
 
 Local Notation Distr T := {distr T%type / R}.
 Local Notation vars  := (vars_ X).
-Local Notation expr  := (@expr_ A X M).
+Local Notation expr  := (@expr_ A X Xg M).
 Local Notation bexpr := (expr bool).
 Local Notation dexpr T := (expr (Distr T)).
-Local Notation cmd   := (@cmd_ R A X M Y).
+Local Notation cmd   := (@cmd_ R A X Xg M Y).
 Local Notation assn  := (pred M).
-Local Notation psi   := (Y -> (@cmd_ R A X M Y)).
+Local Notation psi   := (Y -> (@cmd_ R A X Xg M Y)).
 
 Implicit Types P Q S I : assn.
 Implicit Types c       : cmd.
