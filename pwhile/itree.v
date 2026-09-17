@@ -48,7 +48,7 @@ Local Notation expr    := (@expr_ A B X Xg M).
 Local Notation cmd     := (@cmd_ R A B X Xg M Y).
 Local Notation bexpr   := (expr bool).
 Local Notation dexpr T := (expr (Distr T)).
-(* Local Notation psi     := (Y -> cmd). *)
+Local Notation psi     := (Y -> cmd).
 
 Variant Rnd : Type -> Type :=
   | GetRnd : forall t : A, {distr t / R} -> Rnd t.
@@ -98,14 +98,14 @@ Section ParSem.
     | pwhile.call f => fun m => bind (trigger (CallE f m)) (fun m => Ret m)
   end.
 
-  Definition handle_Call (ps: Y -> cmd) :
+  Definition handle_Call (ps: psi) :
     Call ~> itree (Call +' E) :=
     fun T (rc : Call T) =>
       match rc with
       | CallE f m => com_sem (ps f) m
       end.
 
-  Definition interp_call (ps: Y -> cmd)
+  Definition interp_call (ps: psi)
     T (t: itree (Call +' E) T) : itree E T :=
     interp_mrec (handle_Call ps) t.
 
@@ -450,7 +450,7 @@ Section SsemLim.
 End SsemLim.
 
 Section CallSem.
-  Variable ps : Y -> cmd.
+  Context { ps : psi}.
 
   Local Notation ICM := (interp_mrec (handle_Call (E := Rnd) ps)).
   Local Notation CS := (com_sem (E := Rnd)).
@@ -668,21 +668,21 @@ End CallSem.
 
 Section FullSem.
 
-  Definition interp_full (c:cmd) (ps: Y -> cmd) : M -> {distr M / R} :=
+  Definition interp_full (c:cmd) (ps: psi) : M -> {distr M / R} :=
     fun s => dinterp (interp_call ps (com_sem c s)).
 
-  Lemma dinterp'_mrec_spin (ps : Y -> cmd) n :
+  Lemma dinterp'_mrec_spin (ps : psi) n :
     dinterp' (observe (interp_call (E:=Rnd) ps (@ITree.spin (Call +' Rnd) M))) n = dnull.
   Proof. by elim: n => //= n ->. Qed.
 
-  Lemma interp_full_abort (ps : Y -> cmd) m :
+  Lemma interp_full_abort (ps : psi) m :
     interp_full abort ps m = ssem_ ps abort m.
   Proof.
     rewrite ssem_abortE /interp_full /= /dinterp.
     by rewrite (@eq_dlim _ _ _ (fun _ => dnull)) ?dlimC //; exact: dinterp'_mrec_spin.
   Qed.
 
-  Theorem interp_fullE (ps : Y -> cmd) c m : interp_full c ps m = ssem_ ps c m.
+  Theorem interp_fullE (ps : psi) c m : interp_full c ps m = ssem_ ps c m.
   Proof. exact: dinterp_icm_ssem. Qed.
 
 End FullSem.

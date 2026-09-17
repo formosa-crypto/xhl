@@ -47,6 +47,7 @@ Local Notation expr    := (@expr_ A B X Xg M).
 Local Notation cmd     := (@cmd_ R A B X Xg M Y).
 Local Notation bexpr   := (expr bool).
 Local Notation dexpr T := (expr (Distr T)).
+Local Notation psi     := (Y -> cmd).
 
 Variant Rnd : Type -> Type :=
   | GetRnd : forall t : A, {distr t / R} -> Rnd t.
@@ -117,14 +118,14 @@ Section ParSem.
     | pwhile.call f => trigger (CallE f)
     end.
 
-  Definition handle_Call (ps: Y -> cmd) :
+  Definition handle_Call (ps: psi) :
     Call ~> itree (Call +' E) :=
     fun T (rc : Call T) =>
       match rc with
       | CallE f => com_sem (ps f)
       end.
 
-  Definition interp_call (ps: Y -> cmd)
+  Definition interp_call (ps: psi)
     T (t: itree (Call +' E) T) : itree E T :=
     interp_mrec (handle_Call ps) t.
 
@@ -203,7 +204,7 @@ Section PropSem.
 
 End PropSem.
 
-Definition interp_full (c:cmd) (ps: Y -> cmd) : M -> {distr M / R} :=
+Definition interp_full (c:cmd) (ps: psi) : M -> {distr M / R} :=
   fun s => dinterp (interp_intr (interp_call ps (com_sem c)) s).
 
 (* Section Truc2. *)
