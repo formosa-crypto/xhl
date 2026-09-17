@@ -47,6 +47,7 @@ Local Notation expr    := (@expr_ A X Xg M).
 Local Notation cmd     := (@cmd_ R A X Xg M Y).
 Local Notation bexpr   := (expr bool).
 Local Notation dexpr T := (expr (Distr T)).
+(* Local Notation psi     := (Y -> cmd). *)
 
 Variant Rnd : Type -> Type :=
   | GetRnd : forall t : A, {distr t / R} -> Rnd t.

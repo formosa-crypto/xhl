@@ -36,16 +36,15 @@ Delimit Scope mem_scope with M.
   [mrestore_ m0 m] puts [m0]'s local store back while keeping [m]'s main
   store.
 *)
-HB.mixin Record isMemType (A : codeType) (mident midentg : eqType) M of Choice M := {
+HB.mixin Record isMemType (A B: codeType) (mident midentg : eqType) M of Choice M := {
   mget_     : M -> forall T : A, mident -> interp T;
   mset_     : M -> forall T : A, mident -> interp T -> M;
-  mgetg_    : M -> forall T : A, midentg -> interp T;
-  msetg_    : M -> forall T : A, midentg -> interp T -> M;
+  mgetg_    : M -> forall T : B, midentg -> interp T;
+  msetg_    : M -> forall T : B, midentg -> interp T -> M;
   mnew_     : M -> M;
   mrestore_ : M -> M -> M;
 
   mget_eq_  : forall T m x v, mget_ (mset_ m T x v) T x = v;
-  mset_eq_  : forall T m x, mset_ m T x (mget_ m T x) = m;
   mget_neq_ : forall T U m x y v, (T <> U \/ x != y) ->
                 mget_ (mset_ m T x v) U y = mget_ m U y;
 
@@ -69,14 +68,14 @@ HB.mixin Record isMemType (A : codeType) (mident midentg : eqType) M of Choice M
 }.
 
 #[short(type="memType")]
-HB.structure Definition MemType (A : codeType) (mident midentg: eqType) :=
-  { M of Choice M & isMemType A mident midentg M }.
+HB.structure Definition MemType (A B: codeType) (mident midentg: eqType) :=
+  { M of Choice M & isMemType A B mident midentg M }.
 
 Section MemTheory.
-Variable (A : codeType) (mident midentg: eqType).
+Variable (A B : codeType) (mident midentg: eqType).
 
 Section GetSet.
-Variable (M : memType A mident midentg) (T : A).
+Variable (M : memType A B mident midentg) (T : A) (Tg: B).
 
 Definition mget (m : M) (x : mident) := mget_ m T x.
 
@@ -86,58 +85,55 @@ Definition mset (m : M) (x : mident) (v : interp T) := mset_ m T x v.
 
 Arguments mset : simpl never.
 
-Definition mgetg (m : M) (x : midentg) := mgetg_ m T x.
+Definition mgetg (m : M) (x : midentg) := mgetg_ m Tg x.
 
 Arguments mgetg : simpl never.
 
-Definition msetg (m : M) (x : midentg) (v : interp T) := msetg_ m T x v.
+Definition msetg (m : M) (x : midentg) (v : interp Tg) := msetg_ m Tg x v.
 
 Arguments msetg : simpl never.
 
 End GetSet.
 
-Definition mnew (M : memType A mident midentg) (m : M) := mnew_ m.
+Definition mnew (M : memType A B mident midentg) (m : M) := mnew_ m.
 
 Arguments mnew : simpl never.
 
-Definition mrestore (M : memType A mident midentg) (m0 m : M) := mrestore_ m0 m.
+Definition mrestore (M : memType A B mident midentg) (m0 m : M) := mrestore_ m0 m.
 
 Arguments mrestore : simpl never.
 
 (* one-variable block entry, kept as a derived form *)
-Definition mpush (M : memType A mident midentg) (T : A)
+Definition mpush (M : memType A B mident midentg) (T : A)
     (m : M) (x : mident) (v : interp T) := mset (mnew m) x v.
 
 Arguments mpush : simpl never.
 
-Variable (M : memType A mident midentg) (T U : A).
+Variable (M : memType A B mident midentg) (T U : A) (Tg Ug : B).
 
 Lemma mget_eq (m : M) (x : mident) (v : interp T) : mget T (mset m x v) x = v.
 Proof. by unlock mget mset; apply/mget_eq_. Qed.
-
-Lemma mset_eq (m : M) (x : mident) : mset m x (mget T m x) = m.
-Proof. by unlock mget mset; apply/mset_eq_. Qed.
 
 Lemma mget_neq (m : M) (x y : mident) (v : interp T) : (T <> U \/ x != y) ->
   mget U (mset m x v) y = mget U m y.
 Proof. by unlock mget mset; apply/mget_neq_. Qed.
 
-Lemma mgetg_eq (m : M) (x : midentg) (v : interp T) : mgetg T (msetg m x v) x = v.
+Lemma mgetg_eq (m : M) (x : midentg) (v : interp Tg) : mgetg Tg (msetg m x v) x = v.
 Proof. by unlock mgetg msetg; apply/mgetg_eq_. Qed.
 
-Lemma mgetg_neq (m : M) (x y : midentg) (v : interp T) : (T <> U \/ x != y) ->
-  mgetg U (msetg m x v) y = mgetg U m y.
+Lemma mgetg_neq (m : M) (x y : midentg) (v : interp Tg) : (Tg <> Ug \/ x != y) ->
+  mgetg Ug (msetg m x v) y = mgetg Ug m y.
 Proof. by unlock mgetg msetg; apply/mgetg_neq_. Qed.
 
-Lemma mget_setg (m : M) (x: midentg) (y : mident) (v : interp T) :
+Lemma mget_setg (m : M) (x: midentg) (y : mident) (v : interp Tg) :
   mget U (msetg m x v) y = mget U m y.
 Proof. by unlock mget msetg; apply/mget_setg_. Qed.
 
 Lemma mgetg_set (m : M) (x: mident) (y: midentg) (v : interp T) :
-  mgetg U (mset m x v) y = mgetg U m y.
+  mgetg Ug (mset m x v) y = mgetg Ug m y.
 Proof. by unlock mgetg mset; apply/mgetg_set_. Qed.
 
-Lemma mgetg_new (m : M) (y : midentg) : mgetg U (mnew m) y = mgetg U m y.
+Lemma mgetg_new (m : M) (y : midentg) : mgetg Ug (mnew m) y = mgetg Ug m y.
 Proof. by unlock mgetg mnew; apply/mgetg_new_. Qed.
 
 Lemma mrestore_id (m : M) : mrestore m m = m.
@@ -153,7 +149,7 @@ Lemma mrestore_set (m0 m : M) (x : mident) (v : interp T) :
   mrestore m0 (mset m x v) = mrestore m0 m.
 Proof. by unlock mrestore mset; apply/mrestore_set_. Qed.
 
-Lemma mrestore_setg (m0 m : M) (x : midentg) (v : interp T) :
+Lemma mrestore_setg (m0 m : M) (x : midentg) (v : interp Tg) :
   mrestore m0 (msetg m x v) = msetg (mrestore m0 m) x v.
 Proof. by unlock mrestore msetg; apply/mrestore_setg_. Qed.
 
@@ -162,7 +158,7 @@ Lemma mget_restore (m0 m : M) (y : mident) :
 Proof. by unlock mget mrestore; apply/mget_restore_. Qed.
 
 Lemma mgetg_restore (m0 m : M) (y : midentg) :
-  mgetg U (mrestore m0 m) y = mgetg U m y.
+  mgetg Ug (mrestore m0 m) y = mgetg Ug m y.
 Proof. by unlock mgetg mrestore; apply/mgetg_restore_. Qed.
 
 (* the one-variable block entry, derived *)
@@ -170,7 +166,7 @@ Lemma mget_push (m : M) (x : mident) (v : interp T) : mget T (mpush m x v) x = v
 Proof. by unlock mpush; apply/mget_eq. Qed.
 
 Lemma mgetg_push (m : M) (x : mident) (y : midentg) (v : interp T) :
-  mgetg U (mpush m x v) y = mgetg U m y.
+  mgetg Ug (mpush m x v) y = mgetg Ug m y.
 Proof. by unlock mpush; rewrite mgetg_set mgetg_new. Qed.
 
 Lemma mrestore_push (m0 m : M) (x : mident) (v : interp T) :

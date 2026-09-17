@@ -27,11 +27,12 @@ Context {R : realType} {A : codeType} {X Xg Y : countType} {M : memType A X Xg}.
 
 Local Notation Distr T := {distr T%type / R}.
 
-Notation cond := (@cond R A X Xg M).
-Notation cond2 := (@cond2 R A X Xg M).
+Local Notation cond := (@cond R A X Xg M).
+Local Notation cond2 := (@cond2 R A X Xg M).
 
-Notation phi := (@Phi.type R A X Xg Y M).
-Notation psi := (@psi R A X Xg Y M).
+Local Notation phi := (@Phi.type R A X Xg Y M).
+Local Notation psi := (@psi R A X Xg Y M).
+Local Notation expr := (@expr_ A X Xg M).
 
 Implicit Types  (f g h : cond).
 
@@ -49,11 +50,11 @@ Inductive derivable : psi -> phi -> cond -> cmd -> cond -> Prop :=
     derivable ps cl f abort g
 | H_Skip : forall f cl ps,
     derivable ps cl f skip f
-| H_Asgn : forall {T : A} x (e : expr_ A X Xg M T) f cl ps,
+| H_Asgn : forall {T : A} x (e : expr T) f cl ps,
     derivable ps cl (fun m => f m.[x <- `[{e}] m]) (x <<- e) f
-| H_GAsgn : forall {T : A} x (e : expr_ A X Xg M T) f cl ps,
+| H_GAsgn : forall {T : A} x (e : expr T) f cl ps,
     derivable ps cl (fun m => f (m.{x <- `[{e}] m})) (G x <<- e) f
-| H_Random : forall {T : A} x (d:expr_ A X Xg M (Distr T))  f cl ps,
+| H_Random : forall {T : A} x (d:expr (Distr T))  f cl ps,
     let g m :=
       espe (\dlet_(v <- `[{d}] m) (dunit m.[x <- v])) f
     in
@@ -63,11 +64,11 @@ Inductive derivable : psi -> phi -> cond -> cmd -> cond -> Prop :=
     (forall m, derivable ps cl (bound (fun _ => f m) (minit m bs)) c
                                (fun m'' => g (mret m m'' rs))) ->
     derivable ps cl f (block bs c rs) g
-| H_If : forall f g (e:expr_ A X Xg M bool) c1 c2 cl ps,
+| H_If : forall f g (e:expr bool) c1 c2 cl ps,
     derivable ps cl (lift (esem e) f) c1 g ->
     derivable ps cl (lift (fun m => negb (esem e m)) f) c2 g ->
     derivable ps cl f (If e then c1 else c2) g
-| H_While : forall f (e:expr_ A X Xg M bool) c cl ps ,
+| H_While : forall f (e:expr bool) c cl ps ,
     (forall m, 0 <= f m)%E ->
     derivable ps cl (lift (esem e) f) c f ->
     derivable ps cl f (While e Do c) (lift (fun m => negb (esem e m)) f)
@@ -160,13 +161,13 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 
-Lemma ehl_assign {T : A} f x (e : expr_ A X Xg M T) :
+Lemma ehl_assign {T : A} f x (e : expr T) :
   ehl (fun m => f m.[x <- `[{e}] m]) (x <<- e) f.
 Proof. by  move => m; rewrite ssemE eexp_dunit. Qed.
 
 (* -------------------------------------------------------------------- *)
 
-Lemma ehl_gassign {T : A} f x (e : expr_ A X Xg M T) :
+Lemma ehl_gassign {T : A} f x (e : expr T) :
   ehl (fun m => f (m.{x <- `[{e}] m})) (G x <<- e) f.
 Proof. by move => m; rewrite ssem_gassnE eexp_dunit. Qed.
 
@@ -184,7 +185,7 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 
-Lemma ehl_random {T : A} f x (d:expr_ A X Xg M (Distr T)) :
+Lemma ehl_random {T : A} f x (d:expr (Distr T)) :
   let g m :=
     espe (\dlet_(v <- `[{d}] m) (dunit m.[x <- v])) f
   in
@@ -193,7 +194,7 @@ Proof. by move => g m; rewrite ssemE. Qed.
 
 (* -------------------------------------------------------------------- *)
 
-Lemma ehl_if f (e:expr_ A X Xg M bool) c1 c2 g :
+Lemma ehl_if f (e:expr bool) c1 c2 g :
   ehl (lift (esem e) f) c1 g ->
   ehl (lift (fun m => negb (esem e m)) f) c2 g ->
   ehl f (If e then c1 else c2) g.
@@ -209,7 +210,7 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 
-Lemma ehl_while (e:expr_ A X Xg M bool) c f :
+Lemma ehl_while (e:expr bool) c f :
   (forall m, 0 <= f m)%E ->
   ehl (lift (esem e) f) c f ->
   ehl f (While e Do c) (lift (fun m => negb (esem e m)) f).
