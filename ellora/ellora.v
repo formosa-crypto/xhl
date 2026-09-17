@@ -19,17 +19,18 @@ Local Open Scope sem_scope.
 Local Open Scope mem_scope.
 
 Section Ellora.
-Context {R : realType} {A : codeType} {X Xg Y : countType} {mem : memType A X Xg}.
+Context {R : realType} {A B : codeType} {X Xg Y : countType}
+        {mem : memType A B X Xg}.
 
 Local Notation Distr T := {distr T%type / R}.
 Local Notation vars    := (vars_ X).
 Local Notation gvars   := (vars_ Xg).
-Local Notation expr    := (@expr_ A X Xg mem).
+Local Notation expr    := (@expr_ A B X Xg mem).
 Local Notation dexpr T := (expr (Distr T)).
-Local Notation cmd     := (@cmd_ R A X Xg mem Y).
-Local Notation psi     := (Y -> (@cmd_ R A X Xg mem Y)).
+Local Notation cmd     := (@cmd_ R A B X Xg mem Y).
+Local Notation psi     := (Y -> (@cmd_ R A B X Xg mem Y)).
 Local Notation assn    := (pred mem).
-Local Notation ssem    := (@ssem_ R A X Xg Y mem).
+Local Notation ssem    := (@ssem_ R A B X Xg Y mem).
 Local Notation mnull   := (@dnull R mem).
 
 (* -------------------------------------------------------------------- *)
@@ -230,7 +231,7 @@ Inductive sellora : psi -> (Y -> dassn) -> (Y -> dassn2) -> dassn -> dassn -> cm
 | EAssign {t : A} P (x : vars t) (e : expr t) pre post ps:
     sellora ps pre post (P.[fun mu => dssem ps (x <<- e) mu])%A P (x <<- e)
 
-| EGAssign {t : A} P (x : gvars t) (e : expr t) pre post ps:
+| EGAssign {t : B} P (x : gvars t) (e : expr t) pre post ps:
     sellora ps pre post (P.[fun mu => dssem ps (G x <<- e) mu])%A P (G x <<- e)
 
 | ESample {t : A} P (x : vars t) (d : dexpr t) pre post ps:
@@ -854,9 +855,9 @@ Proof.
       - by move=> nu /asboolP ->; apply/asboolP. }
     pose I n := iter n (seqc^~ (IfT e then c0)) skip.
     pose Ai n := eqmu (dssem ps' (I n) mu).
-    pose B n := eqmu (dssem ps' (I n ;; IfT e then abort) mu).
+    pose Bi n := eqmu (dssem ps' (I n ;; IfT e then abort) mu).
     pose Qinf := eqmu (dssem ps' (While e Do c0) mu).
-    apply/(EConseq _ _ (@EWhileTClosed Ai B Qinf _ _ _ _ _ _ _ _)).
+    apply/(EConseq _ _ (@EWhileTClosed Ai Bi Qinf _ _ _ _ _ _ _ _)).
     { by move=> nu /asboolP ->; apply/asboolP => /=;
         rewrite /dssem !bsemE dlet_dunit_id. }
     { move=> nu /andP[/asboolP -> _]; apply/implyP => Pmu.
@@ -866,7 +867,7 @@ Proof.
         by rewrite /D iterS dssem_seqE.
       apply/rel_cpl_if; first exact: rc0.
       by move=> d; apply: rel_cpl_skip. }
-    { move=> n; rewrite /Ai /B; set D := dssem ps' (_ ;; _) _.
+    { move=> n; rewrite /Ai /Bi; set D := dssem ps' (_ ;; _) _.
       have ->: D = dssem ps' (IfT e then abort) (dssem ps' (I n) mu)
         by rewrite /D dssem_seqE.
       apply/rel_cpl_if; first by move=> d; apply: rel_cpl_abort.

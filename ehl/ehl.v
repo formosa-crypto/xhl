@@ -23,16 +23,17 @@ Local Open Scope ereal_dual_scope.
 (* -------------------------------------------------------------------- *)
 
 Section ehl.
-Context {R : realType} {A : codeType} {X Xg Y : countType} {M : memType A X Xg}.
+Context {R : realType} {A B : codeType} {X Xg Y : countType}
+        {M : memType A B X Xg}.
 
 Local Notation Distr T := {distr T%type / R}.
 
-Local Notation cond := (@cond R A X Xg M).
-Local Notation cond2 := (@cond2 R A X Xg M).
+Local Notation cond := (@cond R A B X Xg M).
+Local Notation cond2 := (@cond2 R A B X Xg M).
 
-Local Notation phi := (@Phi.type R A X Xg Y M).
-Local Notation psi := (@psi R A X Xg Y M).
-Local Notation expr := (@expr_ A X Xg M).
+Local Notation phi := (@Phi.type R A B X Xg Y M).
+Local Notation psi := (@psi R A B X Xg Y M).
+Local Notation expr := (@expr_ A B X Xg M).
 
 Implicit Types  (f g h : cond).
 
@@ -52,7 +53,7 @@ Inductive derivable : psi -> phi -> cond -> cmd -> cond -> Prop :=
     derivable ps cl f skip f
 | H_Asgn : forall {T : A} x (e : expr T) f cl ps,
     derivable ps cl (fun m => f m.[x <- `[{e}] m]) (x <<- e) f
-| H_GAsgn : forall {T : A} x (e : expr T) f cl ps,
+| H_GAsgn : forall {T : B} x (e : expr T) f cl ps,
     derivable ps cl (fun m => f (m.{x <- `[{e}] m})) (G x <<- e) f
 | H_Random : forall {T : A} x (d:expr (Distr T))  f cl ps,
     let g m :=
@@ -167,7 +168,7 @@ Proof. by  move => m; rewrite ssemE eexp_dunit. Qed.
 
 (* -------------------------------------------------------------------- *)
 
-Lemma ehl_gassign {T : A} f x (e : expr T) :
+Lemma ehl_gassign {T : B} f x (e : expr T) :
   ehl (fun m => f (m.{x <- `[{e}] m})) (G x <<- e) f.
 Proof. by move => m; rewrite ssem_gassnE eexp_dunit. Qed.
 
@@ -380,7 +381,7 @@ End Sound.
 Section Complete.
 
 
-Definition cl_mgt (ps : psi) : Y -> @clause R A X Xg M :=
+Definition cl_mgt (ps : psi) : Y -> @clause R A B X Xg M :=
 fun (f:Y) => ((fun _ => 0)%E,
                 (fun (s0: M) r s =>
                    if (r <= ((ssem_ ps (ps f) s0) s)%:E)%E then 0%E else +oo%E)
@@ -404,7 +405,7 @@ End Complete.
 
 Section prhl.
 
-Lemma espe_coupling (ν : Distr (M * M)) (g g':(@ehl_stmt.cond R A X Xg M)) :
+Lemma espe_coupling (ν : Distr (M * M)) (g g':cond (* (@ehl_stmt.cond R A B X Xg M) *)) :
   (forall m, 0 <= g m)%E ->
   (forall m, 0 <= g' m)%E ->
   (forall p, p \in dinsupp ν -> (g p.2 <= g' p.1)%E) ->
@@ -428,11 +429,11 @@ case/boolP: (p \in dinsupp ν) => [hp | /dinsuppPn hp].
 + by rewrite hp !mule0.
 Qed.
 
-Lemma ehl_prhl (c d: cmd) (f g f' g':(@ehl_stmt.cond R A X Xg M))  P Q (ps: Y -> cmd):
+Lemma ehl_prhl (c d: cmd) (f g f' g':cond)  P Q (ps: Y -> cmd):
   (forall m : M, 0 <= g m)%E ->
   (forall m : M, 0 <= g' m)%E ->
   ehl_ ps f' d g' ->
-  @prhl_ R A X Xg Y M ps P d c Q ->
+  @prhl_ R A B X Xg Y M ps P d c Q ->
   (forall m, exists m', f' m' <= f m /\ P (m',m))%E ->
   (forall m' m, Q (m',m) -> g m <= g' m')%E ->
   ehl_ ps f c g.

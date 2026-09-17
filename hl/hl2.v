@@ -21,23 +21,24 @@ Local Open Scope mem_scope.
 
 Section hl.
    (* [Rl], not [R]: this file uses [R] for intermediate assertions. *)
-   Context {Rl : realType} {A : codeType} {X Xg Y : eqType} {mem : memType A X Xg}.
+   Context {Rl : realType} {A B : codeType} {X Xg Y : eqType}
+           {mem : memType A B X Xg}.
 
 Local Notation Distr T := {distr T%type / Rl}.
 
 Notation "`[ 'forall' x 'in' mu => Q ]" :=
-  (@forall_in _ _ _ _ mem _ mu%A (fun x => Q)).
+  (@forall_in _ _ _ _ _ mem _ mu%A (fun x => Q)).
 
 Notation "`[ 'forall' x 'in' mu | m => Q ]" :=
-  (@forall_in _ _ _ _ mem _ mu%A (fun x m => Q)).
+  (@forall_in _ _ _ _ _ mem _ mu%A (fun x m => Q)).
 
-Local Notation assn := (@assn _ _ _ mem).
-Local Notation assn2 := (@assn2 _ _ _ mem).
+Local Notation assn := (@assn _ _ _ _ mem).
+Local Notation assn2 := (@assn2 _ _ _ _ mem).
 
-Local Notation phi := (@phi _ X Xg Y mem).
-Local Notation cmd := (@cmd Rl A X Xg Y mem).
-Local Notation psi := (@psi Rl A X Xg Y mem).
-Local Notation expr := (@expr_ A X Xg mem).
+Local Notation phi := (@phi _ _ X Xg Y mem).
+Local Notation cmd := (@cmd Rl A B X Xg Y mem).
+Local Notation psi := (@psi Rl A B X Xg Y mem).
+Local Notation expr := (@expr_ A B X Xg mem).
 
 Section Logic.
 Context (ps: psi).
@@ -49,7 +50,7 @@ Inductive derivable : phi -> assn -> cmd -> assn -> Prop :=
       derivable cl P skip P
   | H_Asgn : forall {T : A} x (e:expr T) (Q : assn) cl,
       derivable cl [pred m | Q m.[x <- `[{e}]%A m]] (x <<- e) Q
-  | H_GAsgn : forall {T : A} x (e:expr T) (Q : assn) cl,
+  | H_GAsgn : forall {T : B} x (e:expr T) (Q : assn) cl,
       derivable cl [pred m | Q (m.{x <- `[{e}]%A m})] (G x <<- e) Q
   | H_Random : forall {T : A} x (d:expr (Distr T)) (Q : assn) cl,
       derivable cl `[forall v in `[{d}] | m => Q m.[x <- v]]%A (x <$- d) Q
@@ -119,7 +120,7 @@ Lemma ahl_assign l {T : A} x (e : expr T) (Q : assn) :
   ahl l [pred m | Q m.[x <- `[{e}]%A m]] (x <<- e) Q.
 Proof. by move=> m hm /=; apply: range_dunit. Qed.
 
-Lemma ahl_gassign l {T : A} x (e : expr T) (Q : assn) :
+Lemma ahl_gassign l {T : B} x (e : expr T) (Q : assn) :
   ahl l [pred m | Q (m.{x <- `[{e}]%A m})] (G x <<- e) Q.
 Proof. by move=> m hm /=; apply: range_dunit. Qed.
 

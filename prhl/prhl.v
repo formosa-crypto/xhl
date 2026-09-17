@@ -87,21 +87,22 @@ End CouplingsTheory.
 
 (* -------------------------------------------------------------------- *)
 Section prhl.
-Context {Rl : realType} {A : codeType} {X Xg Y : countType} {M : memType A X Xg}.
+Context {Rl : realType} {A B : codeType} {X Xg Y : countType}
+        {M : memType A B X Xg}.
 
 Local Notation Distr T := {distr T%type / Rl}.
-Local Notation rmem  := (rmem A X Xg M).
+Local Notation rmem  := (rmem A B X Xg M).
 Local Notation vars  := (vars_ X).
-Local Notation expr  := (@expr_ A X Xg M).
+Local Notation expr  := (@expr_ A B X Xg M).
 Local Notation dexpr T := (expr (Distr T)).
-Local Notation cmd   := (@cmd_ Rl A X Xg M Y).
+Local Notation cmd   := (@cmd_ Rl A B X Xg M Y).
 Local Notation assn  := (pred M).
 Local Notation rassn := (pred rmem).
 
 Implicit Types P Q S I : rassn.
 Implicit Types c       : cmd.
 
-Definition psi := Y -> (@cmd_ Rl A X Xg M Y).
+Definition psi := Y -> (@cmd_ Rl A B X Xg M Y).
 
 Definition prhl_  (ps: psi) P c1 c2 Q  :=
   forall m : rmem, P m ->

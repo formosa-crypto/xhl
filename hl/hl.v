@@ -22,23 +22,24 @@ Local Open Scope mem_scope.
 
 Section HL.
 (* [Rl], not [R]: this file uses [R] for intermediate assertions. *)
-Context {Rl : realType} {A : codeType} {X Xg Y : eqType} {mem : memType A X Xg}.
+Context {Rl : realType} {A B : codeType} {X Xg Y : eqType}
+        {mem : memType A B X Xg}.
 
 Local Notation Distr T := {distr T%type / Rl}.
 
 Notation "`[ 'forall' x 'in' mu => Q ]" :=
-  (@forall_in _ _ _ _ mem _ mu%A (fun x => Q)).
+  (@forall_in _ _ _ _ _ mem _ mu%A (fun x => Q)).
 
 Notation "`[ 'forall' x 'in' mu | m => Q ]" :=
-  (@forall_in _ _ _ _ mem _ mu%A (fun x m => Q)).
+  (@forall_in _ _ _ _ _ mem _ mu%A (fun x m => Q)).
 
-Local Notation assn := (@assn _ _ _ mem).
-Local Notation assn2 := (@assn2 _ _ _ mem).
+Local Notation assn := (@assn _ _ _ _ mem).
+Local Notation assn2 := (@assn2 _ _ _ _ mem).
 
-Local Notation phi := (@phi _ X Xg Y mem).
-Local Notation cmd := (@cmd Rl A X Xg Y mem).
-Local Notation psi := (@psi Rl A X Xg Y mem).
-Local Notation expr := (@expr_ A X Xg mem).
+Local Notation phi := (@phi _ _ X Xg Y mem).
+Local Notation cmd := (@cmd Rl A B X Xg Y mem).
+Local Notation psi := (@psi Rl A B X Xg Y mem).
+Local Notation expr := (@expr_ A B X Xg mem).
 
 Section Logic.
 
@@ -49,7 +50,7 @@ Inductive derivable : psi -> phi -> assn -> cmd -> assn -> Prop :=
       derivable ps cl P skip P
   | H_Asgn : forall {T : A} x (e:expr T) (Q : assn) cl ps,
       derivable ps cl [pred m | Q m.[x <- `[{e}]%A m]] (x <<- e) Q
-  | H_GAsgn : forall {T : A} x (e:expr T) (Q : assn) cl ps,
+  | H_GAsgn : forall {T : B} x (e:expr T) (Q : assn) cl ps,
       derivable ps cl [pred m | Q (m.{x <- `[{e}]%A m})] (G x <<- e) Q
   | H_Random : forall {T : A} x (d:expr (Distr T)) (Q : assn) cl ps,
       derivable ps cl `[forall v in `[{d}] | m => Q m.[x <- v]]%A (x <$- d) Q
@@ -114,7 +115,7 @@ Proof. by move=> Hc Hw m Pm;rewrite -Hc //;apply Hw. Qed.
 
 (* -------------------------------------------------------------------- *)
 
-Instance hl_m : Proper (eq ==> @eqcmd _ _ _ _ _ mem ps ==> eq ==> iff) hl.
+Instance hl_m : Proper (eq ==> @eqcmd _ _ _ _ _ _ mem ps ==> eq ==> iff) hl.
 Proof. by move=> ??-> ??? ??->;split;apply hl_eq. Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -145,7 +146,7 @@ Lemma hl_assign {T : A} x (e:expr T) (Q : assn):
 Proof. by move=> m /=;rewrite !semE;apply range_dunit. Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma hl_gassign {T : A} x (e:expr T) (Q : assn):
+Lemma hl_gassign {T : B} x (e:expr T) (Q : assn):
    hl [pred m | Q (m.{x <- `[{e}]%A m})] (G x <<- e) Q.
 Proof. by move=> m /=;rewrite !semE;apply range_dunit. Qed.
 
@@ -431,14 +432,15 @@ End Complete.
 End HL.
 
 Section Misc.
-Context {Rl : realType} {A : codeType} {X Xg Y : countType} {mem : memType A X Xg}.
+Context {Rl : realType} {A B : codeType} {X Xg Y : countType}
+        {mem : memType A B X Xg}.
 
 Local Notation Distr T := {distr T%type / Rl}.
 Local Notation dmem := (Distr mem).
 Local Notation vars := (vars_ X).
-Local Notation expr := (@expr_ A X Xg mem).
+Local Notation expr := (@expr_ A B X Xg mem).
 
-Notation cmd := (@cmd Rl A X Xg Y mem).
+Notation cmd := (@cmd Rl A B X Xg Y mem).
 
 (* -------------------------------------------------------------------- *)
 Definition eqon (X : pred { t : A & vars t } ) (m : mem) :=
@@ -453,7 +455,7 @@ Definition separated X (P : pred dmem) :=
     -> mu1 \in P -> mu2 \in P.
 
 (* -------------------------------------------------------------------- *)
-Definition bvar (b : @binding A X Xg mem) : { t : A & vars t } :=
+Definition bvar (b : @binding A B X Xg mem) : { t : A & vars t } :=
   let: existT t (x, _) := b in Tagged vars x.
 
 (* -------------------------------------------------------------------- *)
@@ -487,7 +489,7 @@ by move=> c1 c2 c3 eq1 eq2 x xX; rewrite eq1 ?eq2.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Definition bstep (m' : mem) (mm : mem) (b : @binding A X Xg mem) : mem :=
+Definition bstep (m' : mem) (mm : mem) (b : @binding A B X Xg mem) : mem :=
   let: existT _ (r, e) := b in mm.[r <- `[{e}] m'].
 
 Lemma mretE (m m' : mem) rs : mret m m' rs = foldl (bstep m') (mrestore m m') rs.

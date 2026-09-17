@@ -18,7 +18,7 @@ Local Open Scope ereal_dual_scope.
 (* -------------------------------------------------------------------- *)
 
 Section ehl.
-Context {R : realType} {A : codeType} {X Xg Y : eqType} {mem : memType A X Xg}.
+Context {R : realType} {A B : codeType} {X Xg Y : eqType} {mem : memType A B X Xg}.
 
 Local Notation Distr T := {distr T%type / R}.
 
@@ -26,7 +26,7 @@ Definition cond := mem -> \bar R.
 
 Definition cond2 := mem -> \bar R -> mem -> \bar R.
 
-Definition cmd  := (@cmd_ R A X Xg mem Y).
+Definition cmd  := (@cmd_ R A B X Xg mem Y).
 Definition psi := Y -> cmd.
 
 (* -------------------------------------------------------------------- *)
@@ -132,34 +132,34 @@ End ehl.
 
 (* [clause] does not mention [Y], so it takes [R A X mem]; [cl_empty] does,
  * so it takes [R A X Y mem]. *)
-HB.mixin Record isPhi {R : realType} {A : codeType} {X Xg Y : eqType}
-  {mem : memType A X Xg} (cl : Y -> (@clause R A X Xg mem)) :=
+HB.mixin Record isPhi {R : realType} {A B : codeType} {X Xg Y : eqType}
+  {mem : memType A B X Xg} (cl : Y -> (@clause R A B X Xg mem)) :=
   {
     post_mono : cl_post_mono cl;
     pre_pos : cl_pre_pos cl;
     post_pos : cl_post_pos cl;
   }.
 
-HB.structure Definition Phi {R : realType} {A : codeType} {X Xg Y : eqType}
-    {mem : memType A X Xg} :=
-  {f of @isPhi R A X Xg Y mem f}.
+HB.structure Definition Phi {R : realType} {A B : codeType} {X Xg Y : eqType}
+    {mem : memType A B X Xg} :=
+  {f of @isPhi R A B X Xg Y mem f}.
 
 Lemma post_mono_cl_empty
-  {R : realType} {A : codeType} {X Xg Y : eqType} {mem : memType A X Xg}:
-  cl_post_mono (@cl_empty R A X Xg Y mem).
+  {R : realType} {A B : codeType} {X Xg Y : eqType} {mem : memType A B X Xg}:
+  cl_post_mono (@cl_empty R A B X Xg Y mem).
 Proof. by rewrite /cl_post_mono / cond2_mono. Qed.
 
 Lemma pre_pos_cl_empty
-  {R : realType} {A : codeType} {X Xg Y : eqType} {mem : memType A X Xg} :
-  cl_pre_pos (@cl_empty R A X Xg Y mem).
+  {R : realType} {A B : codeType} {X Xg Y : eqType} {mem : memType A B X Xg} :
+  cl_pre_pos (@cl_empty R A B X Xg Y mem).
 Proof. by move => f m //=; exact: leey. Qed.
 
 Lemma post_pos_cl_empty
-  {R : realType} {A : codeType} {X Xg Y : eqType} {mem : memType A X Xg} :
-  cl_post_pos (@cl_empty R A X Xg Y mem).
+  {R : realType} {A B : codeType} {X Xg Y : eqType} {mem : memType A B X Xg} :
+  cl_post_pos (@cl_empty R A B X Xg Y mem).
 Proof.  by []. Qed.
 
-HB.instance Definition _ {R : realType} {A : codeType} {X Xg Y: eqType}
-    {mem : memType A X Xg} :=
-  isPhi.Build R A X Xg Y mem (@cl_empty R A X Xg Y mem)
+HB.instance Definition _ {R : realType} {A B : codeType} {X Xg Y: eqType}
+    {mem : memType A B X Xg} :=
+  isPhi.Build R A B X Xg Y mem (@cl_empty R A B X Xg Y mem)
     post_mono_cl_empty pre_pos_cl_empty post_pos_cl_empty.

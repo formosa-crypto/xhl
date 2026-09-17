@@ -37,13 +37,14 @@ Local Open Scope mem_scope.
 (* that actually mention them are parameterized on section close.        *)
 (* ==================================================================== *)
 Section ITreeSem.
-Context {R : realType} {A : codeType} {X Xg Y : countType} {M : memType A X Xg}.
+Context {R : realType} {A B : codeType} {X Xg Y : countType}
+        {M : memType A B X Xg}.
 
 Local Notation Distr T := {distr T%type / R}.
 Local Notation vars    := (vars_ X).
 Local Notation gvar    := (vars_ Xg).
-Local Notation expr    := (@expr_ A X Xg M).
-Local Notation cmd     := (@cmd_ R A X Xg M Y).
+Local Notation expr    := (@expr_ A B X Xg M).
+Local Notation cmd     := (@cmd_ R A B X Xg M Y).
 Local Notation bexpr   := (expr bool).
 Local Notation dexpr T := (expr (Distr T)).
 
@@ -61,13 +62,13 @@ Variant Call : Type -> Type :=
  * [InstrE] keeps its own identifiers and memory, as before; what used to
  * pin them to the concrete ones was the global [vars]/[bexpr] notations of
  * pwhile.v, spelled out here at [I]/[mem]. *)
-Variant InstrE {I Ig : eqType} {mem : memType A I Ig} : Type -> Type :=
-  | Assig : forall t : A,  vars_ I t -> expr_ A I Ig mem t  -> InstrE unit
-  | GAssig : forall t : A,  vars_ Ig t -> expr_ A I Ig mem t  -> InstrE unit
-  | RAssig :  forall t : A,  vars_ I t -> expr_ A I Ig mem {distr t / R}  -> InstrE unit
-  | EvalCond : expr_ A I Ig mem bool -> InstrE bool
-  | EnterBlock : seq (@binding A I Ig mem) -> InstrE mem
-  | LeaveBlock : mem -> seq (@binding A I Ig mem) -> InstrE unit.
+Variant InstrE {I Ig : eqType} {mem : memType A B I Ig} : Type -> Type :=
+  | Assig : forall t : A,  vars_ I t -> expr_ A B I Ig mem t  -> InstrE unit
+  | GAssig : forall t : B,  vars_ Ig t -> expr_ A B I Ig mem t  -> InstrE unit
+  | RAssig :  forall t : A,  vars_ I t -> expr_ A B I Ig mem {distr t / R}  -> InstrE unit
+  | EvalCond : expr_ A B I Ig mem bool -> InstrE bool
+  | EnterBlock : seq (@binding A B I Ig mem) -> InstrE mem
+  | LeaveBlock : mem -> seq (@binding A B I Ig mem) -> InstrE unit.
 
 Section ParSem.
 

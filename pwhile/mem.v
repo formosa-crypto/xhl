@@ -186,8 +186,11 @@ Arguments mrestore : simpl never.
 (* -------------------------------------------------------------------- *)
 (* Concrete memory                                                     *)
 (* -------------------------------------------------------------------- *)
-Section Concrete.
-Variable (R : realType) (A : codeType) (ident : countType).
+(* [hupd] and its theory are generic in the alphabet and the identifiers, so
+ * that the concrete memory can use them at [A]/[ident] for the local store and
+ * at [B]/[identg] for the main one. *)
+Section Hupd.
+Context {A : codeType} {ident : countType}.
 
 Definition hupd {F : A -> Type}
     (f : forall T : A, ident -> F T)
@@ -230,9 +233,16 @@ case: (eqVneq x y) => [<-|nx]; last by rewrite hupd_nex.
 by case: U / eq; rewrite hupd_eq.
 Qed.
 
+End Hupd.
+
+Arguments hupd {A ident F} f T x v : simpl never.
+
 (* -------------------------------------------------------------------- *)
+Section Concrete.
+Variable (R : realType) (A B : codeType) (ident identg : countType).
+
 Record coremem := CoreMem {
-  mmain : forall T : A, ident -> interp T;
+  mmain : forall T : B, identg -> interp T;
   mloc  : forall T : A, ident -> interp T;
 }.
 
@@ -244,10 +254,10 @@ Coercion coremem_get : coremem >-> Funclass.
 Definition coremem_set (m : coremem) (T : A) (x : ident) (v : interp T) :=
   CoreMem (mmain m) (hupd (mloc m) T x v).
 
-Definition coremem_getg (m : coremem) (T : A) (x : ident) : interp T :=
+Definition coremem_getg (m : coremem) (T : B) (x : identg) : interp T :=
   mmain m T x.
 
-Definition coremem_setg (m : coremem) (T : A) (x : ident) (v : interp T) :=
+Definition coremem_setg (m : coremem) (T : B) (x : identg) (v : interp T) :=
   CoreMem (hupd (mmain m) T x v) (mloc m).
 
 Definition coremem_new (m : coremem) :=
@@ -265,31 +275,26 @@ Lemma get_set_eq {T : A} (m : coremem) (x : ident) (v : interp T) :
   (coremem_set m x v) T x = v.
 Proof. exact: hupd_eq. Qed.
 
-Lemma set_get_eq {T : A} (m : coremem) (x : ident) :
-  coremem_set m x (coremem_get m T x) = m.
-Proof.
- by case: m => m1 m2;
-   rewrite /mset /mget /mset_ /mget_ /= /coremem_set /=  hupd_id.
-Qed.
-
 Lemma get_set_ne {T U : A} (m : coremem) (x y : ident) (v : interp T) :
   (T <> U \/ x != y) -> (coremem_set m x v) U y = m U y.
 Proof. exact: hupd_ne. Qed.
 
-Lemma getg_setg_eq {T : A} (m : coremem) (x : ident) (v : interp T) :
+Lemma getg_setg_eq {T : B} (m : coremem) (x : identg) (v : interp T) :
   coremem_getg (coremem_setg m x v) T x = v.
 Proof. exact: hupd_eq. Qed.
 
-Lemma getg_setg_ne {T U : A} (m : coremem) (x y : ident) (v : interp T) :
+Lemma getg_setg_ne {T U : B} (m : coremem) (x y : identg) (v : interp T) :
   (T <> U \/ x != y) ->
   coremem_getg (coremem_setg m x v) U y = coremem_getg m U y.
 Proof. exact: hupd_ne. Qed.
 
-Lemma get_setg {T U : A} (m : coremem) (x y : ident) (v : interp T) :
+Lemma get_setg {T : B} {U : A} (m : coremem) (x : identg) (y : ident)
+    (v : interp T) :
   (coremem_setg m x v) U y = m U y.
 Proof. by []. Qed.
 
-Lemma getg_set {T U : A} (m : coremem) (x y : ident) (v : interp T) :
+Lemma getg_set {T : A} {U : B} (m : coremem) (x : ident) (y : identg)
+    (v : interp T) :
   coremem_getg (coremem_set m x v) U y = coremem_getg m U y.
 Proof. by []. Qed.
 
@@ -297,7 +302,7 @@ Lemma get_new {U : A} (m : coremem) (y : ident) :
   (coremem_new m) U y = witness.
 Proof. by []. Qed.
 
-Lemma getg_new {U : A} (m : coremem) (y : ident) :
+Lemma getg_new {U : B} (m : coremem) (y : identg) :
   coremem_getg (coremem_new m) U y = coremem_getg m U y.
 Proof. by []. Qed.
 
@@ -316,7 +321,7 @@ Lemma restore_set {T : A} (m0 m : coremem) (x : ident) (v : interp T) :
   coremem_restore m0 (coremem_set m x v) = coremem_restore m0 m.
 Proof. by []. Qed.
 
-Lemma restore_setg {T : A} (m0 m : coremem) (x : ident) (v : interp T) :
+Lemma restore_setg {T : B} (m0 m : coremem) (x : identg) (v : interp T) :
   coremem_restore m0 (coremem_setg m x v) = coremem_setg (coremem_restore m0 m) x v.
 Proof. by []. Qed.
 
@@ -324,7 +329,7 @@ Lemma get_restore {d : A} (m0 m : coremem) (y : ident) :
   (coremem_restore m0 m) d y = m0 d y.
 Proof. by []. Qed.
 
-Lemma getg_restore {d : A} (m0 m : coremem) (y : ident) :
+Lemma getg_restore {d : B} (m0 m : coremem) (y : identg) :
   coremem_getg (coremem_restore m0 m) d y = coremem_getg m d y.
 Proof. by []. Qed.
 
@@ -339,13 +344,13 @@ HB.instance Definition coremem_choiceType :=
 
 (* -------------------------------------------------------------------- *)
 HB.instance Definition coremem_memType :=
-  isMemType.Build A ident ident coremem
-    (@get_set_eq) (@set_get_eq) (@get_set_ne) (@getg_setg_eq) (@getg_setg_ne)
+  isMemType.Build A B ident identg coremem
+    (@get_set_eq) (@get_set_ne) (@getg_setg_eq) (@getg_setg_ne)
     (@get_setg) (@getg_set) (@getg_new)
     restore_id restoreA restore_new (@restore_set) (@restore_setg)
     (@get_restore) (@getg_restore).
 
-Definition cmem : memType A ident ident := coremem.
+Definition cmem : memType A B ident identg := coremem.
 
 End Concrete.
 
@@ -380,7 +385,7 @@ Proof. by case: s. Qed.
 (* Relational memory                                           *)
 (* -------------------------------------------------------------------- *)
 Section RelaMem.
-Variable (R : realType) (A : codeType) (X Xg: eqType) (M: memType A X Xg).
+Variable (R : realType) (A B : codeType) (X Xg: eqType) (M: memType A B X Xg).
 
 Definition rident :=  (X * side)%type.
 Definition ridentg := (Xg * side)%type.
@@ -399,7 +404,7 @@ Definition coremem2_set (m : coremem2) (T : A) xs (v : interp T) :=
 Definition coremem2_getg (m : coremem2) T xs :=
   mgetg T (m#(xs.2))%M xs.1.
 
-Definition coremem2_setg (m : coremem2) (T : A) xs (v : interp T) :=
+Definition coremem2_setg (m : coremem2) (T : B) xs (v : interp T) :=
   match xs.2 return coremem2 with
   | '1 => (msetg m.1 xs.1 v, m.2)
   | '2 => (m.1, msetg m.2 xs.1 v)
@@ -414,9 +419,6 @@ Coercion coremem2_get : coremem2 >-> Funclass.
 
 Lemma get_set2_eq {T} m x v : (@coremem2_set m T x v) T x = v.
 Proof. by case: m x => m1 m2 [x []] /=; apply mget_eq. Qed.
-
-Lemma set_get2_eq {T} m x : (@coremem2_set m T x (@coremem2_get m T x)) = m.
-Proof. by case: m x => m1 m2 [x []] /=; rewrite /coremem2_set /= mset_eq. Qed.
 
 Lemma get_set2_ne {T U} m x y v :
   (T <> U \/ x != y) -> (@coremem2_set m T x v) U y = m U y.
@@ -486,13 +488,13 @@ HB.instance Definition coremem2_choiceType :=
 
 (* -------------------------------------------------------------------- *)
 HB.instance Definition coremem2_memType :=
-  isMemType.Build A rident ridentg coremem2
-    (@get_set2_eq) (@set_get2_eq) (@get_set2_ne) (@getg_setg2_eq) (@getg_setg2_ne)
+  isMemType.Build A B rident ridentg coremem2
+    (@get_set2_eq) (@get_set2_ne) (@getg_setg2_eq) (@getg_setg2_ne)
     (@get_setg2) (@getg_set2) (@getg_new2)
     restore2_id restore2A restore2_new (@restore2_set) (@restore2_setg)
     (@get_restore2) (@getg_restore2).
 
-Definition rmem : memType A rident ridentg := coremem2.
+Definition rmem : memType A B rident ridentg := coremem2.
 
 End RelaMem.
 

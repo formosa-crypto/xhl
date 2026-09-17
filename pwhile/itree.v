@@ -38,13 +38,14 @@ Local Open Scope mem_scope.
 (* that actually mention them are parameterized on section close.        *)
 (* ==================================================================== *)
 Section ITreeSem.
-Context {R : realType} {A : codeType} {X Xg Y : countType} {M : memType A X Xg}.
+Context {R : realType} {A B : codeType} {X Xg Y : countType}
+        {M : memType A B X Xg}.
 
 Local Notation Distr T := {distr T%type / R}.
 Local Notation vars    := (vars_ X).
 Local Notation gvars   := (vars_ Xg).
-Local Notation expr    := (@expr_ A X Xg M).
-Local Notation cmd     := (@cmd_ R A X Xg M Y).
+Local Notation expr    := (@expr_ A B X Xg M).
+Local Notation cmd     := (@cmd_ R A B X Xg M Y).
 Local Notation bexpr   := (expr bool).
 Local Notation dexpr T := (expr (Distr T)).
 (* Local Notation psi     := (Y -> cmd). *)
