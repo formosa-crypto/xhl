@@ -38,7 +38,7 @@ Local Open Scope mem_scope.
 (* that actually mention them are parameterized on section close.        *)
 (* ==================================================================== *)
 Section ITreeSem.
-Context {R : realType} {A B : codeType} {X Xg Y : countType}
+Context {R : realType} {A B : codeType} {X Xg Y : eqType}
         {M : memType A B X Xg}.
 
 Local Notation Distr T := {distr T%type / R}.

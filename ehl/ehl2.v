@@ -23,7 +23,7 @@ Local Open Scope ereal_dual_scope.
 (* -------------------------------------------------------------------- *)
 
 Section ehl.
-Context {R : realType} {A B : codeType} {X Xg Y : countType}
+Context {R : realType} {A B : codeType} {X Xg Y : eqType}
         {M : memType A B X Xg}.
 
 Local Notation Distr T := {distr T%type / R}.
@@ -567,8 +567,22 @@ by apply khoare_complete.
 Qed.
 
 End Complete.
+End ehl.
 
 Section prhl.
+Context {R : realType} {A B : codeType} {X Xg Y : countType}
+        {M : memType A B X Xg}.
+
+Local Notation Distr T := {distr T%type / R}.
+
+Local Notation cond := (@cond R A B X Xg M).
+Local Notation cond2 := (@cond2 R A B X Xg M).
+
+Local Notation phi := (@Phi.type R A B X Xg Y M).
+Local Notation psi := (@psi R A B X Xg Y M).
+Local Notation expr := (@expr_ A B X Xg M).
+
+Implicit Types  (f g h : cond).
 
 Lemma espe_coupling (ν : Distr (M * M)) (g g':cond) :
   (forall m, 0 <= g m)%E ->
@@ -618,5 +632,3 @@ apply: (@le_trans _ _ (espe (dfst ν) g')).
 Qed.
 
 End prhl.
-
-End ehl.
