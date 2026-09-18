@@ -87,7 +87,7 @@ End CouplingsTheory.
 
 (* -------------------------------------------------------------------- *)
 Section prhl.
-Context {Rl : realType} {A B : codeType} {X Xg Y : countType}
+Context {Rl : realType} {A B : codeType} {X Xg Y : eqType}
         {M : memType A B X Xg}.
 
 Local Notation Distr T := {distr T%type / Rl}.

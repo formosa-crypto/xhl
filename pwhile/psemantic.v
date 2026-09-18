@@ -703,7 +703,7 @@ Notation "m .[~1 x <- v ]"   := m.[x @ '1 <- v].
 Notation "m .[~2 x <- v ]"   := m.[x @ '2 <- v].
 
 Section DSemantics.
-Context {R : realType} {A B : codeType} {X Xg Y : countType}
+Context {R : realType} {A B : codeType} {X Xg Y : eqType}
         {M : memType A B X Xg}.
 
 Local Notation Distr T := {distr T%type / R}.
@@ -825,7 +825,7 @@ Definition dlossless (P : dassn) (c : cmd) :=
 End DSemantics.
 
 Section RSemantics.
-Context {R : realType} {A B : codeType} {X Xg Y : countType}
+Context {R : realType} {A B : codeType} {X Xg Y : eqType}
         {M : memType A B X Xg}.
 
 Local Notation Distr T := {distr T%type / R}.

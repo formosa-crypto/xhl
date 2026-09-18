@@ -432,7 +432,7 @@ End Complete.
 End HL.
 
 Section Misc.
-Context {Rl : realType} {A B : codeType} {X Xg Y : countType}
+Context {Rl : realType} {A B : codeType} {X Xg Y : eqType}
         {mem : memType A B X Xg}.
 
 Local Notation Distr T := {distr T%type / Rl}.

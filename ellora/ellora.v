@@ -19,7 +19,7 @@ Local Open Scope sem_scope.
 Local Open Scope mem_scope.
 
 Section Ellora.
-Context {R : realType} {A B : codeType} {X Xg Y : countType}
+Context {R : realType} {A B : codeType} {X Xg Y : eqType}
         {mem : memType A B X Xg}.
 
 Local Notation Distr T := {distr T%type / R}.

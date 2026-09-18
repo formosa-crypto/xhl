@@ -190,7 +190,7 @@ Arguments mrestore : simpl never.
  * that the concrete memory can use them at [A]/[ident] for the local store and
  * at [B]/[identg] for the main one. *)
 Section Hupd.
-Context {A : codeType} {ident : countType}.
+Context {A : codeType} {ident : eqType}.
 
 Definition hupd {F : A -> Type}
     (f : forall T : A, ident -> F T)
@@ -239,7 +239,7 @@ Arguments hupd {A ident F} f T x v : simpl never.
 
 (* -------------------------------------------------------------------- *)
 Section Concrete.
-Variable (R : realType) (A B : codeType) (ident identg : countType).
+Variable (R : realType) (A B : codeType) (ident identg : eqType).
 
 Record coremem := CoreMem {
   mmain : forall T : B, identg -> interp T;

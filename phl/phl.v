@@ -41,7 +41,7 @@ Notation "'>=" := Ge (at level 0) : bd_scope.
 Bind Scope bd_scope with bd.
 
 Section phl.
-Context {R : realType} {A B : codeType} {X Xg Y : countType}
+Context {R : realType} {A B : codeType} {X Xg Y : eqType}
         {M : memType A B X Xg}.
 
 Local Notation Distr T := {distr T%type / R}.

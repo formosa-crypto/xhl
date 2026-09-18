@@ -406,7 +406,7 @@ End ehl.
 
 
 Section prhl.
-Context {R : realType} {A B : codeType} {X Xg Y : countType}
+Context {R : realType} {A B : codeType} {X Xg Y : eqType}
         {M : memType A B X Xg}.
 
 Local Notation Distr T := {distr T%type / R}.

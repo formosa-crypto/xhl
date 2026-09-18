@@ -176,15 +176,15 @@ Definition beq (x y : bool) : bool := x == y.
 Definition ieq (x y : int ) : bool := x == y.
 
 Notation "c %:S"    := (@cst_ _ _ _ _ _ _ c) (at level 2, format "c %:S").
-Notation "e1 =b e2" := (app2_ (cst_ beq) e1 e2)   : xsyn_scope.
-Notation "e1 =i e2" := (app2_ (cst_ ieq) e1 e2)   : xsyn_scope.
-Notation "e1 || e2" := (app2_ (cst_ orb  ) e1 e2) : xsyn_scope.
-Notation "e1 && e2" := (app2_ (cst_ andb ) e1 e2) : xsyn_scope.
-Notation "~~ e"     := (app_ (cst_ negb) e)       : xsyn_scope.
-Notation "e1 + e2"  := (app2_ (cst_ +%R) e1 e2)   : xsyn_scope.
-Notation "e1 * e2"  := (app2_ (cst_ *%R) e1 e2)   : xsyn_scope.
-Notation "e1 :: e2" := (app2_ (cst_ cons) e1 e2)  : xsyn_scope.
-Notation "` x"      := (@var_ _ _ _ _ _ _ x%V)        : xsyn_scope.
+Notation "e1 =b e2" := (app2_ (cst_ beq) e1 e2)    : xsyn_scope.
+Notation "e1 =i e2" := (app2_ (cst_ ieq) e1 e2)    : xsyn_scope.
+Notation "e1 || e2"  := (app2_ (cst_ orb  ) e1 e2)  : xsyn_scope.
+Notation "e1 && e2" := (app2_ (cst_ andb ) e1 e2)  : xsyn_scope.
+Notation "~~ e"     := (app_ (cst_ negb) e)        : xsyn_scope.
+Notation "e1 + e2"  := (app2_ (cst_ +%R) e1 e2)    : xsyn_scope.
+Notation "e1 * e2"  := (app2_ (cst_ *%R) e1 e2)    : xsyn_scope.
+Notation "e1 :: e2"  := (app2_ (cst_ cons) e1 e2)   : xsyn_scope.
+Notation "` x"      := (@var_ _ _ _ _ _ _ x%V)     : xsyn_scope.
 Notation "x %:G"    := (@gvar_ _ _ _ _ _ _ x%V) (at level 2, format "x %:G") : xsyn_scope.
 
 (* -------------------------------------------------------------------- *)
@@ -256,7 +256,7 @@ end.
 End SynInject.
 
 Section Lift.
-Variable (R : realType) (A B : codeType) (X Xg : countType)
+Variable (R : realType) (A B : codeType) (X Xg : eqType)
          (M: memType A B X Xg).
 
 Notation rident := (X * side)%type.
