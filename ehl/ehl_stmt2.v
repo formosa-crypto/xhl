@@ -24,7 +24,7 @@ Local Notation Distr T := {distr T%type / R}.
 
 Definition cond := mem -> \bar R.
 
-Definition cond2 := mem -> mem -> \bar R.
+Definition cond2 := mem -> \bar R -> mem -> \bar R.
 
 Definition cmd  := (@cmd_ R A B X Xg mem Y).
 Definition psi := Y -> cmd.
@@ -43,13 +43,13 @@ Definition ehl_ (ps:psi) f c g :=
 (* -------------------------------------------------------------------- *)
 
 Definition kehl_ (ps:psi) f c (g: cond2) :=
-  forall m : mem, (espe (ssem_ ps c m) (fun m' => g m m') <= f m)%E.
+  forall m : mem, (espe (ssem_ ps c m) (fun m' => g m ((ssem_ ps c m m')%:E) m') <= f m)%E.
 
 Definition bound {T : choiceType} (g : T -> \bar R) m0 m :=
   if (m == m0) then (g m) else +oo%E.
 
 Lemma kehl_ehl ps P c Q :
-  kehl_ ps P c Q <-> (forall s0, ehl_ ps (bound P s0) c (fun s => Q s0 s)).
+  kehl_ ps P c Q <-> (forall s0, ehl_ ps (bound P s0) c (fun s => Q s0 ((ssem_ ps c s0 s)%:E) s)).
 Proof.
 rewrite /bound; split.
 + move=> h m0 m.
@@ -62,7 +62,7 @@ rewrite /bound; split.
 Qed.
 
 Lemma ehl_kehl ps P c Q :
-  kehl_ ps P c (fun _ => Q) <-> ehl_ ps P c Q.
+  kehl_ ps P c (fun _ _ => Q) <-> ehl_ ps P c Q.
 Proof.  by split; move => h m; apply h. Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -98,7 +98,7 @@ Definition phi : Type := Y -> clause.
 
 Definition empty_precondition : cond := (fun _ => +oo)%E.
 
-Definition empty_postcondition :  cond2 := (fun _ _ => 0)%E.
+Definition empty_postcondition :  cond2 := (fun _ _ _ => 0)%E.
 
 Definition empty_clause : clause := (empty_precondition, empty_postcondition).
 
@@ -106,11 +106,17 @@ Definition cl_empty: Y -> clause := fun _ => empty_clause.
 
 (** Properties on procedure contract **)
 
+Definition cond2_mono (P:  mem -> \bar R -> mem -> \bar R) :=
+ forall (r r' : (\bar R)), (r <= r')%E ->(forall x x' : mem, P x r x' <= P x r' x')%E.
+
+Definition cl_post_mono (cl: phi) :=
+  forall (f: Y),  cond2_mono (get_post (cl f)).
+
 Definition cl_pre_pos (cl: phi) :=
   forall (f: Y), (forall x , 0 <= (get_pre (cl f)) x )%E.
 
 Definition cl_post_pos (cl: phi) :=
-  forall (f: Y), (forall x x', 0 <= (get_post (cl f)) x x')%E.
+  forall (f: Y), (forall x mu x', 0 <= (get_post (cl f)) x mu x')%E.
 
 (* -------------------------------------------------------------------- *)
 (* Lift boolean condition to extended reals                             *)
@@ -124,30 +130,36 @@ Definition lift (b: mem -> bool) f (m: mem) : \bar R :=
 
 End ehl.
 
-(* [clause] does not mention [Y], so it takes [R A X M]; [cl_empty] does,
- * so it takes [R A X Y M]. *)
+(* [clause] does not mention [Y], so it takes [R A X mem]; [cl_empty] does,
+ * so it takes [R A X Y mem]. *)
 HB.mixin Record isPhi {R : realType} {A B : codeType} {X Xg Y : eqType}
-  {M : memType A B X Xg} (cl : Y -> (@clause R A B X Xg M)) :=
+  {mem : memType A B X Xg} (cl : Y -> (@clause R A B X Xg mem)) :=
   {
+    post_mono : cl_post_mono cl;
     pre_pos : cl_pre_pos cl;
     post_pos : cl_post_pos cl;
   }.
 
 HB.structure Definition Phi {R : realType} {A B : codeType} {X Xg Y : eqType}
-    {M : memType A B X Xg} :=
-  {f of @isPhi R A B X Xg Y M f}.
+    {mem : memType A B X Xg} :=
+  {f of @isPhi R A B X Xg Y mem f}.
+
+Lemma post_mono_cl_empty
+  {R : realType} {A B : codeType} {X Xg Y : eqType} {mem : memType A B X Xg}:
+  cl_post_mono (@cl_empty R A B X Xg Y mem).
+Proof. by rewrite /cl_post_mono / cond2_mono. Qed.
 
 Lemma pre_pos_cl_empty
-  {R : realType} {A B : codeType} {X Xg Y : eqType} {M : memType A B X Xg} :
-  cl_pre_pos (@cl_empty R A B X Xg Y M).
+  {R : realType} {A B : codeType} {X Xg Y : eqType} {mem : memType A B X Xg} :
+  cl_pre_pos (@cl_empty R A B X Xg Y mem).
 Proof. by move => f m //=; exact: leey. Qed.
 
 Lemma post_pos_cl_empty
-  {R : realType} {A B : codeType} {X Xg Y : eqType} {M : memType A B X Xg} :
-  cl_post_pos (@cl_empty R A B X Xg Y M).
+  {R : realType} {A B : codeType} {X Xg Y : eqType} {mem : memType A B X Xg} :
+  cl_post_pos (@cl_empty R A B X Xg Y mem).
 Proof.  by []. Qed.
 
 HB.instance Definition _ {R : realType} {A B : codeType} {X Xg Y: eqType}
-    {M : memType A B X Xg} :=
-  isPhi.Build R A B X Xg Y M (@cl_empty R A B X Xg Y M)
-    pre_pos_cl_empty post_pos_cl_empty.
+    {mem : memType A B X Xg} :=
+  isPhi.Build R A B X Xg Y mem (@cl_empty R A B X Xg Y mem)
+    post_mono_cl_empty pre_pos_cl_empty post_pos_cl_empty.

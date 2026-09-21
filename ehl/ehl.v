@@ -39,12 +39,6 @@ Implicit Types  (f g h : cond).
 
 Section Logic.
 
-Definition cond2_independent (P:  M -> \bar R -> M -> \bar R) :=
-(forall r r' x x', P x r x' = P x r' x')%E.
-
-Definition cl_cond2_independent (cl:phi) :=
-  forall (f: Y), cond2_independent (get_post (cl f)).
-
 Inductive derivable : psi -> phi -> cond -> cmd -> cond -> Prop :=
 | H_Abort : forall f g cl ps,
     (forall m, (0 <= f m)%E) ->
@@ -80,25 +74,25 @@ Inductive derivable : psi -> phi -> cond -> cmd -> cond -> Prop :=
     derivable ps cl f' c g' ->
     (forall m mu,  espe mu g' <= f' m -> espe mu g <= f m)%E ->
     derivable ps cl f c g
+| H_Proc : forall f g (p:Y) cl ps,
+    derivable ps cl f (ps p) g ->
+    derivable ps cl f (call p) g
 | H_khl : forall P Q c cl ps,
-    derivable2 ps cl P c (fun _ _ => Q) -> derivable ps cl P c Q
+    derivable2 ps cl P c (fun _ => Q) -> derivable ps cl P c Q
 with derivable2 : psi -> phi -> cond -> cmd -> cond2 -> Prop :=
 | H_hl: forall P Q c cl ps,
-    (* (forall m mu m', (0 <= Q m mu m')%E) -> *)
-    (* cond2_mono Q -> *)
-    (forall s0, derivable ps cl (bound P s0) c (fun s => Q s0 ((ssem_ ps c s0 s)%:E) s)) ->
+    (forall s0, derivable ps cl (bound P s0) c (fun s => Q s0 s)) ->
     derivable2 ps cl P c Q
 | H_call : forall cl (f:Y) ps,
     derivable2 ps cl (get_pre (cl f)) (call f) (get_post (cl f))
 | H_rec : forall P Q c (cl cl':phi) ps',
-    cl_cond2_independent cl ->
     (forall p' ps, derivable2 ps cl (get_pre (cl p')) (ps' p') (get_post (cl p'))) ->
     (forall ps, derivable2 ps cl P c Q) ->
     derivable2 ps' cl' P c Q
 | H_adapt : forall (P1 P2 : cond) (Q1 Q2 : cond2) c cl ps,
+    (forall m mu,  espe mu (fun m' => Q2 m  m') <= P2 m ->
+              espe mu (fun m' => Q1 m  m') <= P1 m)%E ->
     derivable2 ps cl P2 c Q2 ->
-    (forall m mu,  espe mu (fun m' => Q2 m ((mu m')%:E) m') <= P2 m ->
-              espe mu (fun m' => Q1 m ((mu m')%:E) m') <= P1 m)%E ->
     derivable2 ps cl P1 c Q1.
 
 Scheme derivable_min := Minimality for derivable Sort Prop
@@ -243,8 +237,8 @@ Proof. move => h' hc m. by apply hc. Qed.
 
 Lemma kehl_conseq c f f' (g g' : cond2):
   kehl f' c g' ->
-  (forall m d,  espe d (fun m' => g' m ((d m')%:E) m') <= f' m ->
-           espe d (fun m' => g m ((d m')%:E) m') <= f m)%E ->
+  (forall m d,  espe d (fun m' => g' m m') <= f' m ->
+           espe d (fun m' => g m m') <= f m)%E ->
   kehl f c g.
 Proof. by move => h' hc m; apply hc. Qed.
 
@@ -265,20 +259,17 @@ Definition hoare_triple_proc_ctx (cl : phi) (ps_init: psi):=
             (ps_init p).
 
 Lemma recursive_proc (ps': psi) (cl' : phi) :
-  cl_cond2_independent cl' ->
   hoare_triple_proc_ctx cl' ps' ->
   (forall p, kehl_ ps' (get_pre (cl' p)) (call p)  (get_post (cl' p))).
 Proof.
-  rewrite /cl_cond2_independent /cond2_independent.
-  move => hcl h p s.
-  rewrite /espe {2}ssem_dlim_ubnf.
+  move => h p s.
+  rewrite /espe ssem_dlim_ubnf.
   apply esum_dlim_r.
   + move => ????.
     apply mono_ssem_aux.
     by apply homo_ubnf.
   + move => m. exact: post_pos.
   move => n; rewrite ssem_aux_ssem_.
-  under eq_esum do rewrite (hcl p _ 0%E).
   move : s p.
   elim : n => [| n Hn].
   + move => ??. rewrite ssem_false_ps.
@@ -289,10 +280,8 @@ Proof.
   rewrite (inline2_split n 1) //=.
   rewrite /hoare_triple_proc_ctx in h.
   rewrite /hoare_triple_ctx in h.
-  under eq_esum => i do rewrite (hcl p _ (EFin (ssem_ (k_inliner_ps1 n ps') (ps' p) s i))).
   apply: h => // p0 s0.
   rewrite /espe.
-  under eq_esum do rewrite (hcl p0 _ 0%E).
   by apply: Hn.
 Qed.
 
@@ -300,12 +289,11 @@ Qed.
 
 Theorem recursion_hoare_triple :
   forall P Q c (cl: phi) (ps: psi),
-    cl_cond2_independent cl ->
     hoare_triple_proc_ctx cl ps  ->
     hoare_triple_ctx cl ps P Q c ->
     kehl_ ps P c Q .
 Proof.
-  move => ?????? H H0.
+  move => ????? H H0.
   apply H0.
   by apply: recursive_proc.
 Qed.
@@ -342,6 +330,8 @@ apply: derivable_mut.
 - (* H_Consequence *)
   move=> P2 Q2 P1 Q1 c cl ps ? HP HQ IH Hv.
   by apply: ehl_conseq; [ exact: HP | exact: HQ].
+- (* H_Proc *)
+  by move=> f g p cl ps _ IH Hv m; rewrite ssem_call_eq; exact: (IH Hv m).
 - (* H_khl *) by move=> P Q c cl ? ? IH Hv; apply/ehl_kehl; exact: IH.
 - (* H_hl *)
   move=> P Q c cl ps ? IH Hv.
@@ -349,13 +339,14 @@ apply: derivable_mut.
   exact: (IH s0 Hv).
 - (* H_call *) by move=> cl f ? Hv; exact: Hv.
 - (* H_rec *)
-  move=> P Q c cl cl' ps' Hlc _ IH_body _ IH_c Hv.
+  move=> P Q c cl cl' ps' _ IH_body _ IH_c Hv.
   apply: (recursion_hoare_triple _ _ _ cl) => //.
   rewrite /hoare_triple_ctx.
    by move => h; apply: IH_c.
 - (* H_adapt *)
-  move=> P1 P2 Q1 Q2 c cl ps ? IH H Hv m.
-   exact: (H m (ssem_ ps c m) (IH Hv m)).
+  move=> P1 P2 Q1 Q2 c cl ps IH ? HI Hv m.
+  apply IH.
+  exact : (HI Hv m).
 Qed.
 
 Corollary hoare_sound0 P c Q ps : derivable ps cl_empty P c Q -> ehl_ ps P c Q.
@@ -380,30 +371,151 @@ End Sound.
 
 Section Complete.
 
+  (* The logic is complete then there are not recurisve procedure call.
+     For a complete logic with recurisve procedure and no proc rule see ehl2.v.
+   *)
 
-Definition cl_mgt (ps : psi) : Y -> @clause R A B X Xg M :=
-fun (f:Y) => ((fun _ => 0)%E,
-                (fun (s0: M) r s =>
-                   if (r <= ((ssem_ ps (ps f) s0) s)%:E)%E then 0%E else +oo%E)
-          ).
+Lemma nocall_ki_block {n} {ps' : psi} {bs} {c : cmd} {rs} :
+  nocall (k_inliner2 n (block bs c rs) ps') -> nocall (k_inliner2 n c ps').
+Proof. by case: n. Qed.
 
-(* The logic in section Logic cannot be proven complete.
-   This is because the to proof completes, the contract "cl_mgt"
-   is requires. This contract implies that postcondition for procedure
-   dependents on the resulting distribution of the execution of the program.
-   However, to proof soundness, the postcondition must be independent from
-   from this argument.
+Lemma nocall_ki_if {n} {ps' : psi} {b} {c1 c2 : cmd} :
+  nocall (k_inliner2 n (If b then c1 else c2) ps') ->
+  nocall (k_inliner2 n c1 ps') /\ nocall (k_inliner2 n c2 ps').
+Proof. by case: n. Qed.
 
-   If the H_rec case in the logic is like in Ellora, then the logic is complete.
+Lemma nocall_ki_while {n} {ps' : psi} {b} {c : cmd} :
+  nocall (k_inliner2 n (While b Do c) ps') -> nocall (k_inliner2 n c ps').
+Proof. by case: n. Qed.
 
-   The ehl2.v file present a logic which is complete. Not, that
-   the logic in ehl2.v allows to use H_rec more then one time
-   which is not possible in the logic present in section logic.
- *)
+Lemma nocall_ki_seq {n} {ps' : psi} {c1 c2 : cmd} :
+  nocall (k_inliner2 n (c1 ;; c2) ps') ->
+  nocall (k_inliner2 n c1 ps') /\ nocall (k_inliner2 n c2 ps').
+Proof. by case: n. Qed.
+
+Lemma nocall_ki_call {n} {ps' : psi} {p : Y} :
+  nocall (k_inliner2 n (call p) ps') ->
+  exists2 n', (n' < n)%N & nocall (k_inliner2 n' (ps' p) ps').
+Proof. by case: n => [|n] //= h; exists n. Qed.
+
+Lemma rel_complete_d_n (ps' : psi) n :
+  forall (c : cmd) (P Q : cond),
+    nocall (k_inliner2 n c ps') ->
+    (forall m,  (0 <= P m)%E) ->
+    (forall m , (0 <= Q m)%E) ->
+    ehl_ ps' P c Q -> derivable ps' cl_empty P c Q.
+Proof.
+elim/ltn_ind: n => n ihn c.
+elim: c => [ | | T x e | T gx ge | T x d | bs cb ihb rs
+           | e c1 ih1 c2 ih2 | e c0 ih0 | c1 ih1 c2 ih2 | p ] P Q Hnc Hf Hg Hhl.
+- (* abort *) exact: H_Abort.
+- (* skip *)
+  apply: (H_Consequence Q Q) => //.
+  + exact: H_Skip.
+  + move=> m mu H1; apply:  (le_trans H1).
+    by move : (Hhl m); rewrite ssem_skipE eexp_dunit.
+- (* assign *)
+  apply: (H_Consequence (fun m => Q m.[x <- `[{e}] m]) Q).
+    + exact: H_Asgn.
+    + move=> m mu H1; apply:  (le_trans H1).
+      by move : (Hhl m); rewrite ssem_assnE eexp_dunit.
+- (* gassign *)
+  apply: (H_Consequence (fun m => Q (m.{gx <- `[{ge}] m})) Q).
+  + exact: H_GAsgn.
+  + move=> m mu H1; apply: (le_trans H1).
+    by move : (Hhl m); rewrite ssem_gassnE eexp_dunit.
+- (* random *)
+  apply: (H_Consequence
+            (fun m => espe (\dlet_(v <- `[{d}] m) (dunit m.[x <- v])) Q) Q).
+  + exact: H_Random.
+  + move=> m mu H1; apply: (le_trans H1).
+    by move : (Hhl m); rewrite ssem_rndE.
+- (* block *)
+  have Hb := nocall_ki_block Hnc.
+  apply: H_Block => // m; apply: (ihb _ _ Hb) => //.
+  + by move=> m'; rewrite /bound; case: ifP => _ //; exact: le0y.
+  + move=> m'; rewrite /bound; case: ifP => [/eqP -> | _]; last exact: leey.
+    by move: (Hhl m); rewrite ssem_blockE espe_dlet_ret.
+- (* if *)
+  have [H1 H2] := nocall_ki_if Hnc.
+  apply: H_If.
+  + rewrite /lift.
+    apply: (ih1 _ _ H1) => //.
+    + move => m; case (`[{e}] m) => //=; exact : le0y.
+    + move => m; move: (Hhl m); rewrite ssem_ifE; case (`[{e}] m) => // _.
+      exact : leey.
+  + rewrite /lift.
+    apply: (ih2 _ _ H2) => //.
+    + move => m; case (~~ `[{e}] m) => //=. exact: le0y.
+    + move => m; move: (Hhl m); rewrite ssem_ifE; case (`[{e}] m) => //= _.
+      exact : leey.
+- (* while *)
+  have Hb := nocall_ki_while Hnc.
+  pose I : cond := fun m => espe (ssem_ ps' (While e Do c0) m) Q .
+  have Ipos :  forall m : M, (0%R <= I m)%E.
+  + move => m; subst I=> /=.
+    rewrite /espe esum_ge0 // => x.
+    by rewrite mule_ge0 //= lee_tofin.
+  apply (H_Consequence I (lift (`[{~~e}]) I)).
+  + apply: H_While => //.
+    apply: (ih0 _ _ Hb) => //.
+    +  move => m; rewrite /lift; case (`[{e}] m) => //=. exact: le0y.
+    rewrite /lift.
+    move => m; case_eq (`[{e}] m) => He; last first. exact : leey.
+    subst I => /=.
+    by rewrite -eexp_dlet // ssem_whileS // ssem_seqE.
+  + move => m mu H1;  move : (Hhl m).
+    apply: le_trans.
+    move : H1; subst I => //=.
+    apply: le_trans; apply le_esum.
+    move => x; rewrite /lift.
+    case_eq ( ~~ `[{e}] x) => ? //=.
+    rewrite lee_pmul //=.
+    + by rewrite lee_fin.
+    + by rewrite ssem_while0 // eexp_dunit.
+    + rewrite lee_pmul //= ?lee_fin //.
+      exact : leey.
+- (* seq *)
+  have [H1 H2] := nocall_ki_seq Hnc.
+  pose Rm : cond := fun x : M => espe (ssem_ ps' c2 x) Q.
+  have Rpos :   forall m : M, (0%R <= Rm m)%E.
+  + move => m; subst Rm => //=; rewrite /espe.
+    rewrite /espe esum_ge0 // => x.
+    by rewrite mule_ge0 //= lee_tofin.
+  apply: (H_Seq _ _ _ _ Rm) => //=.
+  + apply: (ih2 _ _ H2) => //=.
+  + apply: (ih1 _ _ H1) => //=.
+    by move => m; move : (Hhl m);  rewrite ssem_seqE eexp_dlet.
+- (* call *)
+  have [n' ltn' Hb] := nocall_ki_call Hnc.
+  apply: H_Proc.
+  apply: (ihn n' ltn' _ _ _ Hb) => //.
+  by move=> m; move: (Hhl m); rewrite ssem_call_eq.
+Qed.
+
+Lemma rel_complete_d (c : cmd) (P Q : cond) ps' :
+  (exists n, nocall (k_inliner2 n c ps')) ->
+  (forall m,  (0 <= P m)%E) ->
+  (forall m , (0 <= Q m)%E) ->
+  ehl_ ps' P c Q -> derivable ps' cl_empty P c Q.
+Proof.
+by move=> [n Hn] Hf Hg Hhl; exact: (rel_complete_d_n ps' n c P Q Hn Hf Hg Hhl).
+Qed.
+
+Lemma rel_complete (c : cmd) (P : cond) (Q : cond2) ps' :
+  (exists n, nocall (k_inliner2 n c ps')) ->
+  (forall m,  (0 <= P m)%E) ->
+  (forall m m', (0 <= Q m m')%E) ->
+  kehl_ ps' P c Q -> derivable2 ps' cl_empty P c Q.
+Proof.
+  move=> Hnc Hp Hq /kehl_ehl h; apply: H_hl => s0.
+  apply: rel_complete_d => //=.
+  move => m; rewrite /bound; case: ifP => _ //=.
+  exact: le0y.
+Qed.
 
 End Complete.
 End ehl.
-
 
 Section prhl.
 Context {R : realType} {A B : codeType} {X Xg Y : eqType}

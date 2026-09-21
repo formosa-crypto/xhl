@@ -7,7 +7,7 @@ From mathcomp.analysis  Require Import esum ereal counting_distr.
 From mathcomp           Require finmap.
 From xhl.pwhile         Require Import notations inhabited mem pwhile psemantic range.
 From xhl.prhl           Require Import prhl.
-From xhl.ehl            Require Import ehl_stmt.
+From xhl.ehl            Require Import ehl_stmt2.
 
 Import GRing.Theory Order.Theory Num.Theory.
 
@@ -521,10 +521,9 @@ elim: c f g => [ | | T x e | T gx ge | T x d | bs cb ihb rs
       by rewrite lte_fin; exact: (le_lt_trans (ge0_mu _ s) Hgt).
       have := @esum_eq0P _ _ _ _ (fun x _ => (cl_mgt_pos mu m0 f x)) Hesum s I.
       by rewrite (lt_geF Hgt) gt0_mulye. }
-    simpl in h.
     move: (Hhl m0); rewrite ssem_call_eq; apply: le_trans.
     rewrite /espe; apply: le_esum => s ?; apply: (lee_wpmul2l (Hg s)).
-    exact: (lee_tofin (Hdom s)).
+    exact: (Hdom s).
 Qed.
 
 Lemma rel_complete (c : cmd) (P : cond) (Q : cond2) :
