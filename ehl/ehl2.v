@@ -612,7 +612,7 @@ Lemma ehl_prhl (c d:cmd) (f g f' g':cond)  P Q (ps: Y -> cmd):
   (forall m : M, 0 <= g m)%E ->
   (forall m : M, 0 <= g' m)%E ->
   ehl_ ps f' d g' ->
-  @prhl_ R A B X Xg Y M  ps P d c Q ->
+  @prhl_ R A B X Xg Y M  ps ps P d c Q ->
   (forall m, exists m', f' m' <= f m /\ P (m',m))%E ->
   (forall m' m, Q (m',m) -> g m <= g' m')%E ->
   ehl_ ps f c g.
