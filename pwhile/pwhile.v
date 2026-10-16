@@ -1,13 +1,12 @@
 (* -------------------------------------------------------------------- *)
 From HB                 Require Import structures.
-From mathcomp           Require Import all_boot all_order.
-From mathcomp.algebra   Require Import all_algebra.
+From elpi.apps          Require Import derive.std.
+From mathcomp           Require Import boot order.
+From mathcomp.algebra   Require Import algebra.
 From mathcomp.classical Require Import boolp.
 From mathcomp.reals     Require Import reals.
-From mathcomp.experimental_reals Require Import distr.
-(* ----------------- *) Require Import inhabited notations.
-
-From Stdlib Require Import Eqdep_dec.
+From mathcomp.analysis  Require Import counting_distr.
+(* ----------------- *) Require Import inhabited notations mem.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -29,61 +28,12 @@ Delimit Scope vsyn_scope with V.
 Delimit Scope mem_scope with M.
 
 (* -------------------------------------------------------------------- *)
-Parameter R : realType.
-
-#[non_forgetful_inheritance]
-HB.instance Definition real_ihbType :=
-  IsInhabited.Build R 0.
-
-Notation Distr T := {distr T / R}.
-
-(* -------------------------------------------------------------------- *)
-Section MemType.
-Variable (mident : eqType).
-
-Record memType_ : Type := mkMem {
-  mheap    :> choiceType;
-  mget_    :  mheap -> forall (T : IhbType.type), mident -> T;
-  mset_    :  mheap -> forall (T : IhbType.type), mident -> T -> mheap;
-  mget_eq_  : forall T m x v, @mget_ (@mset_ m T x v) T x = v;
-  mget_neq_ : forall T U m x y v, (T <> U \/ x != y) ->
-                @mget_ (@mset_ m T x v) U y = @mget_ m U y;
-}.
-
-Section GetSet.
-Variable (M : memType_) (T : IhbType.type).
-
-Definition mget (m : M) (x : mident) := @mget_ M m T x.
-
-Arguments mget : simpl never.
-
-Definition mset (m : M) (x : mident) (v : T) := @mset_ M m T x v.
-
-Arguments mset : simpl never.
-
-End GetSet.
-
-Variable (M : memType_) (T U : IhbType.type).
-
-Lemma mget_eq (m : M) (x : mident) (v : T) : mget T (mset m x v) x = v.
-Proof. by unlock mget mset; apply/mget_eq_. Qed.
-
-Lemma mget_neq (m : M) (x y : mident) (v : T) : (T <> U \/ x != y) ->
-  mget U (mset m x v) y = mget U m y.
-Proof. by unlock mget mset; apply/mget_neq_. Qed.
-
-Definition memType_of of phant mident := memType_.
-End MemType.
-
-Notation memType T := (memType_of (Phant T)).
-
-(* -------------------------------------------------------------------- *)
 (* Expressions and probabilistic expressions *)
 
 Section Vars.
-Context {ident : eqType}.
+Context {A : codeType} {ident : eqType}.
 
-Inductive vars_r (T : IhbType.type) :=
+Inductive vars_r (T : A) :=
 | Var of ident.
 
 Definition vars_of of phant ident := vars_r.
@@ -93,30 +43,43 @@ Notation vars_ ident := (vars_of (Phant ident)).
 
 (* -------------------------------------------------------------------- *)
 Section Syntax.
-Context {ident : eqType} {mem : memType ident}.
+  Context
+    {R : realType}
+    {A B : codeType}
+    {X Xg : eqType}
+    {mem : memType A B X Xg}
+    {fname : eqType}.
 
-Local Notation vars := (vars_ ident).
+Local Notation Distr T := {distr T%type / R}.
+Local Notation vars := (vars_ X).
+Local Notation gvars := (vars_ Xg).
 
-Definition vname {T} (v : vars T) :=
+Definition vname {T : A} (v : vars T) :=
   let: Var name := v in name.
 
-Definition vtype {T} (v : vars T) := T.
+Definition vtype {T : A} (v : vars T) := T.
 
 Inductive expr_ : Type -> Type :=
-| var_  {T}   of vars T : expr_ T
-| cst_  {T}   of T : expr_ T
-| prp_        of pred mem : expr_ bool
-| app_  {T U} of expr_ (T -> U) & expr_ T : expr_ U.
+| var_  {T : A} of vars T : expr_ (interp T)
+| cst_  {T}     of T : expr_ T
+| prp_          of pred mem : expr_ bool
+| app_  {T U}   of expr_ (T -> U) & expr_ T : expr_ U
+| gvar_ {T : B} of gvars T : expr_ (interp T).
 
 Notation bexpr   := (expr_ bool).
 Notation dexpr T := (expr_ (Distr T)).
+
+Definition binding := {T : A & (vars T * expr_ (interp T))%type}.
+
+Definition bind_of {T : A} (x : vars T) (e : expr_ (interp T)) : binding :=
+  existT _ T (x, e).
 
 (* -------------------------------------------------------------------- *)
 Bind Scope syn_scope with expr_.
 
 (* -------------------------------------------------------------------- *)
 Section VarsEqType.
-  Variables (T : IhbType.type) (I : eqType).
+  Variables (T : A) (I : eqType).
 
   Definition vars_eq (x y : vars_ I T) :=
     let: Var x := x in let: Var y := y in x == y.
@@ -132,7 +95,7 @@ End VarsEqType.
 
 (* -------------------------------------------------------------------- *)
 
-Lemma eq_vars {t u : IhbType.type} (x : vars t) (y : vars u) :
+Lemma eq_vars {t u : A} (x : vars t) (y : vars u) :
       (Tagged vars y = Tagged vars x)
   <-> (vtype x = vtype y /\ vname x == vname y).
 Proof.
@@ -151,16 +114,40 @@ Qed.
 Inductive cmd_ : Type :=
 | abort
 | skip
-| assign {t} of vars t & expr_ t
-| random {t} of vars t & dexpr t
-| cond       of bexpr & cmd_ & cmd_
-| while      of bexpr & cmd_
-| seqc       of cmd_ & cmd_.
+| assign {T : A}  of vars T & expr_ (interp T)
+| gassign {T : B} of gvars T & expr_ (interp T)
+| random {T : A}  of vars T & dexpr (interp T)
+| block           of seq binding & cmd_ & seq binding
+| cond            of bexpr & cmd_ & cmd_
+| while           of bexpr & cmd_
+| seqc            of cmd_ & cmd_
+| call            of fname.
 
 Bind Scope syn_scope with cmd_.
 End Syntax.
 
 (* -------------------------------------------------------------------- *)
+Notation "x <<- e"
+  := (assign x%V e%X) : syn_scope.
+
+Notation "'G' x <<- e"
+  := (gassign x%V e%X) (at level 0, x at level 0, e at level 70) : syn_scope.
+
+Notation "x <$- d"
+  := (random x%V d%X) : syn_scope.
+
+Notation "x <<= e"
+  := (bind_of x%V e%X) (at level 65, e at level 70) : syn_scope.
+
+Notation "'Block' bs 'Do' c 'Return' rs"
+  := (block bs c%S rs)
+  (at level 0, bs at level 99, c at level 99, rs at level 99) : syn_scope.
+
+Notation "'Begin' 'Local' x := e ; c ; r := e' 'End'"
+  := (block [:: bind_of x%V e%X] c%S [:: bind_of r%V e'%X])
+  (at level 0, x at level 0, e at level 70, c at level 99,
+   r at level 0, e' at level 70) : syn_scope.
+
 Notation "'If' e 'then' c1 'else' c2"
   := (cond e%X c1%S c2%S) : syn_scope.
 
@@ -169,12 +156,6 @@ Notation "'IfT' e 'then' c1"
 
 Notation "'While' e 'Do' c"
   := (while e%X c%S) : syn_scope.
-
-Notation "x <<- e"
-  := (assign x%V e%X) : syn_scope.
-
-Notation "x <$- d"
-  := (random x%V d%X) : syn_scope.
 
 Notation "c1 ;; c2"
   := (seqc c1%S c2%S) : syn_scope.
@@ -186,167 +167,6 @@ Arguments expr_ : clear implicits.
 Arguments cmd_  : clear implicits.
 
 (* -------------------------------------------------------------------- *)
-Parameter ident : countType.
-
-(* -------------------------------------------------------------------- *)
-Section CoreMem.
-
-Inductive coremem :=
-  CoreMem (m : forall {T : IhbType.type}, ident -> T).
-
-Definition coremem_get := (fun m => let: CoreMem m := m in m).
-
-Coercion coremem_get : coremem >-> Funclass.
-
-Definition coremem_set := fun (m : coremem) {T : IhbType.type} x v =>
-  CoreMem (fun U y =>
-    if pselect (T = U) is left eq then
-      if x == y then ecast _ _ eq v else m U y
-    else coremem_get m U y).
-
-Arguments coremem_set : simpl never.
-
-Lemma get_set_eq {T : IhbType.type} (m : coremem) (x : ident) (v : T) :
-  (coremem_set m x v) T x = v.
-Proof.
-rewrite /coremem_get /=; case: (pselect _) => // eq; rewrite eqxx.
-suff ->: eq = erefl T by done.
-by apply/UIP_dec=> {}x y; apply/pselect.
-Qed.
-
-Lemma get_set_nex {T U : IhbType.type} (m : coremem) (x y : ident) (v : T) :
-  x != y -> (coremem_set m x v) U y = m U y.
-Proof.
-move=> ne_xy; rewrite /coremem_set /coremem_get /=.
-by case: pselect => //; rewrite (negbTE ne_xy).
-Qed.
-
-Lemma get_set_net {T U : IhbType.type} (m : coremem) (x y: ident) (v : T) :
-  T <> U -> (coremem_set m x v) U y = m U y.
-Proof. by rewrite /coremem_set /coremem_get; case: pselect. Qed.
-
-Lemma get_set_ne {T U : IhbType.type} (m : coremem) (x y : ident) (v : T) :
-  (T <> U \/ x !=y) -> (coremem_set m x v) U y = m U y.
-Proof. by move=> [/get_set_net |/get_set_nex] ->. Qed.
-
-Lemma coremem_comparable : comparable coremem.
-Proof. by move=> m1 m2; apply/pselect. Qed.
-
-HB.instance Definition coremem_eqType :=
-  hasDecEq.Build coremem (compareP coremem_comparable).
-
-HB.instance Definition coremem_choiceType :=
-  gen_choiceMixin coremem.
-End CoreMem.
-
-Arguments coremem : clear implicits.
-
-(* -------------------------------------------------------------------- *)
-Definition cmem : memType ident := locked {|
-  mheap     := Choice.clone coremem _;
-  mget_     := coremem_get;
-  mset_     := coremem_set;
-  mget_eq_  := @get_set_eq;
-  mget_neq_ := @get_set_ne;
-|}.
-
-Notation dmem := (Distr cmem).
-
-(* -------------------------------------------------------------------- *)
-Inductive side : predArgType := SLeft | SRight.
-
-Coercion bool_of_side (s : side) :=
-  match s with SLeft => false | SRight => true end.
-
-Definition side_of_bool (b : bool) :=
-  if b then SRight else SLeft.
-
-Lemma side_of_boolK : cancel bool_of_side side_of_bool.
-Proof. by case. Qed.
-
-HB.instance Definition side_eqType :=
-  Equality.copy side (can_type side_of_boolK).
-
-(*
-HB.instance Definition side_choiceType :=
-  Choice.copy side (can_type side_of_boolK).
-*)
-
-HB.instance Definition side_countType :=
-  CanIsCountable side_of_boolK.
-
-HB.instance Definition side_finType :=
-  Finite.copy side (can_type side_of_boolK).
-
-Notation "''1'" := SLeft.
-Notation "''2'" := SRight.
-
-Definition mselect {T : Type} (s : side) (m : T * T) :=
-  match s with
-  | '1 => m.1
-  | '2 => m.2
-  end.
-
-Notation "m # s" := (mselect s m) (at level 2, format "m # s") : mem_scope.
-
-(* -------------------------------------------------------------------- *)
-Lemma side2 {A : Type} s (x : A * A) : ((fst, snd)#s x = x#s)%M.
-Proof. by case: s. Qed.
-
-Lemma side_app {A B : Type} (f : A -> B) s (x y : A) :
-  (f (x, y)#s = (f x, f y)#s)%M.
-Proof. by case: s. Qed.
-
-(* -------------------------------------------------------------------- *)
-Notation rident := (ident * side)%type.
-
-Definition coremem2 := (mheap cmem * mheap cmem)%type.
-
-Definition coremem2_get (m : coremem2) T xs :=
-  mget T (m#(xs.2))%M xs.1.
-
-Definition coremem2_set (m : coremem2) (T : IhbType.type) xs (v : T) :=
-  match xs.2 return coremem2 with
-  | '1 => (mset m.1 xs.1 v, m.2)
-  | '2 => (m.1, mset m.2 xs.1 v)
-  end.
-
-Coercion coremem2_get : coremem2 >-> Funclass.
-
-Set Printing Coercions.
-
-Lemma get_set2_eq {T} m x v : (@coremem2_set m T x v) T x = v.
-Proof. by case: m x => m1 m2 [x []] /=; apply mget_eq. Qed.
-
-Lemma get_set2_ne {T U} m x y v :
-  (T <> U \/ x != y) -> (@coremem2_set m T x v) U y = m U y.
-Proof.
-case: m x y => m1 m2 [x []] [y []] //= h; apply mget_neq => /=;
-  by (elim: h => h; [left | right; apply: contra h => /eqP->]).
-Qed.
-
-Canonical coremem2_choiceType := Choice.clone coremem2 _.
-
-(* -------------------------------------------------------------------- *)
-Definition rmem : memType rident := {|
-  mheap     := Choice.clone coremem2 _;
-  mget_     := coremem2_get;
-  mset_     := coremem2_set;
-  mget_eq_  := @get_set2_eq;
-  mget_neq_ := @get_set2_ne;
-|}.
-
-Arguments rmem : simpl never.
-
-(* -------------------------------------------------------------------- *)
-Notation vars    := (vars_ ident).
-Notation expr    := (expr_ _ cmem).
-Notation cmd     := (cmd_  _ cmem).
-Notation bexpr   := (expr bool).
-Notation dexpr T := (expr (Distr T)).
-Notation prp     := (@prp_ _ cmem).
-
-(* -------------------------------------------------------------------- *)
 Notation app2_ f x1 x2 := (app_ (app_ f x1) x2).
 
 Reserved Notation "x =b y" (at level 70, no associativity).
@@ -355,31 +175,38 @@ Reserved Notation "x =i y" (at level 70, no associativity).
 Definition beq (x y : bool) : bool := x == y.
 Definition ieq (x y : int ) : bool := x == y.
 
-Notation "c %:S"    := (@cst_ _ _ _ c) (at level 2, format "c %:S").
-Notation "e1 =b e2" := (app2_ (cst_ beq) e1 e2)   : xsyn_scope.
-Notation "e1 =i e2" := (app2_ (cst_ ieq) e1 e2)   : xsyn_scope.
-Notation "e1 || e2" := (app2_ (cst_ orb  ) e1 e2) : xsyn_scope.
-Notation "e1 && e2" := (app2_ (cst_ andb ) e1 e2) : xsyn_scope.
-Notation "~~ e"     := (app_ (cst_ negb) e)       : xsyn_scope.
-Notation "e1 + e2"  := (app2_ (cst_ +%R) e1 e2)   : xsyn_scope.
-Notation "e1 * e2"  := (app2_ (cst_ *%R) e1 e2)   : xsyn_scope.
-Notation "e1 :: e2" := (app2_ (cst_ cons) e1 e2)  : xsyn_scope.
-Notation "` x"      := (@var_ _ _ _ x%V)          : xsyn_scope.
+Notation "c %:S"    := (@cst_ _ _ _ _ _ _ c) (at level 2, format "c %:S").
+Notation "e1 =b e2" := (app2_ (cst_ beq) e1 e2)    : xsyn_scope.
+Notation "e1 =i e2" := (app2_ (cst_ ieq) e1 e2)    : xsyn_scope.
+Notation "e1 || e2"  := (app2_ (cst_ orb  ) e1 e2)  : xsyn_scope.
+Notation "e1 && e2" := (app2_ (cst_ andb ) e1 e2)  : xsyn_scope.
+Notation "~~ e"     := (app_ (cst_ negb) e)        : xsyn_scope.
+Notation "e1 + e2"  := (app2_ (cst_ +%R) e1 e2)    : xsyn_scope.
+Notation "e1 * e2"  := (app2_ (cst_ *%R) e1 e2)    : xsyn_scope.
+Notation "e1 :: e2"  := (app2_ (cst_ cons) e1 e2)   : xsyn_scope.
+Notation "` x"      := (@var_ _ _ _ _ _ _ x%V)     : xsyn_scope.
+Notation "x %:G"    := (@gvar_ _ _ _ _ _ _ x%V) (at level 2, format "x %:G") : xsyn_scope.
 
 (* -------------------------------------------------------------------- *)
 Section SynInject.
-Context {I1 I2 : eqType} {mem1 : memType I1} {mem2:memType I2}
-        (h : I1 -> I2) (mh : mem2 -> mem1).
+Context {R : realType} {A B : codeType} {I1 I1g I2 I2g fname: eqType}
+        {mem1 : memType A B I1 I1g} {mem2 : memType A B I2 I2g}
+        (h : I1 -> I2) (hg : I1g -> I2g) (mh : mem2 -> mem1).
 
 Local Notation vars1 := (vars_ I1).
 Local Notation vars2 := (vars_ I2).
-Local Notation expr1 := (@expr_ I1 mem1).
-Local Notation expr2 := (@expr_ I2 mem2).
-Local Notation cmd1  := (cmd_  I1 mem1).
-Local Notation cmd2  := (cmd_  I2 mem2).
+Local Notation gvars1 := (vars_ I1g).
+Local Notation gvars2 := (vars_ I2g).
+Local Notation expr1 := (@expr_ A B I1 I1g mem1).
+Local Notation expr2 := (@expr_ A B I2 I2g mem2).
+Local Notation cmd1  := (cmd_  R A B I1 I1g mem1 fname).
+Local Notation cmd2  := (cmd_  R A B I2 I2g mem2 fname).
 
-Definition ivar {T : IhbType.type} (x : vars1 T) : vars2 T :=
+Definition ivar {T : A} (x : vars1 T) : vars2 T :=
   let: Var x := x in Var T (h x).
+
+Definition givar {T : B} (x : gvars1 T) : gvars2 T :=
+  let: Var x := x in Var T (hg x).
 
 Definition iprop (p : pred mem1) : pred mem2 :=
   fun m => p (mh m).
@@ -387,10 +214,14 @@ Definition iprop (p : pred mem1) : pred mem2 :=
 Fixpoint iexpr {T : Type} (e : expr1 T) : expr2 T :=
   match e with
   | var_ _   x     => var_ (ivar x)
-  | cst_ _   c     => cst_ c
+  | cst_ _   T     => cst_ T
   | prp_     p     => prp_ (iprop p)
   | app_ _ _ e1 e2 => app_ (iexpr e1) (iexpr e2)
+  | gvar_ _  x     => gvar_ (givar x)
   end.
+
+Definition ibind (b : @binding A B I1 I1g mem1) : @binding A B I2 I2g mem2 :=
+  let: existT t (x, e) := b in bind_of (ivar x) (iexpr e).
 
 Fixpoint icmd (c : cmd1) : cmd2 :=
   match c with
@@ -400,8 +231,14 @@ Fixpoint icmd (c : cmd1) : cmd2 :=
   | x <<- e =>
       ivar x <<- iexpr e
 
+  | gassign _ x e =>
+      gassign (givar x) (iexpr e)
+
   | x <$- e =>
       ivar x <$- iexpr e
+
+  | block bs c rs =>
+      block (map ibind bs) (icmd c) (map ibind rs)
 
   | If e then c1 else c2 =>
       If iexpr e then icmd c1 else icmd c2
@@ -411,30 +248,41 @@ Fixpoint icmd (c : cmd1) : cmd2 :=
 
   | seqc c1 c2 =>
       seqc (icmd c1) (icmd c2)
-  end.
+
+  | call n => call n
+end.
+
+(* -------------------------------------------------------------------- *)
 End SynInject.
 
+Section Lift.
+Variable (R : realType) (A B : codeType) (X Xg : eqType)
+         (M: memType A B X Xg).
+
+Notation rident := (X * side)%type.
+
+Definition irexpr s :=
+  (@iexpr A B _ _ _ _ M (rmem A B X Xg M)
+     (fun x : X => (x, s)) (fun x : Xg => (x, s))
+     (fun m => (m#s)%M)).
+
+Definition ircmd s :=
+  (@icmd R A B _ _ _ _ X M (rmem A B X Xg M)
+     (fun x : X => (x, s)) (fun x : Xg => (x, s))
+     (fun m => (m#s)%M)).
+
+End Lift.
+
 (* -------------------------------------------------------------------- *)
-Notation rvars := (vars_ rident).
-Notation rexpr := (expr_ _ rmem).
-Notation rcmd  := (cmd_  _ rmem).
+Notation rident ident := (ident * side)%type.
 
-Implicit Types (s : side).
-
-Notation   irvar  s := (@ivar  _ _ (fun x => (x, s))) (only parsing).
-Definition irexpr s := (@iexpr _ _ cmem rmem (fun x : ident => (x, s)) (fun m=> (m#s)%M)).
-Definition ircmd  s := (@icmd  _ _ cmem rmem (fun x : ident => (x, s)) (fun m=> (m#s)%M)).
+Notation irvar s := (@ivar _ _ _ (fun x => (x, s))) (only parsing).
+Notation girvar s := (@givar _ _ _ (fun x => (x, s))) (only parsing).
 
 Reserved Notation "x # s" (at level 2, format "x # s").
+Reserved Notation "x #g s" (at level 2, format "x #g s").
 
 Notation "x # s" := (ivar (pair^~ s) x) : vsyn_scope.
+Notation "x #g s" := (givar (pair^~ s) x) : vsyn_scope.
 Notation "e # s" := (irexpr s e) : xsyn_scope.
 Notation "c # s" := (ircmd s c) : syn_scope.
-Notation rmem1 m := (m.1 : mem).
-Notation rmem2 m := (m.2 : mem).
-Notation rprp    := (@prp_ _ rmem).
-
-(* -------------------------------------------------------------------- *)
-Notation assn  := (pred cmem).
-Notation dassn := (pred dmem).
-Notation rassn := (pred rmem).

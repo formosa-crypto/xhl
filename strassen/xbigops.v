@@ -1,6 +1,6 @@
 (* -------------------------------------------------------------------- *)
-From mathcomp Require Import all_boot.
-From mathcomp.algebra Require Import all_algebra.
+From mathcomp Require Import boot.
+From mathcomp.algebra Require Import algebra.
 
 Set   Implicit Arguments.
 Unset Strict Implicit.

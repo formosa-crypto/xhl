@@ -1,6 +1,6 @@
 (* -------------------------------------------------------------------- *)
 From HB       Require Import structures.
-From mathcomp Require Import all_boot all_order all_algebra.
+From mathcomp Require Import boot order algebra.
 (* ------- *) Require Import xbigops misc lp.
 
 Set   Implicit Arguments.
@@ -294,8 +294,6 @@ pose t := map val (enum {: (size s).-tuple T}); exists t.
   by case/andP: Ps => /card_uniqP <- _; rewrite ltnS max_card.
 by apply/mapP=> /=; exists (in_tuple s) => //; rewrite mem_enum.
 Qed.
-
-HB.instance Definition _ := @isFinite.Build _ aenum aenum_finAxiom.
 
 Coercion path_of_apath (p : apath) :=
   let: APath p _ := p in ⊤ :: (rcons [seq ↓u | u <- p] ⊥).
@@ -739,7 +737,7 @@ have /(_ (u, v)) := isflow_lecp solx; rewrite le_eqVlt.
 case/orP=> [/eqP->//|]; elim/vertexW: v vNP => // [|v] vNP h.
 + have: exists _ : apath (Flow solx), true.
   * case: u uP h => -[[_|_]|u uP] h //.
-    - have: uniq ([::] : seq T) && spath (Flow solx) [::].    
+    - have: uniq ([::] : seq T) && spath (Flow solx) [::].
       + by rewrite /spath /= andbT ffunE /preresidual subr_gt0.
       by move=> ha; exists (APath ha).
     move: uP; rewrite cut_grdE => /existsP[/= i].
