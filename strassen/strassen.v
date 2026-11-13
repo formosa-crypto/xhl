@@ -996,7 +996,7 @@ exists (ξL, ξR) => /=; split => [a|b|||].
     - by move=> n b; rewrite ger0_norm // (ge0_mu, hLR).
   pose pa := choice.pickle a; have ->: μ1 a = fine (nlim (fun n => η1 (ω n) a)).
   * rewrite -(nlim_lift _ pa.+1) (eq_nlim (v := (μ1 a)%:S)) ?nlimC //.
-    move=> n /=; rewrite drestrE /E /= sort_keysE mem_pmap.
+    move=> n /=; rewrite drestrE /E /= seq_fsetE mem_pmap.
     case: mapP => // -[]; exists pa; rewrite ?choice.pickleK //.
     rewrite mem_iota leq0n add0n (@leq_trans (n + pa.+1)) //.
     - by rewrite leq_addl.
@@ -1012,7 +1012,7 @@ exists (ξL, ξR) => /=; split => [a|b|||].
     - by move=> n a; rewrite ger0_norm // (ge0_mu, hRL).
   pose pb := choice.pickle b; have ->: μ2 b = fine (nlim (fun n => η2 (ω n) b)).
   * rewrite -(nlim_lift _ pb.+1) (eq_nlim (v := (μ2 b)%:S)) ?nlimC //.
-    move=> n /=; rewrite drestrE /E /= sort_keysE mem_pmap.
+    move=> n /=; rewrite drestrE /E /= seq_fsetE mem_pmap.
     case: mapP => // -[]; exists pb; rewrite ?choice.pickleK //.
     rewrite mem_iota leq0n add0n (@leq_trans (n + pb.+1)) //.
     - by rewrite leq_addl.
